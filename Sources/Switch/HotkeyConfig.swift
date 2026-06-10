@@ -11,6 +11,11 @@ struct HotkeyBinding: Codable, Equatable {
 
     var cgFlags: CGEventFlags { CGEventFlags(rawValue: modifiersRaw) }
 
+    /// Empty placeholder used while the user is recording a new row in Settings.
+    var isEmpty: Bool { keyCode == 0 && modifiersRaw == 0 }
+
+    static let empty = HotkeyBinding(keyCode: 0, modifiersRaw: 0)
+
     static let defaultAllWindows = HotkeyBinding(
         keyCode: 48, // Tab
         modifiersRaw: CGEventFlags.maskCommand.rawValue
@@ -55,7 +60,9 @@ struct HotkeyBinding: Codable, Equatable {
     }
 }
 
-/// Persistent config for the arming hotkeys.
+/// Persistent config for the arming hotkeys. Each action holds a list of bindings —
+/// every binding in the list triggers the same action. Reads are served from a
+/// lock-guarded cache so the event tap thread never touches UserDefaults.
 final class HotkeyConfig {
     static let shared = HotkeyConfig()
 
@@ -67,80 +74,96 @@ final class HotkeyConfig {
     private let seededKey = "switch.hotkey.seeded"
 
     private let lock = NSLock()
-    private var cachedAll: HotkeyBinding?
-    private var cachedApp: HotkeyBinding?
-    private var cachedSpaces: HotkeyBinding?
-    private var cachedSticky: HotkeyBinding?
+    private var cachedAll: [HotkeyBinding] = []
+    private var cachedApp: [HotkeyBinding] = []
+    private var cachedSpaces: [HotkeyBinding] = []
+    private var cachedSticky: [HotkeyBinding] = []
 
     static let didChangeNotification = Notification.Name("com.sanyamgarg.switch.hotkeyConfigDidChange")
 
-    // Seed the three arming hotkeys once so a fresh install gets defaults; after that nil means disabled.
+    // Seed each action's defaults once so a fresh install gets its defaults; after
+    // that an empty list means the user deliberately cleared the action (disabled).
     private init() {
         if !defaults.bool(forKey: seededKey) {
-            if load(allKey) == nil { write(.defaultAllWindows, key: allKey) }
-            if load(appKey) == nil { write(.defaultCurrentApp, key: appKey) }
+            if loadList(allKey) == nil { writeList([.defaultAllWindows], key: allKey) }
+            if loadList(appKey) == nil { writeList([.defaultCurrentApp], key: appKey) }
             // Spaces ships unbound; ⌃Tab would swallow browser tab switching (#91). Opt in via Settings.
             defaults.set(true, forKey: seededKey)
         }
-        cachedAll = load(allKey)
-        cachedApp = load(appKey)
-        cachedSpaces = load(spacesKey)
-        cachedSticky = load(stickyKey)
+        cachedAll = loadList(allKey) ?? []
+        cachedApp = loadList(appKey) ?? []
+        cachedSpaces = loadList(spacesKey) ?? []
+        cachedSticky = loadList(stickyKey) ?? []
     }
 
-    var allWindows: HotkeyBinding? {
+    // MARK: - List accessors (canonical)
+    // An empty list means the action is disabled — seeding guarantees a fresh
+    // install still gets its defaults, so empty here is a deliberate clear.
+
+    var allWindowsBindings: [HotkeyBinding] {
         get { lock.lock(); defer { lock.unlock() }; return cachedAll }
-        set { store(newValue, key: allKey) { self.cachedAll = newValue } }
+        set { saveList(newValue, key: allKey) { self.cachedAll = $0 } }
     }
 
-    var currentApp: HotkeyBinding? {
+    var currentAppBindings: [HotkeyBinding] {
         get { lock.lock(); defer { lock.unlock() }; return cachedApp }
-        set { store(newValue, key: appKey) { self.cachedApp = newValue } }
+        set { saveList(newValue, key: appKey) { self.cachedApp = $0 } }
     }
 
-    var spaces: HotkeyBinding? {
+    var spacesBindings: [HotkeyBinding] {
         get { lock.lock(); defer { lock.unlock() }; return cachedSpaces }
-        set { store(newValue, key: spacesKey) { self.cachedSpaces = newValue } }
+        set { saveList(newValue, key: spacesKey) { self.cachedSpaces = $0 } }
     }
 
-    var stickyToggle: HotkeyBinding? {
+    var stickyToggleBindings: [HotkeyBinding] {
         get { lock.lock(); defer { lock.unlock() }; return cachedSticky }
-        set { store(newValue, key: stickyKey) { self.cachedSticky = newValue } }
+        set { saveList(newValue, key: stickyKey) { self.cachedSticky = $0 } }
     }
 
     func resetToDefaults() {
-        write(.defaultAllWindows, key: allKey)
-        write(.defaultCurrentApp, key: appKey)
+        writeList([.defaultAllWindows], key: allKey)
+        writeList([.defaultCurrentApp], key: appKey)
         defaults.removeObject(forKey: spacesKey)
         defaults.removeObject(forKey: stickyKey)
+        defaults.set(true, forKey: seededKey)
         lock.lock()
-        cachedAll = .defaultAllWindows
-        cachedApp = .defaultCurrentApp
-        cachedSpaces = nil
-        cachedSticky = nil
+        cachedAll = [.defaultAllWindows]
+        cachedApp = [.defaultCurrentApp]
+        cachedSpaces = []
+        cachedSticky = []
         lock.unlock()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
-    private func load(_ key: String) -> HotkeyBinding? {
+    /// Decode array first; fall back to legacy single-binding payload and wrap.
+    private func loadList(_ key: String) -> [HotkeyBinding]? {
         guard let data = defaults.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(HotkeyBinding.self, from: data)
+        if let arr = try? JSONDecoder().decode([HotkeyBinding].self, from: data) {
+            return arr.filter { !$0.isEmpty }
+        }
+        if let one = try? JSONDecoder().decode(HotkeyBinding.self, from: data), !one.isEmpty {
+            return [one]
+        }
+        return nil
     }
 
-    private func store(_ b: HotkeyBinding?, key: String, updateCache: () -> Void) {
-        if let b, let data = try? JSONEncoder().encode(b) {
-            defaults.set(data, forKey: key)
-        } else {
+    private func saveList(_ list: [HotkeyBinding], key: String, updateCache: ([HotkeyBinding]) -> Void) {
+        let cleaned = list.filter { !$0.isEmpty }
+        if cleaned.isEmpty {
             defaults.removeObject(forKey: key)
+        } else if let data = try? JSONEncoder().encode(cleaned) {
+            defaults.set(data, forKey: key)
         }
         lock.lock()
-        updateCache()
+        updateCache(cleaned)
         lock.unlock()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
-    private func write(_ b: HotkeyBinding, key: String) {
-        if let data = try? JSONEncoder().encode(b) { defaults.set(data, forKey: key) }
+    /// Persist without posting a change notification — used for one-time seeding
+    /// and reset, where listeners reload through their own paths.
+    private func writeList(_ list: [HotkeyBinding], key: String) {
+        if let data = try? JSONEncoder().encode(list) { defaults.set(data, forKey: key) }
     }
 }
 
@@ -170,6 +193,17 @@ enum HotkeyValidator {
             return "That combo is reserved by macOS or common apps."
         }
         return nil
+    }
+
+    /// Reject if the same combo (modulo shift) already appears in `existing`.
+    /// Shift is ignored — matchesTrigger ignores it anyway, so two bindings that
+    /// differ only by shift would behave identically.
+    static func duplicate(of candidate: HotkeyBinding, in existing: [HotkeyBinding]) -> Bool {
+        let mask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
+        let cFlags = candidate.cgFlags.intersection(mask)
+        return existing.contains { b in
+            b.keyCode == candidate.keyCode && b.cgFlags.intersection(mask) == cFlags
+        }
     }
 }
 
