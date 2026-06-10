@@ -25,6 +25,10 @@ final class HotkeyManager {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var armed: Mode?
+    /// The specific binding that armed the picker. When that binding's modifiers
+    /// drop (flagsChanged), we commit — independent of whatever other bindings
+    /// the user has configured for the same action.
+    private var armedBinding: HotkeyBinding?
     private var armedAt: Date?
     private var advanced = false
     private var lastShift = false
@@ -224,28 +228,28 @@ final class HotkeyManager {
         let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
 
         if type == .keyDown {
-            let allBinding = HotkeyConfig.shared.allWindows
-            let appBinding = HotkeyConfig.shared.currentApp
-            let spacesBinding = HotkeyConfig.shared.spaces
+            let allBindings = HotkeyConfig.shared.allWindowsBindings
+            let appBindings = HotkeyConfig.shared.currentAppBindings
+            let spacesBindings = HotkeyConfig.shared.spacesBindings
+            let stickyBindings = HotkeyConfig.shared.stickyToggleBindings
 
-            if let stickyBinding = HotkeyConfig.shared.stickyToggle,
-               stickyBinding.matchesTrigger(keyCode: kc, flags: flags) {
+            if stickyBindings.contains(where: { $0.matchesTrigger(keyCode: kc, flags: flags) }) {
                 DispatchQueue.main.async { [weak self] in
                     self?.onStickyToggle?()
                 }
                 return nil
             }
 
-            if let allBinding, allBinding.matchesTrigger(keyCode: kc, flags: flags) {
-                armOrAdvance(.allWindows, shift: shift)
+            if let matched = allBindings.first(where: { $0.matchesTrigger(keyCode: kc, flags: flags) }) {
+                armOrAdvance(.allWindows, binding: matched, shift: shift)
                 return nil
             }
-            if let spacesBinding, spacesBinding.matchesTrigger(keyCode: kc, flags: flags) {
-                armOrAdvance(.spaces, shift: shift)
+            if let matched = spacesBindings.first(where: { $0.matchesTrigger(keyCode: kc, flags: flags) }) {
+                armOrAdvance(.spaces, binding: matched, shift: shift)
                 return nil
             }
-            if let appBinding, appBinding.matchesTrigger(keyCode: kc, flags: flags) {
-                armOrAdvance(.currentApp, shift: shift)
+            if let matched = appBindings.first(where: { $0.matchesTrigger(keyCode: kc, flags: flags) }) {
+                armOrAdvance(.currentApp, binding: matched, shift: shift)
                 return nil
             }
 
@@ -253,7 +257,7 @@ final class HotkeyManager {
             let armedMode = armed
             stateLock.unlock()
 
-            if let mode = armedMode {
+            if armedMode != nil {
                 let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
                 let typeToFilter = (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
@@ -271,7 +275,7 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                if !sticky && !armingModifiersHeld(mode, flags) {
+                if !sticky && !armedBindingModifiersHeld(flags) {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
                         self?.onCommit?()
@@ -302,7 +306,7 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                if kc == Self.kcComma && (cmd || armingModifiersHeld(mode, flags)) {
+                if kc == Self.kcComma && (cmd || armedBindingModifiersHeld(flags)) {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
                         self?.onCancel?()
@@ -337,12 +341,13 @@ final class HotkeyManager {
             stateLock.lock()
             let shiftRising = shift && !lastShift
             lastShift = shift
-            guard let mode = armed else {
+            guard let armedBinding else {
                 stateLock.unlock()
                 return Unmanaged.passUnretained(event)
             }
-            let armingHeld = armingModifiersHeld(mode, flags)
+            let armingHeld = armedBinding.modifiersHeld(flags)
 
+            // Tap shift while still holding the arming combo to step backward.
             if shiftRising && armingHeld
                 && UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey) {
                 advanced = true
@@ -353,6 +358,8 @@ final class HotkeyManager {
                 return nil
             }
 
+            // Releasing the arming binding's modifiers commits — independent of any
+            // other binding configured for the same action.
             if !armingHeld {
                 let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
                 let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < Self.stickyQuickTapMS } ?? false) && !advanced
@@ -372,11 +379,12 @@ final class HotkeyManager {
         return Unmanaged.passUnretained(event)
     }
 
-    private func armOrAdvance(_ mode: Mode, shift: Bool) {
+    private func armOrAdvance(_ mode: Mode, binding: HotkeyBinding, shift: Bool) {
         stateLock.lock()
         let isFirst = armed == nil
         if isFirst {
             armed = mode
+            armedBinding = binding
             armedAt = Date()
             advanced = false
         } else {
@@ -388,13 +396,12 @@ final class HotkeyManager {
         }
     }
 
-    private func armingModifiersHeld(_ mode: Mode, _ flags: CGEventFlags) -> Bool {
-        let binding: HotkeyBinding?
-        switch mode {
-        case .allWindows: binding = HotkeyConfig.shared.allWindows
-        case .currentApp: binding = HotkeyConfig.shared.currentApp
-        case .spaces:     binding = HotkeyConfig.shared.spaces
-        }
+    /// Whether the modifiers of the binding that armed the picker are still held —
+    /// independent of any other binding configured for the same action.
+    private func armedBindingModifiersHeld(_ flags: CGEventFlags) -> Bool {
+        stateLock.lock()
+        let binding = armedBinding
+        stateLock.unlock()
         return binding?.modifiersHeld(flags) ?? false
     }
 
@@ -406,6 +413,7 @@ final class HotkeyManager {
 
     private func clearArmedLocked() {
         armed = nil
+        armedBinding = nil
         armedAt = nil
         advanced = false
     }
@@ -432,7 +440,7 @@ final class HotkeyManager {
         }
         stateLock.unlock()
         let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
-        guard !sticky, !armingModifiersHeld(mode, hardware) else { return }
+        guard !sticky, !armedBindingModifiersHeld(hardware) else { return }
         stateLock.lock()
         guard armed == mode, armedAt == at else {
             stateLock.unlock()
