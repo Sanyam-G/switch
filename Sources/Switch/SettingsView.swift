@@ -3,13 +3,45 @@ import Carbon.HIToolbox
 import SwiftUI
 import ServiceManagement
 
+/// Wrapper that pairs a binding with a stable SwiftUI identity, so reordering /
+/// deleting rows doesn't reshuffle `KeyRecorderField` NSViews mid-recording.
+struct EditableBinding: Identifiable, Equatable {
+    let id: UUID
+    var binding: HotkeyBinding
+
+    init(_ binding: HotkeyBinding, id: UUID = UUID()) {
+        self.id = id
+        self.binding = binding
+    }
+}
+
+enum HotkeyAction: CaseIterable {
+    case allWindows, currentApp, spaces, stickyToggle
+
+    var label: String {
+        switch self {
+        case .allWindows:    return "All windows"
+        case .currentApp:    return "Current app"
+        case .spaces:        return "Spaces"
+        case .stickyToggle:  return "Sticky toggle"
+        }
+    }
+
+    var placeholder: String {
+        switch self {
+        case .allWindows, .currentApp, .spaces: return "—"
+        case .stickyToggle:                     return "Not set"
+        }
+    }
+}
+
 @MainActor
 final class SettingsModel: ObservableObject {
     @Published var launchAtLogin: Bool = false
-    @Published var allWindows: HotkeyBinding? = HotkeyConfig.shared.allWindows
-    @Published var currentApp: HotkeyBinding? = HotkeyConfig.shared.currentApp
-    @Published var spaces: HotkeyBinding? = HotkeyConfig.shared.spaces
-    @Published var stickyToggle: HotkeyBinding? = HotkeyConfig.shared.stickyToggle
+    @Published var allWindowsBindings: [EditableBinding] = []
+    @Published var currentAppBindings: [EditableBinding] = []
+    @Published var spacesBindings: [EditableBinding] = []
+    @Published var stickyToggleBindings: [EditableBinding] = []
 
     init() { refresh() }
 
@@ -17,10 +49,10 @@ final class SettingsModel: ObservableObject {
         if #available(macOS 13.0, *) {
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
-        allWindows = HotkeyConfig.shared.allWindows
-        currentApp = HotkeyConfig.shared.currentApp
-        spaces = HotkeyConfig.shared.spaces
-        stickyToggle = HotkeyConfig.shared.stickyToggle
+        allWindowsBindings = HotkeyConfig.shared.allWindowsBindings.map { EditableBinding($0) }
+        currentAppBindings = HotkeyConfig.shared.currentAppBindings.map { EditableBinding($0) }
+        spacesBindings = HotkeyConfig.shared.spacesBindings.map { EditableBinding($0) }
+        stickyToggleBindings = HotkeyConfig.shared.stickyToggleBindings.map { EditableBinding($0) }
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
@@ -39,29 +71,61 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    func updateAllWindows(_ b: HotkeyBinding?) {
-        HotkeyConfig.shared.allWindows = b
-        allWindows = b
+    func bindings(for action: HotkeyAction) -> [EditableBinding] {
+        switch action {
+        case .allWindows:    return allWindowsBindings
+        case .currentApp:    return currentAppBindings
+        case .spaces:        return spacesBindings
+        case .stickyToggle:  return stickyToggleBindings
+        }
     }
 
-    func updateCurrentApp(_ b: HotkeyBinding?) {
-        HotkeyConfig.shared.currentApp = b
-        currentApp = b
+    /// Replace the binding at `id` and persist. Empty (placeholder) bindings are
+    /// allowed in the in-memory list for UX (just-added empty row) but get
+    /// stripped at the persistence layer.
+    func updateBinding(_ action: HotkeyAction, id: UUID, to b: HotkeyBinding) {
+        mutate(action) { list in
+            guard let idx = list.firstIndex(where: { $0.id == id }) else { return }
+            list[idx].binding = b
+        }
     }
 
-    func updateSpaces(_ b: HotkeyBinding?) {
-        HotkeyConfig.shared.spaces = b
-        spaces = b
+    func addBinding(_ action: HotkeyAction) {
+        mutate(action) { list in
+            // Avoid appending a second empty placeholder row.
+            guard !list.contains(where: { $0.binding.isEmpty }) else { return }
+            list.append(EditableBinding(.empty))
+        }
     }
 
-    func updateStickyToggle(_ b: HotkeyBinding?) {
-        HotkeyConfig.shared.stickyToggle = b
-        stickyToggle = b
+    func removeBinding(_ action: HotkeyAction, id: UUID) {
+        mutate(action) { list in
+            list.removeAll { $0.id == id }
+        }
     }
 
     func resetHotkeys() {
         HotkeyConfig.shared.resetToDefaults()
         refresh()
+    }
+
+    private func mutate(_ action: HotkeyAction, _ change: (inout [EditableBinding]) -> Void) {
+        switch action {
+        case .allWindows:    change(&allWindowsBindings); persist(action)
+        case .currentApp:    change(&currentAppBindings); persist(action)
+        case .spaces:        change(&spacesBindings); persist(action)
+        case .stickyToggle:  change(&stickyToggleBindings); persist(action)
+        }
+    }
+
+    private func persist(_ action: HotkeyAction) {
+        let payload = bindings(for: action).map(\.binding).filter { !$0.isEmpty }
+        switch action {
+        case .allWindows:    HotkeyConfig.shared.allWindowsBindings = payload
+        case .currentApp:    HotkeyConfig.shared.currentAppBindings = payload
+        case .spaces:        HotkeyConfig.shared.spacesBindings = payload
+        case .stickyToggle:  HotkeyConfig.shared.stickyToggleBindings = payload
+        }
     }
 }
 
@@ -149,18 +213,10 @@ struct SettingsView: View {
                 }
 
                 section("Hotkeys") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        hotkeyRow(label: "All windows", binding: model.allWindows) { b in
-                            applyHotkey(b) { model.updateAllWindows($0) }
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(HotkeyAction.allCases, id: \.self) { action in
+                            hotkeyActionGroup(action)
                         }
-                        hotkeyRow(label: "Current app", binding: model.currentApp) { b in
-                            applyHotkey(b) { model.updateCurrentApp($0) }
-                        }
-                        hotkeyRow(label: "Spaces", binding: model.spaces,
-                                  detail: "Cycle Spaces. Conflicts with browser tab switching if set to ⌃Tab.") { b in
-                            applyHotkey(b) { model.updateSpaces($0) }
-                        }
-                        stickyToggleRow
                         if let msg = rejectMessage {
                             Text(msg)
                                 .font(.system(size: 11))
@@ -177,7 +233,7 @@ struct SettingsView: View {
                             }
                             .controlSize(.small)
                         }
-                        .padding(.top, 4)
+                        .padding(.top, 2)
                     }
                     .padding(14)
                     .background(rowBackground)
@@ -443,23 +499,56 @@ struct SettingsView: View {
         prefs.appIconSize = SwitchPreferences.defaultAppIconSize
     }
 
-    private var stickyToggleRow: some View {
-        HStack(spacing: 12) {
-            Text("Sticky toggle")
+    private func hotkeyActionGroup(_ action: HotkeyAction) -> some View {
+        let rows = model.bindings(for: action)
+        return HStack(alignment: .top, spacing: 10) {
+            Text(action.label)
                 .font(.system(size: 13, weight: .medium))
                 .frame(width: 100, alignment: .leading)
-            KeyRecorderField(
-                initialBinding: model.stickyToggle ?? HotkeyBinding(keyCode: 0, modifiersRaw: 0),
-                onCapture: { b in apply(b) { model.updateStickyToggle($0) } },
-                accent: prefs.accent.color,
-                placeholder: "Not set"
-            )
-            .frame(width: 180, height: 28)
-            if model.stickyToggle != nil {
-                Button("Clear") { model.updateStickyToggle(nil) }
-                    .controlSize(.small)
+                .padding(.top, 4)
+            FlowLayout(spacing: 6, lineSpacing: 6) {
+                ForEach(rows) { row in
+                    hotkeyEditorRow(action: action, row: row)
+                }
+                Button {
+                    rejectMessage = nil
+                    model.addBinding(action)
+                } label: {
+                    Label("Add", systemImage: "plus.circle")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 6)
+                        .frame(height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(prefs.accent.color)
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func hotkeyEditorRow(action: HotkeyAction, row: EditableBinding) -> some View {
+        HStack(spacing: 4) {
+            KeyRecorderField(
+                initialBinding: row.binding,
+                onCapture: { b in
+                    apply(b, existing: model.bindings(for: action).filter { $0.id != row.id }.map(\.binding)) {
+                        model.updateBinding(action, id: row.id, to: $0)
+                    }
+                },
+                accent: prefs.accent.color,
+                placeholder: action.placeholder
+            )
+            .frame(width: 110, height: 24)
+            Button {
+                rejectMessage = nil
+                model.removeBinding(action, id: row.id)
+            } label: {
+                Image(systemName: "minus.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Remove this shortcut")
         }
     }
 
@@ -717,34 +806,6 @@ struct SettingsView: View {
         .background(rowBackground)
     }
 
-    private func hotkeyRow(label: String, binding: HotkeyBinding?, detail: String? = nil, onCapture: @escaping (HotkeyBinding?) -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 12) {
-                Text(label)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 100, alignment: .leading)
-                KeyRecorderField(
-                    initialBinding: binding ?? HotkeyBinding(keyCode: 0, modifiersRaw: 0),
-                    onCapture: { onCapture($0) },
-                    accent: prefs.accent.color,
-                    placeholder: "Not set"
-                )
-                .frame(width: 180, height: 28)
-                if binding != nil {
-                    Button("Clear") { onCapture(nil) }
-                        .controlSize(.small)
-                }
-                Spacer()
-            }
-            if let detail {
-                Text(detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 112)
-            }
-        }
-    }
-
     private func accentSwatch(_ choice: SwitchPreferences.AccentChoice) -> some View {
         let active = prefs.accent == choice
         return Button {
@@ -776,27 +837,19 @@ struct SettingsView: View {
         }
     }
 
-    private func apply(_ b: HotkeyBinding, save: (HotkeyBinding) -> Void) {
+    /// Validate `b` against system-reserved combos and the user's other bindings,
+    /// then either show a reject message or hand it to `save`.
+    private func apply(_ b: HotkeyBinding, existing: [HotkeyBinding] = [], save: (HotkeyBinding) -> Void) {
         if let msg = HotkeyValidator.reject(keyCode: b.keyCode, flags: b.cgFlags) {
             rejectMessage = msg
-        } else {
-            rejectMessage = nil
-            save(b)
-        }
-    }
-
-    private func applyHotkey(_ b: HotkeyBinding?, save: (HotkeyBinding?) -> Void) {
-        guard let b else {
-            rejectMessage = nil
-            save(nil)
             return
         }
-        if let msg = HotkeyValidator.reject(keyCode: b.keyCode, flags: b.cgFlags) {
-            rejectMessage = msg
-        } else {
-            rejectMessage = nil
-            save(b)
+        if HotkeyValidator.duplicate(of: b, in: existing) {
+            rejectMessage = "That combo is already bound to this action."
+            return
         }
+        rejectMessage = nil
+        save(b)
     }
 
 }
@@ -1024,6 +1077,64 @@ final class KeyRecorderNSView: NSView {
             }
             layer?.borderColor = NSColor.separatorColor.cgColor
             layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
+        }
+    }
+}
+
+/// Wraps children left-to-right and breaks to a new line when the next subview
+/// would overflow the proposed width. Used for hotkey-binding rows so multiple
+/// shortcuts per action sit side-by-side and wrap as needed.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+    var lineSpacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxW = proposal.width ?? .infinity
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        var lines: [[CGSize]] = [[]]
+        var lineW: CGFloat = 0
+        for s in sizes {
+            let needed = lines[lines.count - 1].isEmpty ? s.width : lineW + spacing + s.width
+            if needed > maxW, !lines[lines.count - 1].isEmpty {
+                lines.append([s])
+                lineW = s.width
+            } else {
+                lines[lines.count - 1].append(s)
+                lineW = needed
+            }
+        }
+        var height: CGFloat = 0
+        var width: CGFloat = 0
+        for (i, line) in lines.enumerated() {
+            let h = line.map(\.height).max() ?? 0
+            let w = line.reduce(0) { $0 + $1.width } + CGFloat(max(0, line.count - 1)) * spacing
+            height += h
+            if i > 0 { height += lineSpacing }
+            width = max(width, w)
+        }
+        return CGSize(width: min(width, maxW), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let maxW = bounds.width
+        var x = bounds.minX
+        var y = bounds.minY
+        var lineH: CGFloat = 0
+        var firstOnLine = true
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            let needed = firstOnLine ? s.width : (x - bounds.minX) + spacing + s.width
+            if needed > maxW && !firstOnLine {
+                x = bounds.minX
+                y += lineH + lineSpacing
+                lineH = 0
+                firstOnLine = true
+            }
+            if !firstOnLine { x += spacing }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(s))
+            x += s.width
+            lineH = max(lineH, s.height)
+            firstOnLine = false
         }
     }
 }
