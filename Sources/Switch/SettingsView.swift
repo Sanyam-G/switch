@@ -117,6 +117,16 @@ final class SettingsModel: ObservableObject {
         }
     }
 
+    /// Action that already holds a binding clashing with `b`, across all actions
+    /// (the row being edited is excluded). Nil when `b` is free.
+    func duplicateOwner(of b: HotkeyBinding, excluding id: UUID) -> HotkeyAction? {
+        for action in HotkeyAction.allCases {
+            let others = bindings(for: action).filter { $0.id != id }.map(\.binding)
+            if HotkeyValidator.duplicate(of: b, in: others) { return action }
+        }
+        return nil
+    }
+
     func resetHotkeys() {
         HotkeyConfig.shared.resetToDefaults()
         refresh()
@@ -544,7 +554,7 @@ struct SettingsView: View {
             KeyRecorderField(
                 initialBinding: row.binding,
                 onCapture: { b in
-                    apply(b, existing: model.bindings(for: action).filter { $0.id != row.id }.map(\.binding)) {
+                    apply(b, excludingRow: row.id) {
                         model.updateBinding(action, id: row.id, to: $0)
                     }
                 },
@@ -852,15 +862,15 @@ struct SettingsView: View {
         }
     }
 
-    /// Validate `b` against system-reserved combos and the user's other bindings,
-    /// then either show a reject message or hand it to `save`.
-    private func apply(_ b: HotkeyBinding, existing: [HotkeyBinding] = [], save: (HotkeyBinding) -> Void) {
+    /// Validate `b` against system-reserved combos and the user's bindings on
+    /// every action, then either show a reject message or hand it to `save`.
+    private func apply(_ b: HotkeyBinding, excludingRow id: UUID, save: (HotkeyBinding) -> Void) {
         if let msg = HotkeyValidator.reject(keyCode: b.keyCode, flags: b.cgFlags) {
             rejectMessage = msg
             return
         }
-        if HotkeyValidator.duplicate(of: b, in: existing) {
-            rejectMessage = "That combo is already bound to this action."
+        if let owner = model.duplicateOwner(of: b, excluding: id) {
+            rejectMessage = "That combo is already bound to “\(owner.label)”."
             return
         }
         rejectMessage = nil
