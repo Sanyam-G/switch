@@ -29,13 +29,6 @@ enum HotkeyAction: CaseIterable {
         case .stickyToggle:  return "Sticky toggle"
         }
     }
-
-    var placeholder: String {
-        switch self {
-        case .allWindows, .currentApp, .spaces: return "—"
-        case .stickyToggle:                     return "Not set"
-        }
-    }
 }
 
 @MainActor
@@ -555,7 +548,7 @@ struct SettingsView: View {
                     rejectMessage = nil
                     model.addBinding(action)
                 } label: {
-                    Label("Add", systemImage: "plus.circle")
+                    Text("+ Add")
                         .font(.system(size: 11, weight: .medium))
                         .padding(.horizontal, 6)
                         .frame(height: 24)
@@ -577,7 +570,7 @@ struct SettingsView: View {
                     }
                 },
                 accent: prefs.accent.color,
-                placeholder: action.placeholder,
+                placeholder: "Not set",
                 beginRecording: row.wantsRecording,
                 onBeginRecordingHandled: { model.consumeRecordingRequest(action, id: row.id) }
             )
@@ -587,12 +580,13 @@ struct SettingsView: View {
                     rejectMessage = nil
                     model.removeBinding(action, id: row.id)
                 } label: {
-                    Image(systemName: "minus.circle.fill")
+                    Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Remove this shortcut")
+                .accessibilityLabel("Remove shortcut")
             }
         }
     }
@@ -697,6 +691,7 @@ struct SettingsView: View {
                 } label: {
                     Text("+ Add app")
                         .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(prefs.accent.color)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -729,6 +724,8 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .help("Remove this app")
+            .accessibilityLabel("Remove app")
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 6)
@@ -1027,11 +1024,19 @@ final class KeyRecorderNSView: NSView {
 
         label.alignment = .center
         label.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
+        // Centered, but never wider than the field — long combos truncate
+        // instead of spilling past the rounded border.
+        let centerX = label.centerXAnchor.constraint(equalTo: centerXAnchor)
+        centerX.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor)
+            centerX,
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 4),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4)
         ])
         redraw()
     }
