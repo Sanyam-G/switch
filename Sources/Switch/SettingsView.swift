@@ -8,6 +8,9 @@ import ServiceManagement
 struct EditableBinding: Identifiable, Equatable {
     let id: UUID
     var binding: HotkeyBinding
+    /// One-shot request: the recorder field for this row should start recording.
+    /// Set by "+ Add", cleared once the field has picked it up.
+    var wantsRecording: Bool = false
 
     init(_ binding: HotkeyBinding, id: UUID = UUID()) {
         self.id = id
@@ -91,10 +94,16 @@ final class SettingsModel: ObservableObject {
     }
 
     func addBinding(_ action: HotkeyAction) {
-        mutate(action) { list in
-            // Avoid appending a second empty placeholder row.
-            guard !list.contains(where: { $0.binding.isEmpty }) else { return }
-            list.append(EditableBinding(.empty))
+        // Empty rows never persist, so no need to write through to HotkeyConfig.
+        mutate(action, persisting: false) { list in
+            if let idx = list.firstIndex(where: { $0.binding.isEmpty }) {
+                // Re-arm the existing empty row instead of stacking another.
+                list[idx].wantsRecording = true
+            } else {
+                var row = EditableBinding(.empty)
+                row.wantsRecording = true
+                list.append(row)
+            }
         }
     }
 
@@ -117,6 +126,14 @@ final class SettingsModel: ObservableObject {
         }
     }
 
+    /// The recorder field picked up a `wantsRecording` request; clear the flag.
+    func consumeRecordingRequest(_ action: HotkeyAction, id: UUID) {
+        mutate(action, persisting: false) { list in
+            guard let idx = list.firstIndex(where: { $0.id == id }) else { return }
+            list[idx].wantsRecording = false
+        }
+    }
+
     /// Action that already holds a binding clashing with `b`, across all actions
     /// (the row being edited is excluded). Nil when `b` is free.
     func duplicateOwner(of b: HotkeyBinding, excluding id: UUID) -> HotkeyAction? {
@@ -132,13 +149,14 @@ final class SettingsModel: ObservableObject {
         refresh()
     }
 
-    private func mutate(_ action: HotkeyAction, _ change: (inout [EditableBinding]) -> Void) {
+    private func mutate(_ action: HotkeyAction, persisting: Bool = true, _ change: (inout [EditableBinding]) -> Void) {
         switch action {
-        case .allWindows:    change(&allWindowsBindings); persist(action)
-        case .currentApp:    change(&currentAppBindings); persist(action)
-        case .spaces:        change(&spacesBindings); persist(action)
-        case .stickyToggle:  change(&stickyToggleBindings); persist(action)
+        case .allWindows:    change(&allWindowsBindings)
+        case .currentApp:    change(&currentAppBindings)
+        case .spaces:        change(&spacesBindings)
+        case .stickyToggle:  change(&stickyToggleBindings)
         }
+        if persisting { persist(action) }
     }
 
     private func persist(_ action: HotkeyAction) {
@@ -559,7 +577,9 @@ struct SettingsView: View {
                     }
                 },
                 accent: prefs.accent.color,
-                placeholder: action.placeholder
+                placeholder: action.placeholder,
+                beginRecording: row.wantsRecording,
+                onBeginRecordingHandled: { model.consumeRecordingRequest(action, id: row.id) }
             )
             .frame(width: 110, height: 24)
             if model.canRemoveBinding(action, id: row.id) {
@@ -945,6 +965,10 @@ struct KeyRecorderField: NSViewRepresentable {
     let onCapture: (HotkeyBinding) -> Void
     var accent: Color = .accentColor
     var placeholder: String = "—"
+    /// One-shot: start recording as soon as the view is set up (used by "+ Add").
+    /// Call `onBeginRecordingHandled` to clear the flag upstream once consumed.
+    var beginRecording: Bool = false
+    var onBeginRecordingHandled: (() -> Void)? = nil
 
     func makeNSView(context: Context) -> KeyRecorderNSView {
         let v = KeyRecorderNSView()
@@ -962,6 +986,15 @@ struct KeyRecorderField: NSViewRepresentable {
         view.onCapture = onCapture
         view.accentNSColor = NSColor(accent)
         view.placeholder = placeholder
+        if beginRecording {
+            let handled = onBeginRecordingHandled
+            // Async so the view is in its window (first responder works) and we
+            // don't mutate SwiftUI state during the update pass.
+            DispatchQueue.main.async {
+                view.beginRecording()
+                handled?()
+            }
+        }
     }
 }
 
@@ -1009,6 +1042,11 @@ final class KeyRecorderNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         if recording { stopRecording(commit: false) } else { startRecording() }
+    }
+
+    /// Programmatic entry point for "+ Add" — no-op when already recording.
+    func beginRecording() {
+        if !recording { startRecording() }
     }
 
     override func resignFirstResponder() -> Bool {
