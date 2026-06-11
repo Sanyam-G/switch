@@ -98,7 +98,20 @@ final class SettingsModel: ObservableObject {
         }
     }
 
+    /// Whether this row may be removed. All windows / Current app must keep at
+    /// least one real binding — otherwise the persistence layer would drop the
+    /// defaults key and the default combo would silently come back while the UI
+    /// shows nothing. Sticky toggle stays fully optional.
+    func canRemoveBinding(_ action: HotkeyAction, id: UUID) -> Bool {
+        guard action != .stickyToggle else { return true }
+        let list = bindings(for: action)
+        guard let row = list.first(where: { $0.id == id }) else { return false }
+        if row.binding.isEmpty { return true }
+        return list.filter { !$0.binding.isEmpty }.count > 1
+    }
+
     func removeBinding(_ action: HotkeyAction, id: UUID) {
+        guard canRemoveBinding(action, id: id) else { return }
         mutate(action) { list in
             list.removeAll { $0.id == id }
         }
@@ -539,16 +552,18 @@ struct SettingsView: View {
                 placeholder: action.placeholder
             )
             .frame(width: 110, height: 24)
-            Button {
-                rejectMessage = nil
-                model.removeBinding(action, id: row.id)
-            } label: {
-                Image(systemName: "minus.circle.fill")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+            if model.canRemoveBinding(action, id: row.id) {
+                Button {
+                    rejectMessage = nil
+                    model.removeBinding(action, id: row.id)
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Remove this shortcut")
             }
-            .buttonStyle(.plain)
-            .help("Remove this shortcut")
         }
     }
 
