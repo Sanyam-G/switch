@@ -64,42 +64,44 @@ final class HotkeyConfig {
     private let appKey = "switch.hotkey.currentApp"
     private let spacesKey = "switch.hotkey.spaces"
     private let stickyKey = "switch.hotkey.stickyToggle"
+    private let seededKey = "switch.hotkey.seeded"
 
     static let didChangeNotification = Notification.Name("com.sanyamgarg.switch.hotkeyConfigDidChange")
 
-    private init() {}
-
-    var allWindows: HotkeyBinding {
-        get { load(allKey) ?? .defaultAllWindows }
-        set { save(newValue, key: allKey) }
+    // Seed the three arming hotkeys once so a fresh install gets defaults; after that nil means disabled.
+    private init() {
+        if !defaults.bool(forKey: seededKey) {
+            if load(allKey) == nil { write(.defaultAllWindows, key: allKey) }
+            if load(appKey) == nil { write(.defaultCurrentApp, key: appKey) }
+            if load(spacesKey) == nil { write(.defaultSpaces, key: spacesKey) }
+            defaults.set(true, forKey: seededKey)
+        }
     }
 
-    var currentApp: HotkeyBinding {
-        get { load(appKey) ?? .defaultCurrentApp }
-        set { save(newValue, key: appKey) }
+    var allWindows: HotkeyBinding? {
+        get { load(allKey) }
+        set { store(newValue, key: allKey) }
     }
 
-    var spaces: HotkeyBinding {
-        get { load(spacesKey) ?? .defaultSpaces }
-        set { save(newValue, key: spacesKey) }
+    var currentApp: HotkeyBinding? {
+        get { load(appKey) }
+        set { store(newValue, key: appKey) }
+    }
+
+    var spaces: HotkeyBinding? {
+        get { load(spacesKey) }
+        set { store(newValue, key: spacesKey) }
     }
 
     var stickyToggle: HotkeyBinding? {
         get { load(stickyKey) }
-        set {
-            if let nv = newValue {
-                save(nv, key: stickyKey)
-            } else {
-                defaults.removeObject(forKey: stickyKey)
-                NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
-            }
-        }
+        set { store(newValue, key: stickyKey) }
     }
 
     func resetToDefaults() {
-        defaults.removeObject(forKey: allKey)
-        defaults.removeObject(forKey: appKey)
-        defaults.removeObject(forKey: spacesKey)
+        write(.defaultAllWindows, key: allKey)
+        write(.defaultCurrentApp, key: appKey)
+        write(.defaultSpaces, key: spacesKey)
         defaults.removeObject(forKey: stickyKey)
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
@@ -109,11 +111,17 @@ final class HotkeyConfig {
         return try? JSONDecoder().decode(HotkeyBinding.self, from: data)
     }
 
-    private func save(_ b: HotkeyBinding, key: String) {
-        if let data = try? JSONEncoder().encode(b) {
+    private func store(_ b: HotkeyBinding?, key: String) {
+        if let b, let data = try? JSONEncoder().encode(b) {
             defaults.set(data, forKey: key)
-            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+        } else {
+            defaults.removeObject(forKey: key)
         }
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+    }
+
+    private func write(_ b: HotkeyBinding, key: String) {
+        if let data = try? JSONEncoder().encode(b) { defaults.set(data, forKey: key) }
     }
 }
 

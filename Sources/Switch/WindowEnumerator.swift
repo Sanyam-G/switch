@@ -95,7 +95,7 @@ enum WindowEnumerator {
     }
 
     static func enumerate(scope: HotkeyManager.Mode, frontmostPID: pid_t?) -> Enumeration {
-        let activeSpace = enumerate(option: [.optionOnScreenOnly, .excludeDesktopElements], scope: scope, frontmostPID: frontmostPID)
+        let activeSpace = pruneGhosts(enumerate(option: [.optionOnScreenOnly, .excludeDesktopElements], scope: scope, frontmostPID: frontmostPID))
 
         // UserDefaults read direct — SwitchPreferences is @MainActor and this
         // static func runs from prewarm background queues.
@@ -112,10 +112,11 @@ enum WindowEnumerator {
         return Enumeration(activeSpace: activeSpace, crossSpace: annotated)
     }
 
-    private static func annotateAndPrune(_ candidates: [WindowInfo]) -> [WindowInfo] {
-        var minimizedIDs: Set<CGWindowID> = []
-        var axBackedIDs: Set<CGWindowID> = []
-        for pid in Set(candidates.map { $0.pid }) {
+    // AX-backed and minimized window IDs for the given processes; an orderedOut leftover appears in neither.
+    private static func axWindowState(for pids: Set<pid_t>) -> (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>) {
+        var axBacked: Set<CGWindowID> = []
+        var minimized: Set<CGWindowID> = []
+        for pid in pids {
             let appAX = AXUIElementCreateApplication(pid)
             var ref: CFTypeRef?
             guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success,
@@ -123,15 +124,33 @@ enum WindowEnumerator {
             for ax in axWindows {
                 var id: CGWindowID = 0
                 if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
-                    axBackedIDs.insert(id)
+                    axBacked.insert(id)
                     var minRef: CFTypeRef?
                     if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
                        let isMin = minRef as? Bool, isMin {
-                        minimizedIDs.insert(id)
+                        minimized.insert(id)
                     }
                 }
             }
         }
+        return (axBacked, minimized)
+    }
+
+    // Drop orphaned on-screen entries: no live AX window and no Space. Real windows always have a Space.
+    private static func pruneGhosts(_ windows: [WindowInfo]) -> [WindowInfo] {
+        guard !windows.isEmpty else { return windows }
+        let axBacked = axWindowState(for: Set(windows.map { $0.pid })).axBacked
+        let cid = CGSMainConnectionID()
+        return windows.filter { w in
+            if axBacked.contains(w.id) { return true }
+            let arr = [NSNumber(value: w.id)] as CFArray
+            let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
+            return !spaces.isEmpty
+        }
+    }
+
+    private static func annotateAndPrune(_ candidates: [WindowInfo]) -> [WindowInfo] {
+        let (axBackedIDs, minimizedIDs) = axWindowState(for: Set(candidates.map { $0.pid }))
         let cid = CGSMainConnectionID()
         let metadata = spaceMetadata(cid: cid)
         return candidates.compactMap { w in

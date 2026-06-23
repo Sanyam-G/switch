@@ -6,9 +6,9 @@ import ServiceManagement
 @MainActor
 final class SettingsModel: ObservableObject {
     @Published var launchAtLogin: Bool = false
-    @Published var allWindows: HotkeyBinding = HotkeyConfig.shared.allWindows
-    @Published var currentApp: HotkeyBinding = HotkeyConfig.shared.currentApp
-    @Published var spaces: HotkeyBinding = HotkeyConfig.shared.spaces
+    @Published var allWindows: HotkeyBinding? = HotkeyConfig.shared.allWindows
+    @Published var currentApp: HotkeyBinding? = HotkeyConfig.shared.currentApp
+    @Published var spaces: HotkeyBinding? = HotkeyConfig.shared.spaces
     @Published var stickyToggle: HotkeyBinding? = HotkeyConfig.shared.stickyToggle
 
     init() { refresh() }
@@ -39,17 +39,17 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    func updateAllWindows(_ b: HotkeyBinding) {
+    func updateAllWindows(_ b: HotkeyBinding?) {
         HotkeyConfig.shared.allWindows = b
         allWindows = b
     }
 
-    func updateCurrentApp(_ b: HotkeyBinding) {
+    func updateCurrentApp(_ b: HotkeyBinding?) {
         HotkeyConfig.shared.currentApp = b
         currentApp = b
     }
 
-    func updateSpaces(_ b: HotkeyBinding) {
+    func updateSpaces(_ b: HotkeyBinding?) {
         HotkeyConfig.shared.spaces = b
         spaces = b
     }
@@ -151,13 +151,13 @@ struct SettingsView: View {
                 section("Hotkeys") {
                     VStack(alignment: .leading, spacing: 12) {
                         hotkeyRow(label: "All windows", binding: model.allWindows) { b in
-                            apply(b) { model.updateAllWindows($0) }
+                            applyHotkey(b) { model.updateAllWindows($0) }
                         }
                         hotkeyRow(label: "Current app", binding: model.currentApp) { b in
-                            apply(b) { model.updateCurrentApp($0) }
+                            applyHotkey(b) { model.updateCurrentApp($0) }
                         }
                         hotkeyRow(label: "Spaces", binding: model.spaces) { b in
-                            apply(b) { model.updateSpaces($0) }
+                            applyHotkey(b) { model.updateSpaces($0) }
                         }
                         stickyToggleRow
                         if let msg = rejectMessage {
@@ -180,6 +180,14 @@ struct SettingsView: View {
                     }
                     .padding(14)
                     .background(rowBackground)
+                }
+
+                section("Switch") {
+                    row(title: "Quit Switch",
+                        detail: "Relaunch any time from Spotlight or your Applications folder.") {
+                        Button("Quit") { NSApp.terminate(nil) }
+                            .controlSize(.small)
+                    }
                 }
             }
             .padding(24)
@@ -328,11 +336,33 @@ struct SettingsView: View {
                     }
                 }
 
+                advancedSection
+
                 crossSpaceSection
 
                 blacklistSection
             }
             .padding(24)
+        }
+    }
+
+    private var advancedSection: some View {
+        section("Advanced") {
+            VStack(spacing: 0) {
+                row(title: "Picker activation delay",
+                    detail: "Hold the hotkey this long before the picker appears. A quick tap switches to your previous window without showing it. \(Int(prefs.pickerActivationDelay))ms") {
+                    Slider(value: $prefs.pickerActivationDelay, in: 0...300, step: 10)
+                        .frame(width: 140)
+                        .tint(prefs.accent.color)
+                }
+                Divider().opacity(0.4)
+                row(title: "Reverse with Shift tap",
+                    detail: "While holding the hotkey, tap Shift to step backward. ⇧-Tab still works too.") {
+                    Toggle("", isOn: $prefs.shiftTapReverses)
+                        .labelsHidden().toggleStyle(.switch)
+                        .tint(prefs.accent.color)
+                }
+            }
         }
     }
 
@@ -611,13 +641,22 @@ struct SettingsView: View {
         .background(rowBackground)
     }
 
-    private func hotkeyRow(label: String, binding: HotkeyBinding, onCapture: @escaping (HotkeyBinding) -> Void) -> some View {
+    private func hotkeyRow(label: String, binding: HotkeyBinding?, onCapture: @escaping (HotkeyBinding?) -> Void) -> some View {
         HStack(spacing: 12) {
             Text(label)
                 .font(.system(size: 13, weight: .medium))
                 .frame(width: 100, alignment: .leading)
-            KeyRecorderField(initialBinding: binding, onCapture: onCapture, accent: prefs.accent.color)
-                .frame(width: 180, height: 28)
+            KeyRecorderField(
+                initialBinding: binding ?? HotkeyBinding(keyCode: 0, modifiersRaw: 0),
+                onCapture: { onCapture($0) },
+                accent: prefs.accent.color,
+                placeholder: "Not set"
+            )
+            .frame(width: 180, height: 28)
+            if binding != nil {
+                Button("Clear") { onCapture(nil) }
+                    .controlSize(.small)
+            }
             Spacer()
         }
     }
@@ -654,6 +693,20 @@ struct SettingsView: View {
     }
 
     private func apply(_ b: HotkeyBinding, save: (HotkeyBinding) -> Void) {
+        if let msg = HotkeyValidator.reject(keyCode: b.keyCode, flags: b.cgFlags) {
+            rejectMessage = msg
+        } else {
+            rejectMessage = nil
+            save(b)
+        }
+    }
+
+    private func applyHotkey(_ b: HotkeyBinding?, save: (HotkeyBinding?) -> Void) {
+        guard let b else {
+            rejectMessage = nil
+            save(nil)
+            return
+        }
         if let msg = HotkeyValidator.reject(keyCode: b.keyCode, flags: b.cgFlags) {
             rejectMessage = msg
         } else {

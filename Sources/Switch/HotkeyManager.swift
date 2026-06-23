@@ -26,6 +26,7 @@ final class HotkeyManager {
     private var armed: Mode?
     private var armedAt: Date?
     private var advanced = false
+    private var lastShift = false
     private static let stickyQuickTapMS: Double = 200
     private var wakeToken: NSObjectProtocol?
     private var screensWakeToken: NSObjectProtocol?
@@ -161,7 +162,7 @@ final class HotkeyManager {
                 return nil
             }
 
-            if allBinding.matchesTrigger(keyCode: kc, flags: flags) {
+            if let allBinding, allBinding.matchesTrigger(keyCode: kc, flags: flags) {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     if armed == nil { armed = .allWindows; armedAt = Date(); advanced = false; onArm?(.allWindows) }
@@ -169,7 +170,7 @@ final class HotkeyManager {
                 }
                 return nil
             }
-            if spacesBinding.matchesTrigger(keyCode: kc, flags: flags) {
+            if let spacesBinding, spacesBinding.matchesTrigger(keyCode: kc, flags: flags) {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     if armed == nil { armed = .spaces; armedAt = Date(); advanced = false; onArm?(.spaces) }
@@ -177,7 +178,7 @@ final class HotkeyManager {
                 }
                 return nil
             }
-            if appBinding.matchesTrigger(keyCode: kc, flags: flags) {
+            if let appBinding, appBinding.matchesTrigger(keyCode: kc, flags: flags) {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     if armed == nil { armed = .currentApp; armedAt = Date(); advanced = false; onArm?(.currentApp) }
@@ -260,23 +261,24 @@ final class HotkeyManager {
         }
 
         if type == .flagsChanged {
-            let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
-            let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < Self.stickyQuickTapMS } ?? false) && !advanced
-            if armed == .allWindows && !HotkeyConfig.shared.allWindows.modifiersHeld(flags) {
-                if !sticky || quickTap {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.armed = nil
-                        self?.onCommit?()
-                    }
+            let shiftRising = shift && !lastShift
+            lastShift = shift
+
+            guard let mode = armed else { return Unmanaged.passUnretained(event) }
+            let armingHeld = armingModifiersHeld(mode, flags)
+
+            if shiftRising && armingHeld
+                && UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey) {
+                DispatchQueue.main.async { [weak self] in
+                    self?.advanced = true
+                    self?.onAdvance?(true)
                 }
-            } else if armed == .currentApp && !HotkeyConfig.shared.currentApp.modifiersHeld(flags) {
-                if !sticky || quickTap {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.armed = nil
-                        self?.onCommit?()
-                    }
-                }
-            } else if armed == .spaces && !HotkeyConfig.shared.spaces.modifiersHeld(flags) {
+                return nil
+            }
+
+            if !armingHeld {
+                let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
+                let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < Self.stickyQuickTapMS } ?? false) && !advanced
                 if !sticky || quickTap {
                     DispatchQueue.main.async { [weak self] in
                         self?.armed = nil
@@ -287,6 +289,16 @@ final class HotkeyManager {
         }
 
         return Unmanaged.passUnretained(event)
+    }
+
+    private func armingModifiersHeld(_ mode: Mode, _ flags: CGEventFlags) -> Bool {
+        let binding: HotkeyBinding?
+        switch mode {
+        case .allWindows: binding = HotkeyConfig.shared.allWindows
+        case .currentApp: binding = HotkeyConfig.shared.currentApp
+        case .spaces:     binding = HotkeyConfig.shared.spaces
+        }
+        return binding?.modifiersHeld(flags) ?? false
     }
 
     /// Main-thread only (all mutations of `armed` happen on main).

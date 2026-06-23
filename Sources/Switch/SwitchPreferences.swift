@@ -8,6 +8,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let defaultThumbnailHeight = 130.0
     nonisolated static let defaultAppIconSize = 32.0
     nonisolated static let defaultGridColumns = 4
+    nonisolated static let defaultPickerActivationDelay = 130.0
 
     enum AccentChoice: String, CaseIterable, Identifiable {
         case system, rose, blue, mint, peach, lavender, monochrome
@@ -124,6 +125,14 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(Array(pinnedBundleIDs), forKey: SwitchPreferences.pinnedBundleIDsKey) }
     }
 
+    @Published var pickerActivationDelay: Double {
+        didSet { UserDefaults.standard.set(pickerActivationDelay, forKey: SwitchPreferences.pickerActivationDelayKey) }
+    }
+
+    @Published var shiftTapReverses: Bool {
+        didSet { UserDefaults.standard.set(shiftTapReverses, forKey: SwitchPreferences.shiftTapReversesKey) }
+    }
+
     private let accentKey = "switch.accent"
     private let crossSpaceKey = "switch.showCrossSpace"
     nonisolated static let stickyModeKey = "switch.stickyMode"
@@ -146,6 +155,8 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let appIconSizeKey = "switch.appIconSize"
     nonisolated static let gridColumnsKey = "switch.gridColumns"
     nonisolated static let pinnedBundleIDsKey = "switch.pinnedBundleIDs"
+    nonisolated static let pickerActivationDelayKey = "switch.pickerActivationDelay"
+    nonisolated static let shiftTapReversesKey = "switch.shiftTapReverses"
 
     private init() {
         accent = AccentChoice(rawValue: UserDefaults.standard.string(forKey: accentKey) ?? "") ?? .system
@@ -170,5 +181,7 @@ final class SwitchPreferences: ObservableObject {
         appIconSize = (UserDefaults.standard.object(forKey: SwitchPreferences.appIconSizeKey) as? Double) ?? Self.defaultAppIconSize
         gridColumns = (UserDefaults.standard.object(forKey: SwitchPreferences.gridColumnsKey) as? Int) ?? Self.defaultGridColumns
         pinnedBundleIDs = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.pinnedBundleIDsKey) ?? [])
+        pickerActivationDelay = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? Self.defaultPickerActivationDelay
+        shiftTapReverses = UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey)
     }
 }

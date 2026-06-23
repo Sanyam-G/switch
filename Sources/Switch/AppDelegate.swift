@@ -34,7 +34,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clickAwayMonitor: Any?
     private var pendingPresent: DispatchWorkItem?
     private var cancellables: Set<AnyCancellable> = []
-    private static let quickFlipWindow: TimeInterval = 0.13
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -211,6 +210,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // Relaunching while already running reopens Settings — the way back when the menu bar icon is hidden.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if requiredPermissionsGranted {
+            SettingsWindow.shared.show()
+        } else {
+            showOnboarding()
+        }
+        return true
+    }
+
     private var requiredPermissionsGranted: Bool {
         let thumbnailsEnabled = (UserDefaults.standard.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
         let screenCaptureOK = !thumbnailsEnabled || CGPreflightScreenCaptureAccess()
@@ -224,7 +233,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window?.present()
         }
         pendingPresent = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.quickFlipWindow, execute: work)
+        let ms = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? SwitchPreferences.defaultPickerActivationDelay
+        DispatchQueue.main.asyncAfter(deadline: .now() + ms / 1000.0, execute: work)
     }
 
     private func presentNowIfPending(window: SwitcherWindow) {
