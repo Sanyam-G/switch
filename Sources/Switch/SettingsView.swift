@@ -265,6 +265,13 @@ struct SettingsView: View {
                                 .labelsHidden().toggleStyle(.switch)
                                 .tint(prefs.accent.color)
                         }
+                        Divider().opacity(0.4)
+                        row(title: "Show window title first",
+                            detail: "Put the window title ahead of the app name in each tile and row.") {
+                            Toggle("", isOn: $prefs.showTitleFirst)
+                                .labelsHidden().toggleStyle(.switch)
+                                .tint(prefs.accent.color)
+                        }
                     }
                 }
 
@@ -320,7 +327,7 @@ struct SettingsView: View {
                         }
                         Divider().opacity(0.4)
                         row(title: "App icon size",
-                            detail: "Size of the app icon badge on each tile. \(Int(prefs.appIconSize))pt") {
+                            detail: "Size of the app icon on each tile and list row. \(Int(prefs.appIconSize))pt") {
                             Slider(value: $prefs.appIconSize, in: 20...48, step: 2)
                                 .frame(width: 140)
                                 .tint(prefs.accent.color)
@@ -583,6 +590,23 @@ struct SettingsView: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                         Text("Accent shows up in the selection highlight and across this Settings window.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .background(rowBackground)
+                }
+
+                section("Background") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Picker("", selection: $prefs.backgroundBlur) {
+                            ForEach(SwitchPreferences.BackgroundBlur.allCases) { b in
+                                Text(b.label).tag(b)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        Text("How much the desktop blurs through the picker background.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }

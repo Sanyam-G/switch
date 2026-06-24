@@ -37,8 +37,35 @@ final class SwitchPreferences: ObservableObject {
         }
     }
 
+    enum BackgroundBlur: String, CaseIterable, Identifiable {
+        case light, medium, heavy
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .light: return "Light"
+            case .medium: return "Medium"
+            case .heavy: return "Heavy"
+            }
+        }
+        var material: Material {
+            switch self {
+            case .light: return .ultraThinMaterial
+            case .medium: return .thinMaterial
+            case .heavy: return .regularMaterial
+            }
+        }
+    }
+
     @Published var accent: AccentChoice {
         didSet { UserDefaults.standard.set(accent.rawValue, forKey: accentKey) }
+    }
+
+    @Published var backgroundBlur: BackgroundBlur {
+        didSet { UserDefaults.standard.set(backgroundBlur.rawValue, forKey: backgroundBlurKey) }
+    }
+
+    @Published var showTitleFirst: Bool {
+        didSet { UserDefaults.standard.set(showTitleFirst, forKey: showTitleFirstKey) }
     }
 
     @Published var showCrossSpace: Bool {
@@ -134,6 +161,8 @@ final class SwitchPreferences: ObservableObject {
     }
 
     private let accentKey = "switch.accent"
+    private let backgroundBlurKey = "switch.backgroundBlur"
+    private let showTitleFirstKey = "switch.showTitleFirst"
     private let crossSpaceKey = "switch.showCrossSpace"
     nonisolated static let stickyModeKey = "switch.stickyMode"
     private let disableMouseKey = "switch.disableMouse"
@@ -160,6 +189,8 @@ final class SwitchPreferences: ObservableObject {
 
     private init() {
         accent = AccentChoice(rawValue: UserDefaults.standard.string(forKey: accentKey) ?? "") ?? .system
+        backgroundBlur = BackgroundBlur(rawValue: UserDefaults.standard.string(forKey: backgroundBlurKey) ?? "") ?? .light
+        showTitleFirst = UserDefaults.standard.bool(forKey: showTitleFirstKey)
         showCrossSpace = (UserDefaults.standard.object(forKey: crossSpaceKey) as? Bool) ?? true
         stickyMode = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
         disableMouse = UserDefaults.standard.bool(forKey: "switch.disableMouse")

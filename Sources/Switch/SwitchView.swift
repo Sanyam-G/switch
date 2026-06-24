@@ -82,7 +82,7 @@ struct SwitchView: View {
             if prefs.showHintStrip { hintStrip }
         }
         .frame(width: model.panelSize.width, height: model.panelSize.height)
-        .background(.ultraThinMaterial)
+        .background(prefs.backgroundBlur.material)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .scaleEffect(model.visible ? 1.0 : 0.97)
         .offset(y: model.visible ? 0 : (prefs.verticalList ? -5 : 0))
@@ -187,6 +187,7 @@ struct SwitchView: View {
                 HStack(spacing: 8) {
                     hint("↵", "switch space")
                     compactHint("↑↓", "nav")
+                    if prefs.shiftTapReverses { compactHint("⇧", "reverse") }
                     compactHint("1-9", "pick")
                     if prefs.typeToFilter { compactHint("type", "filter") }
                     compactHint("esc", "cancel")
@@ -196,6 +197,7 @@ struct SwitchView: View {
                 HStack(spacing: 8) {
                     hint("↵", "switch")
                     compactHint("↑↓", "nav")
+                    if prefs.shiftTapReverses { compactHint("⇧", "reverse") }
                     compactHint("1-9", "pick")
                     actionHint
                     if prefs.typeToFilter { compactHint("type", "filter") }
@@ -206,6 +208,7 @@ struct SwitchView: View {
                 HStack(spacing: 14) {
                     hint("↵", "switch")
                     hint("←↑↓→", "navigate")
+                    if prefs.shiftTapReverses { hint("⇧", "reverse") }
                     hint("1-9", "pick")
                     actionHint
                     if prefs.typeToFilter { hint("type", "filter") }
@@ -368,7 +371,8 @@ struct SwitchView: View {
             }
 
             HStack(spacing: 6) {
-                Text(window.appName)
+                let titleFirst = prefs.showTitleFirst && !window.title.isEmpty
+                Text(titleFirst ? window.title : window.appName)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -376,7 +380,7 @@ struct SwitchView: View {
                     Text("·")
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
-                    Text(window.title)
+                    Text(titleFirst ? window.appName : window.title)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -402,20 +406,21 @@ struct SwitchView: View {
                 if let icon {
                     Image(nsImage: icon)
                         .resizable()
-                        .frame(width: 32, height: 32)
+                        .frame(width: prefs.appIconSize, height: prefs.appIconSize)
                         .scaleEffect(selected ? 1.08 : 1.0)
                         .animation(.spring(response: 0.20, dampingFraction: 0.82), value: selected)
                 } else {
-                    Color.clear.frame(width: 32, height: 32)
+                    Color.clear.frame(width: prefs.appIconSize, height: prefs.appIconSize)
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(window.appName)
+                let titleFirst = prefs.showTitleFirst && !window.title.isEmpty
+                Text(titleFirst ? window.title : window.appName)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 if !window.title.isEmpty {
-                    Text(window.title)
+                    Text(titleFirst ? window.appName : window.title)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

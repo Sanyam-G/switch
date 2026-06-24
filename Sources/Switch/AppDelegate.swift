@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,
-        userDriverDelegate: nil
+        userDriverDelegate: self
     )
     #endif
     private var model: SwitchModel?
@@ -301,6 +301,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onboardingWindow?.makeKeyAndOrderFront(nil)
     }
 }
+
+#if canImport(Sparkle)
+extension AppDelegate: SPUStandardUserDriverDelegate {
+    // An accessory app's windows are invisible to app switchers; go regular while Sparkle's update UI is up.
+    func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func standardUserDriverWillFinishUpdateSession() {
+        let settingsOpen = MainActor.assumeIsolated { SettingsWindow.shared.isVisible }
+        if !settingsOpen { NSApp.setActivationPolicy(.accessory) }
+    }
+}
+#endif
 
 final class SwitcherWindow: NSPanel {
     private let model: SwitchModel
