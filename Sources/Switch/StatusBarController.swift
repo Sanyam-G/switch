@@ -2,11 +2,15 @@ import AppKit
 
 @MainActor
 final class StatusBarController {
-    private let item: NSStatusItem
+    private var item: NSStatusItem
 
     init() {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        configure(item)
+        item.isVisible = !SwitchPreferences.shared.hideMenuBarIcon
+    }
 
+    private func configure(_ item: NSStatusItem) {
         if let button = item.button {
             let img = NSImage(systemSymbolName: "square.on.square", accessibilityDescription: "Switch")
             img?.isTemplate = true
@@ -36,11 +40,18 @@ final class StatusBarController {
         menu.addItem(quit)
 
         item.menu = menu
-        setHidden(SwitchPreferences.shared.hideMenuBarIcon)
     }
 
+    // Showing recreates the item: macOS won't reliably bring back an icon the user dragged off via isVisible alone.
     func setHidden(_ hidden: Bool) {
-        item.isVisible = !hidden
+        if hidden {
+            item.isVisible = false
+        } else {
+            NSStatusBar.system.removeStatusItem(item)
+            item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+            configure(item)
+            item.isVisible = true
+        }
     }
 
     @objc private func showOnboarding() {
