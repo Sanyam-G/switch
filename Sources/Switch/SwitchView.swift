@@ -182,56 +182,26 @@ struct SwitchView: View {
     }
 
     private var hintStrip: some View {
-        Group {
-            if isSpaceMode {
-                HStack(spacing: 8) {
-                    hint("↵", "switch space")
-                    compactHint("↑↓", "nav")
-                    if prefs.shiftTapReverses { compactHint("⇧", "reverse") }
-                    compactHint("1-9", "pick")
-                    if prefs.typeToFilter { compactHint("type", "filter") }
-                    compactHint("esc", "cancel")
-                    Spacer(minLength: 0)
-                }
-            } else if prefs.verticalList {
-                HStack(spacing: 8) {
-                    hint("↵", "switch")
-                    compactHint("↑↓", "nav")
-                    if prefs.shiftTapReverses { compactHint("⇧", "reverse") }
-                    compactHint("1-9", "pick")
-                    actionHint
-                    if prefs.typeToFilter { compactHint("type", "filter") }
-                    compactHint("esc", "cancel")
-                    Spacer(minLength: 0)
-                }
-            } else {
-                HStack(spacing: 14) {
-                    hint("↵", "switch")
-                    hint("←↑↓→", "navigate")
-                    if prefs.shiftTapReverses { hint("⇧", "reverse") }
-                    hint("1-9", "pick")
-                    actionHint
-                    if prefs.typeToFilter { hint("type", "filter") }
-                    hint("esc", "cancel")
-                    Spacer()
-                }
-            }
+        HStack(spacing: 18) {
+            hint("↵", isSpaceMode ? "switch space" : "switch")
+            hint(navKey, "navigate")
+            if prefs.shiftTapReverses { hint("⇧", "reverse") }
+            if !isSpaceMode { hint(closeKey, "close") }
+            if prefs.typeToFilter { hint("type", "filter") }
+            hint("esc", "cancel")
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 8)
         .background(Color.black.opacity(0.18))
     }
 
-    private var actionHint: some View {
-        hint(actionHintKey, "close/quit/hide")
+    private var navKey: String {
+        (prefs.verticalList || isSpaceMode) ? "↑↓" : "←↑↓→"
     }
 
-    private var actionHintKey: String {
-        (prefs.stickyMode || !prefs.typeToFilter) ? "⌘W/Q/H" : "⇧⌘W/Q/H"
-    }
-
-    private func compactHint(_ key: String, _ label: String) -> some View {
-        hint(key, label, showLabel: false)
+    private var closeKey: String {
+        (prefs.stickyMode || !prefs.typeToFilter) ? "⌘W" : "⇧⌘W"
     }
 
     private func stoplights(for window: WindowInfo) -> some View {
@@ -284,7 +254,7 @@ struct SwitchView: View {
         .buttonStyle(.plain)
     }
 
-    private func hint(_ key: String, _ label: String, showLabel: Bool = true) -> some View {
+    private func hint(_ key: String, _ label: String) -> some View {
         HStack(spacing: 5) {
             Text(key)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -296,11 +266,9 @@ struct SwitchView: View {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(Color.white.opacity(0.10))
                 )
-            if showLabel {
-                Text(label)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
         }
         .fixedSize()
         .help(label)

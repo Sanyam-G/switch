@@ -50,8 +50,8 @@ final class SwitchPreferences: ObservableObject {
         var material: Material {
             switch self {
             case .light: return .ultraThinMaterial
-            case .medium: return .thinMaterial
-            case .heavy: return .regularMaterial
+            case .medium: return .regularMaterial
+            case .heavy: return .ultraThickMaterial
             }
         }
     }

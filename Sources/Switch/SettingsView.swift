@@ -373,6 +373,33 @@ struct SettingsView: View {
         }
     }
 
+    private var blurPreview: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.36, green: 0.42, blue: 0.92),
+                    Color(red: 0.86, green: 0.44, blue: 0.78),
+                    Color(red: 0.98, green: 0.68, blue: 0.42)
+                ],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+            HStack(spacing: 8) {
+                ForEach(0..<3, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.white.opacity(0.18))
+                        .frame(width: 46, height: 34)
+                }
+            }
+            .padding(14)
+            .background(prefs.backgroundBlur.material)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(18)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 110)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
     private var crossSpaceSection: some View {
         section("Cross-Space") {
             VStack(spacing: 0) {
@@ -606,6 +633,7 @@ struct SettingsView: View {
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
+                        blurPreview
                         Text("How much the desktop blurs through the picker background.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
