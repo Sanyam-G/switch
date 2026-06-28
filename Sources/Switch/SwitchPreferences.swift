@@ -36,8 +36,25 @@ final class SwitchPreferences: ObservableObject {
         }
     }
 
+    enum LabelLayout: String, CaseIterable, Identifiable {
+        case automatic, appAbove, titleAbove, sameLine
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .automatic: return "Automatic"
+            case .appAbove: return "App name first"
+            case .titleAbove: return "Title first"
+            case .sameLine: return "Same line"
+            }
+        }
+    }
+
     @Published var accent: AccentChoice {
         didSet { UserDefaults.standard.set(accent.rawValue, forKey: accentKey) }
+    }
+
+    @Published var labelLayout: LabelLayout {
+        didSet { UserDefaults.standard.set(labelLayout.rawValue, forKey: labelLayoutKey) }
     }
 
     @Published var showCrossSpace: Bool {
@@ -125,6 +142,7 @@ final class SwitchPreferences: ObservableObject {
     }
 
     private let accentKey = "switch.accent"
+    private let labelLayoutKey = "switch.labelLayout"
     private let crossSpaceKey = "switch.showCrossSpace"
     nonisolated static let stickyModeKey = "switch.stickyMode"
     private let disableMouseKey = "switch.disableMouse"
@@ -149,6 +167,7 @@ final class SwitchPreferences: ObservableObject {
 
     private init() {
         accent = AccentChoice(rawValue: UserDefaults.standard.string(forKey: accentKey) ?? "") ?? .system
+        labelLayout = LabelLayout(rawValue: UserDefaults.standard.string(forKey: labelLayoutKey) ?? "") ?? .automatic
         showCrossSpace = (UserDefaults.standard.object(forKey: crossSpaceKey) as? Bool) ?? true
         stickyMode = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
         disableMouse = UserDefaults.standard.bool(forKey: "switch.disableMouse")

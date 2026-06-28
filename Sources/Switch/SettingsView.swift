@@ -560,6 +560,19 @@ struct SettingsView: View {
                     .background(rowBackground)
                 }
 
+                section("Labels") {
+                    row(title: "Label layout",
+                        detail: "How the app name and window title are arranged in each row.") {
+                        Picker("", selection: $prefs.labelLayout) {
+                            ForEach(SwitchPreferences.LabelLayout.allCases) { choice in
+                                Text(choice.label).tag(choice)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                    }
+                }
+
             }
             .padding(24)
         }

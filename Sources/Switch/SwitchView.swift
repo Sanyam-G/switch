@@ -56,6 +56,64 @@ struct SwitchView: View {
         }
     }
 
+    private func resolvedLabelLayout(grid: Bool) -> SwitchPreferences.LabelLayout {
+        let layout = prefs.labelLayout
+        guard layout == .automatic else { return layout }
+        return grid ? .sameLine : .appAbove
+    }
+
+    @ViewBuilder
+    private func windowLabel(for window: WindowInfo, grid: Bool) -> some View {
+        // Typography follows the slot, not the content: the top line is the
+        // bold "primary" treatment, the line beneath it is the muted "secondary".
+        let primarySize: CGFloat = grid ? 12 : 13
+        let secondarySize: CGFloat = grid ? 12 : 11
+        let hasTitle = !window.title.isEmpty
+
+        let appPrimary = Text(window.appName)
+            .font(.system(size: primarySize, weight: .medium))
+            .foregroundStyle(.primary).lineLimit(1)
+        let appSecondary = Text(window.appName)
+            .font(.system(size: secondarySize))
+            .foregroundStyle(.secondary).lineLimit(1)
+        let titlePrimary = Text(window.title)
+            .font(.system(size: primarySize, weight: .medium))
+            .foregroundStyle(.primary).lineLimit(1)
+        let titleSecondary = Text(window.title)
+            .font(.system(size: secondarySize))
+            .foregroundStyle(.secondary).lineLimit(1)
+
+        switch resolvedLabelLayout(grid: grid) {
+        case .appAbove, .automatic:
+            VStack(alignment: .leading, spacing: 2) {
+                appPrimary
+                if hasTitle { titleSecondary }
+            }
+        case .titleAbove:
+            // Title takes over the app name's bold primary slot; the app name
+            // demotes beneath it. Fall back to the app name when there's no title.
+            VStack(alignment: .leading, spacing: 2) {
+                if hasTitle {
+                    titlePrimary
+                    appSecondary
+                } else {
+                    appPrimary
+                }
+            }
+        case .sameLine:
+            HStack(spacing: 6) {
+                appPrimary
+                if hasTitle {
+                    Text("·")
+                        .font(.system(size: primarySize))
+                        .foregroundStyle(.tertiary)
+                    titleSecondary
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
     private func windowBadgeText(for window: WindowInfo) -> String {
         if window.isMinimized { return "MINIMIZED" }
         if window.isHidden { return "HIDDEN" }
@@ -367,23 +425,8 @@ struct SwitchView: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                Text(window.appName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                if !window.title.isEmpty {
-                    Text("·")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                    Text(window.title)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 2)
+            windowLabel(for: window, grid: true)
+                .padding(.horizontal, 2)
         }
         .padding(9)
         .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 9, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected))
@@ -409,18 +452,7 @@ struct SwitchView: View {
                     Color.clear.frame(width: 32, height: 32)
                 }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(window.appName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                if !window.title.isEmpty {
-                    Text(window.title)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
+            windowLabel(for: window, grid: false)
             Spacer(minLength: 6)
             if !isSpaceMode && prefs.showStoplights && prefs.verticalShowStoplights && !window.isWindowless {
                 stoplights(for: window)
