@@ -100,20 +100,10 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    /// Whether this row may be removed. All windows / Current app must keep at
-    /// least one real binding — otherwise the persistence layer would drop the
-    /// defaults key and the default combo would silently come back while the UI
-    /// shows nothing. Sticky toggle stays fully optional.
-    func canRemoveBinding(_ action: HotkeyAction, id: UUID) -> Bool {
-        guard action != .stickyToggle else { return true }
-        let list = bindings(for: action)
-        guard let row = list.first(where: { $0.id == id }) else { return false }
-        if row.binding.isEmpty { return true }
-        return list.filter { !$0.binding.isEmpty }.count > 1
-    }
-
+    /// Removing every binding leaves the action disabled — the seeded defaults key
+    /// keeps an empty list from silently resurrecting the default combo, so this is
+    /// allowed for all actions (matching the clearable-hotkeys behaviour).
     func removeBinding(_ action: HotkeyAction, id: UUID) {
-        guard canRemoveBinding(action, id: id) else { return }
         mutate(action) { list in
             list.removeAll { $0.id == id }
         }
@@ -544,6 +534,13 @@ struct SettingsView: View {
                 ForEach(rows) { row in
                     hotkeyEditorRow(action: action, row: row)
                 }
+                if rows.isEmpty {
+                    Text("Not set")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(height: 24)
+                        .padding(.trailing, 2)
+                }
                 Button {
                     rejectMessage = nil
                     model.addBinding(action)
@@ -575,19 +572,17 @@ struct SettingsView: View {
                 onBeginRecordingHandled: { model.consumeRecordingRequest(action, id: row.id) }
             )
             .frame(width: 110, height: 24)
-            if model.canRemoveBinding(action, id: row.id) {
-                Button {
-                    rejectMessage = nil
-                    model.removeBinding(action, id: row.id)
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Remove this shortcut")
-                .accessibilityLabel("Remove shortcut")
+            Button {
+                rejectMessage = nil
+                model.removeBinding(action, id: row.id)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
             }
+            .buttonStyle(.plain)
+            .help("Remove this shortcut")
+            .accessibilityLabel("Remove shortcut")
         }
     }
 
