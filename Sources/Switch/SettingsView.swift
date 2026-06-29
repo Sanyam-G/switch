@@ -213,6 +213,13 @@ struct SettingsView: View {
                                 .tint(prefs.accent.color)
                         }
                         Divider().opacity(0.4)
+                        row(title: "Reduce motion",
+                            detail: "Turn off picker fade, selection movement, and other switcher animations.") {
+                            Toggle("", isOn: $prefs.disableAnimations)
+                                .labelsHidden().toggleStyle(.switch)
+                                .tint(prefs.accent.color)
+                        }
+                        Divider().opacity(0.4)
                         row(title: "Hide menu bar icon",
                             detail: "Keep Switch off the menu bar. Open Settings from the picker with ⌘,") {
                             Toggle("", isOn: $prefs.hideMenuBarIcon)

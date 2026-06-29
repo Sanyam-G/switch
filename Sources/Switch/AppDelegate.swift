@@ -363,6 +363,7 @@ final class SwitcherWindow: NSPanel {
     func present() {
         // Re-asserted every present so the panel migrates across Spaces.
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        animationBehavior = SwitchPreferences.shared.disableAnimations ? .none : .default
 
         let cursor = NSEvent.mouseLocation
         let screen = NSScreen.screens.first(where: { NSMouseInRect(cursor, $0.frame, false) })

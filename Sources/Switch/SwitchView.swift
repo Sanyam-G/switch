@@ -68,11 +68,25 @@ struct SwitchView: View {
     }
 
     private var isSpaceMode: Bool { model.mode == .spaces }
+    private var animationsEnabled: Bool { !prefs.disableAnimations }
 
-    private var panelAnimation: Animation {
-        prefs.verticalList
+    private var panelAnimation: Animation? {
+        guard animationsEnabled else { return nil }
+        return prefs.verticalList
             ? .spring(response: 0.22, dampingFraction: 0.9)
             : .spring(response: 0.18, dampingFraction: 0.86)
+    }
+
+    private func switcherAnimation(_ animation: Animation) -> Animation? {
+        animationsEnabled ? animation : nil
+    }
+
+    private var panelScale: CGFloat {
+        animationsEnabled ? (model.visible ? 1.0 : 0.97) : 1.0
+    }
+
+    private var panelYOffset: CGFloat {
+        animationsEnabled && prefs.verticalList && !model.visible ? -5 : 0
     }
 
     var body: some View {
@@ -84,8 +98,8 @@ struct SwitchView: View {
         .frame(width: model.panelSize.width, height: model.panelSize.height)
         .background(prefs.backgroundBlur.material)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .scaleEffect(model.visible ? 1.0 : 0.97)
-        .offset(y: model.visible ? 0 : (prefs.verticalList ? -5 : 0))
+        .scaleEffect(panelScale)
+        .offset(y: panelYOffset)
         .opacity(model.visible ? 1 : 0)
         .animation(panelAnimation, value: model.visible)
         .onChange(of: model.visible) { _, isVisible in
@@ -159,7 +173,7 @@ struct SwitchView: View {
                         }
                         let cur = model.filteredWindows
                         guard cur.indices.contains(new) else { return }
-                        withAnimation(.easeInOut(duration: 0.22)) {
+                        withAnimation(switcherAnimation(.easeInOut(duration: 0.22))) {
                             proxy.scrollTo(cur[new].id, anchor: .center)
                         }
                     }
@@ -301,7 +315,7 @@ struct SwitchView: View {
                             .frame(width: 56, height: 56)
                             .opacity(0.55)
                             .scaleEffect(selected ? 1.05 : 1.0)
-                            .animation(.spring(response: 0.20, dampingFraction: 0.82), value: selected)
+                            .animation(switcherAnimation(.spring(response: 0.20, dampingFraction: 0.82)), value: selected)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -317,7 +331,7 @@ struct SwitchView: View {
                         pinButton(for: window).padding(7)
                     }
                 }
-                .animation(.easeOut(duration: 0.18), value: model.thumbnails[window.id] != nil)
+                .animation(switcherAnimation(.easeOut(duration: 0.18)), value: model.thumbnails[window.id] != nil)
 
                 if let icon {
                     Image(nsImage: icon)
@@ -326,7 +340,7 @@ struct SwitchView: View {
                         .scaleEffect(selected ? 1.06 : 1.0)
                         .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 1)
                         .padding(7)
-                        .animation(.spring(response: 0.20, dampingFraction: 0.82), value: selected)
+                        .animation(switcherAnimation(.spring(response: 0.20, dampingFraction: 0.82)), value: selected)
                 }
 
                 HStack(spacing: 0) {
@@ -358,7 +372,7 @@ struct SwitchView: View {
             .padding(.horizontal, 2)
         }
         .padding(9)
-        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 9, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected))
+        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 9, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animationsEnabled: animationsEnabled))
         .contentShape(Rectangle())
         .onHover { handleHover($0, windowID: window.id, index: index) }
         .onTapGesture { handleTap(index: index) }
@@ -376,7 +390,7 @@ struct SwitchView: View {
                         .resizable()
                         .frame(width: prefs.appIconSize, height: prefs.appIconSize)
                         .scaleEffect(selected ? 1.08 : 1.0)
-                        .animation(.spring(response: 0.20, dampingFraction: 0.82), value: selected)
+                        .animation(switcherAnimation(.spring(response: 0.20, dampingFraction: 0.82)), value: selected)
                 } else {
                     Color.clear.frame(width: prefs.appIconSize, height: prefs.appIconSize)
                 }
@@ -435,7 +449,7 @@ struct SwitchView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 8, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected))
+        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 8, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animationsEnabled: animationsEnabled))
         .contentShape(Rectangle())
         .onHover { handleHover($0, windowID: window.id, index: index) }
         .onTapGesture { handleTap(index: index) }
@@ -458,6 +472,11 @@ private struct SelectionChrome: ViewModifier {
     let accent: Color
     let namespace: Namespace.ID
     let selectedValue: Int
+    let animationsEnabled: Bool
+
+    private func selectionAnimation(_ animation: Animation) -> Animation? {
+        animationsEnabled ? animation : nil
+    }
 
     func body(content: Content) -> some View {
         content
@@ -482,7 +501,7 @@ private struct SelectionChrome: ViewModifier {
                     }
                 }
             )
-            .animation(.spring(response: 0.22, dampingFraction: 0.85), value: selectedValue)
-            .animation(.easeOut(duration: 0.10), value: hovered)
+            .animation(selectionAnimation(.spring(response: 0.22, dampingFraction: 0.85)), value: selectedValue)
+            .animation(selectionAnimation(.easeOut(duration: 0.10)), value: hovered)
     }
 }
