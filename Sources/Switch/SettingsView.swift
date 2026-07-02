@@ -122,9 +122,6 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
-            Text("Hotkeys paused while this window is open.")
-                .font(.system(size: 10))
-                .foregroundStyle(.red)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -221,7 +218,7 @@ struct SettingsView: View {
                         }
                         Divider().opacity(0.4)
                         row(title: "Hide menu bar icon",
-                            detail: "Keep Switch off the menu bar. Open Settings from the picker with ⌘,") {
+                            detail: "Keep Switch off the menu bar. Open Settings by pressing comma while the picker is open.") {
                             Toggle("", isOn: $prefs.hideMenuBarIcon)
                                 .labelsHidden().toggleStyle(.switch)
                                 .tint(prefs.accent.color)
@@ -862,6 +859,11 @@ struct KeyRecorderField: NSViewRepresentable {
     }
 }
 
+extension Notification.Name {
+    static let switchRecorderBegan = Notification.Name("com.sanyamgarg.switch.recorderBegan")
+    static let switchRecorderEnded = Notification.Name("com.sanyamgarg.switch.recorderEnded")
+}
+
 final class KeyRecorderNSView: NSView {
     var onCapture: ((HotkeyBinding) -> Void)?
     var accentNSColor: NSColor = .controlAccentColor { didSet { redraw() } }
@@ -869,6 +871,7 @@ final class KeyRecorderNSView: NSView {
     private let label = NSTextField(labelWithString: "")
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var resignToken: NSObjectProtocol?
     private var recording = false { didSet { redraw() } }
 
     var binding: HotkeyBinding = .defaultAllWindows {
@@ -907,7 +910,16 @@ final class KeyRecorderNSView: NSView {
         return super.resignFirstResponder()
     }
 
-    deinit { stopRecording(commit: false) }
+    // A click into another app never reaches this view or its window's
+    // responder chain, so without these teardowns the recorder tap would stay
+    // live, swallowing every modifier press system-wide and capturing the
+    // next keystroke typed anywhere as the binding.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { stopRecording(commit: false) }
+    }
+
+    deinit { teardownTap() }
 
     // NSEvent local monitors never see Cmd+Tab (system app switcher grabs it upstream).
     // Session tap at head fires first, swallows.
@@ -921,20 +933,38 @@ final class KeyRecorderNSView: NSView {
                                           callback: { _, type, event, info in
             guard let info else { return Unmanaged.passUnretained(event) }
             return Unmanaged<KeyRecorderNSView>.fromOpaque(info).takeUnretainedValue().capture(type, event)
-        }, userInfo: info) else { return }
+        }, userInfo: info) else { recording = false; return }
         let src = CFMachPortCreateRunLoopSource(nil, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         eventTap = tap
         runLoopSource = src
+        if let win = window {
+            resignToken = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResignKeyNotification, object: win, queue: .main
+            ) { [weak self] _ in
+                self?.stopRecording(commit: false)
+            }
+        }
+        NotificationCenter.default.post(name: .switchRecorderBegan, object: nil)
     }
 
     private func stopRecording(commit: Bool) {
+        let wasRecording = eventTap != nil || recording
+        teardownTap()
+        recording = false
+        if wasRecording {
+            NotificationCenter.default.post(name: .switchRecorderEnded, object: nil)
+        }
+    }
+
+    private func teardownTap() {
         if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: false) }
         if let src = runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), src, .commonModes) }
         eventTap = nil
         runLoopSource = nil
-        recording = false
+        if let resignToken { NotificationCenter.default.removeObserver(resignToken) }
+        resignToken = nil
     }
 
     fileprivate func capture(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {

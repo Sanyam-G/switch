@@ -46,10 +46,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hotkey = HotkeyManager()
 
         hotkey.onArm = { [weak self] mode in
-            if SettingsWindow.shared.isVisible {
-                self?.hotkey?.clearArmed()
-                return
-            }
             model.arm(mode)
             self?.schedulePresent(window: window)
         }
@@ -57,19 +53,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.presentNowIfPending(window: window)
             model.advance(reverse: reverse)
         }
-        let commitAndDismiss: () -> Void = { [weak self] in
+        let commitAndDismiss: () -> Void = { [weak self, weak model, weak window] in
             self?.cancelPendingPresent()
             self?.hotkey?.clearArmed()
-            model.commit()
-            window.dismiss()
+            model?.commit()
+            window?.dismiss()
         }
         hotkey.onCommit = commitAndDismiss
         model.commitAndDismiss = commitAndDismiss
-        let cancelAndDismiss: () -> Void = { [weak self] in
+        let cancelAndDismiss: () -> Void = { [weak self, weak model, weak window] in
             self?.cancelPendingPresent()
             self?.hotkey?.clearArmed()
-            model.cancel()
-            window.dismiss()
+            model?.cancel()
+            window?.dismiss()
         }
         hotkey.onCancel = cancelAndDismiss
         model.cancelAndDismiss = cancelAndDismiss
@@ -187,14 +183,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Watchdog: armed with no panel visible and none pending means the tap
         // is consuming keystrokes for a picker that doesn't exist (the "keyboard
-        // stops working until Switch quits" report). Clear it.
+        // stops working until Switch quits" report). Clear it. With the panel
+        // visible, verify the arming modifiers are still physically held —
+        // a release that arrived while the tap was disabled otherwise leaves
+        // the picker stranded open, eating keys.
         armedWatchdog = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let hotkey = self.hotkey, let model = self.model else { return }
-                if hotkey.isArmed && !model.visible && self.pendingPresent == nil {
+                guard hotkey.isArmed else { return }
+                if !model.visible && self.pendingPresent == nil {
                     hotkey.clearArmed()
+                } else if model.visible {
+                    hotkey.recoverIfReleaseWasMissed()
                 }
             }
+        }
+
+        // The Settings key recorder owns the keyboard while capturing a new
+        // binding; pause the main tap so the two don't fight over events.
+        NotificationCenter.default.addObserver(
+            forName: .switchRecorderBegan, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.hotkey?.setSuspended(true)
+        }
+        NotificationCenter.default.addObserver(
+            forName: .switchRecorderEnded, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.hotkey?.setSuspended(false)
         }
 
         // A click in another app while the picker floats (sticky mode) should

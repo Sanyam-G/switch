@@ -2,6 +2,20 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 
+/// Global hotkey interception via a CGEventTap on a dedicated thread.
+///
+/// The tap must NOT live on the main run loop: an active tap gates every
+/// keystroke in the session, so any main-thread stall (AX calls to a
+/// beachballing app, SwiftUI work) would stall system-wide typing until
+/// WindowServer disables the tap — the "Switch stops responding to ⌘Tab
+/// while still running" failure. On its own thread the callback always
+/// services events, and the disabled-by-timeout recovery path stays alive
+/// even when the main thread is wedged.
+///
+/// All picker state (`armed`, `advanced`, …) is mutated synchronously in the
+/// callback under `stateLock`; only the side-effect closures hop to main.
+/// Deferring the mutations themselves (the old design) let a missed or
+/// re-ordered event strand the tap in an armed state that ate keystrokes.
 final class HotkeyManager {
     enum Mode { case allWindows, currentApp, spaces }
     enum Direction { case left, right, up, down }
@@ -21,12 +35,19 @@ final class HotkeyManager {
     var onStickyToggle: (() -> Void)?
     var onOpenSettings: (() -> Void)?
 
+    private let stateLock = NSLock()
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var armed: Mode?
     private var armedAt: Date?
     private var advanced = false
     private var lastShift = false
+    private var suspended = false
+    private var stopRequested = false
+
+    private var tapThread: Thread?
+    private var tapRunLoop: CFRunLoop?
+
     private static let stickyQuickTapMS: Double = 200
     private var wakeToken: NSObjectProtocol?
     private var screensWakeToken: NSObjectProtocol?
@@ -49,26 +70,67 @@ final class HotkeyManager {
 
     func start() {
         if !ensureAccessibility() { return }
-        installTap()
+        startTapThread()
         installWakeObserver()
         startHealthCheck()
     }
 
     func stop() {
-        uninstallTap()
         if let wakeToken { NSWorkspace.shared.notificationCenter.removeObserver(wakeToken) }
         if let screensWakeToken { NSWorkspace.shared.notificationCenter.removeObserver(screensWakeToken) }
         wakeToken = nil
         screensWakeToken = nil
         healthTimer?.invalidate()
         healthTimer = nil
+        stateLock.lock()
+        stopRequested = true
+        stateLock.unlock()
+        performOnTapThread { [weak self] in
+            self?.uninstallTap()
+            CFRunLoopStop(CFRunLoopGetCurrent())
+        }
+        tapThread = nil
+        tapRunLoop = nil
+    }
+
+    private func startTapThread() {
+        guard tapThread == nil else { return }
+        let thread = Thread { [weak self] in
+            guard let self else { return }
+            self.tapRunLoop = CFRunLoopGetCurrent()
+            self.installTap()
+            while true {
+                self.stateLock.lock()
+                let shouldStop = self.stopRequested
+                self.stateLock.unlock()
+                if shouldStop { break }
+                let result = CFRunLoopRunInMode(.defaultMode, 3600, false)
+                // No sources means tap creation failed; idle until the health
+                // check retries the install instead of spinning.
+                if result == .finished { Thread.sleep(forTimeInterval: 1.0) }
+            }
+        }
+        thread.name = "com.sanyamgarg.switch.eventtap"
+        thread.qualityOfService = .userInteractive
+        tapThread = thread
+        thread.start()
+    }
+
+    private func performOnTapThread(_ block: @escaping () -> Void) {
+        guard let rl = tapRunLoop else { return }
+        CFRunLoopPerformBlock(rl, CFRunLoopMode.defaultMode.rawValue, block)
+        CFRunLoopWakeUp(rl)
     }
 
     private func uninstallTap() {
+        stateLock.lock()
+        let tap = self.tap
+        let source = self.source
+        self.tap = nil
+        self.source = nil
+        stateLock.unlock()
         if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes) }
-        tap = nil
-        source = nil
     }
 
     /// Sleep/wake + screensaver-end can leave the tap in a disabled state that
@@ -100,9 +162,14 @@ final class HotkeyManager {
     }
 
     private func reinstallIfNeeded() {
+        stateLock.lock()
+        let tap = self.tap
+        stateLock.unlock()
         if let tap, CGEvent.tapIsEnabled(tap: tap) { return }
-        uninstallTap()
-        installTap()
+        performOnTapThread { [weak self] in
+            self?.uninstallTap()
+            self?.installTap()
+        }
     }
 
     @discardableResult
@@ -112,6 +179,7 @@ final class HotkeyManager {
         return AXIsProcessTrustedWithOptions(opts)
     }
 
+    /// Runs on the tap thread; the source joins the tap thread's run loop.
     private func installTap() {
         let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
         let info = Unmanaged.passUnretained(self).toOpaque()
@@ -134,15 +202,25 @@ final class HotkeyManager {
         let src = CFMachPortCreateRunLoopSource(nil, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        stateLock.lock()
         self.tap = tap
         self.source = src
+        stateLock.unlock()
     }
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            stateLock.lock()
+            let tap = self.tap
+            stateLock.unlock()
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
         }
+
+        stateLock.lock()
+        let isSuspended = suspended
+        stateLock.unlock()
+        if isSuspended { return Unmanaged.passUnretained(event) }
 
         let flags = event.flags
         let cmd = flags.contains(.maskCommand)
@@ -163,47 +241,50 @@ final class HotkeyManager {
             }
 
             if let allBinding, allBinding.matchesTrigger(keyCode: kc, flags: flags) {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    if armed == nil { armed = .allWindows; armedAt = Date(); advanced = false; onArm?(.allWindows) }
-                    else { advanced = true; onAdvance?(shift) }
-                }
+                armOrAdvance(.allWindows, shift: shift)
                 return nil
             }
             if let spacesBinding, spacesBinding.matchesTrigger(keyCode: kc, flags: flags) {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    if armed == nil { armed = .spaces; armedAt = Date(); advanced = false; onArm?(.spaces) }
-                    else { advanced = true; onAdvance?(shift) }
-                }
+                armOrAdvance(.spaces, shift: shift)
                 return nil
             }
             if let appBinding, appBinding.matchesTrigger(keyCode: kc, flags: flags) {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    if armed == nil { armed = .currentApp; armedAt = Date(); advanced = false; onArm?(.currentApp) }
-                    else { advanced = true; onAdvance?(shift) }
-                }
+                armOrAdvance(.currentApp, shift: shift)
                 return nil
             }
 
-            if armed != nil {
+            stateLock.lock()
+            let armedMode = armed
+            stateLock.unlock()
+
+            if let mode = armedMode {
                 let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
                 let typeToFilter = (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
                 if kc == Self.kcEscape {
+                    clearArmed()
                     DispatchQueue.main.async { [weak self] in
-                        self?.armed = nil
                         self?.onCancel?()
                     }
                     return nil
                 }
                 if kc == Self.kcReturn || kc == Self.kcKeypadEnter {
+                    clearArmed()
                     DispatchQueue.main.async { [weak self] in
-                        self?.armed = nil
                         self?.onCommit?()
                     }
                     return nil
+                }
+                // Arming modifiers gone in hold-to-switch mode means the
+                // release event was missed (tap was disabled at the time).
+                // Commit as if the release had been seen and let this
+                // keystroke through to whatever the user is now typing in.
+                if !sticky && !armingModifiersHeld(mode, flags) {
+                    clearArmed()
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onCommit?()
+                    }
+                    return Unmanaged.passUnretained(event)
                 }
                 if typeToFilter && kc == Self.kcDelete {
                     DispatchQueue.main.async { [weak self] in
@@ -229,9 +310,11 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                if cmd && kc == Self.kcComma {
+                // Any-modifier comma: ⌘, works everywhere, and ⌥, works while
+                // arming with ⌥ so opening Settings doesn't need a second hand.
+                if kc == Self.kcComma {
+                    clearArmed()
                     DispatchQueue.main.async { [weak self] in
-                        self?.armed = nil
                         self?.onCancel?()
                         self?.onOpenSettings?()
                     }
@@ -261,16 +344,20 @@ final class HotkeyManager {
         }
 
         if type == .flagsChanged {
+            stateLock.lock()
             let shiftRising = shift && !lastShift
             lastShift = shift
-
-            guard let mode = armed else { return Unmanaged.passUnretained(event) }
+            guard let mode = armed else {
+                stateLock.unlock()
+                return Unmanaged.passUnretained(event)
+            }
             let armingHeld = armingModifiersHeld(mode, flags)
 
             if shiftRising && armingHeld
                 && UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey) {
+                advanced = true
+                stateLock.unlock()
                 DispatchQueue.main.async { [weak self] in
-                    self?.advanced = true
                     self?.onAdvance?(true)
                 }
                 return nil
@@ -280,15 +367,37 @@ final class HotkeyManager {
                 let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
                 let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < Self.stickyQuickTapMS } ?? false) && !advanced
                 if !sticky || quickTap {
+                    armed = nil
+                    armedAt = nil
+                    advanced = false
+                    stateLock.unlock()
                     DispatchQueue.main.async { [weak self] in
-                        self?.armed = nil
                         self?.onCommit?()
                     }
+                    return Unmanaged.passUnretained(event)
                 }
             }
+            stateLock.unlock()
+            return Unmanaged.passUnretained(event)
         }
 
         return Unmanaged.passUnretained(event)
+    }
+
+    private func armOrAdvance(_ mode: Mode, shift: Bool) {
+        stateLock.lock()
+        let isFirst = armed == nil
+        if isFirst {
+            armed = mode
+            armedAt = Date()
+            advanced = false
+        } else {
+            advanced = true
+        }
+        stateLock.unlock()
+        DispatchQueue.main.async { [weak self] in
+            if isFirst { self?.onArm?(mode) } else { self?.onAdvance?(shift) }
+        }
     }
 
     private func armingModifiersHeld(_ mode: Mode, _ flags: CGEventFlags) -> Bool {
@@ -301,21 +410,69 @@ final class HotkeyManager {
         return binding?.modifiersHeld(flags) ?? false
     }
 
-    /// Main-thread only (all mutations of `armed` happen on main).
-    var isArmed: Bool { armed != nil }
+    var isArmed: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return armed != nil
+    }
 
     func clearArmed() {
+        stateLock.lock()
         armed = nil
         armedAt = nil
         advanced = false
+        stateLock.unlock()
     }
 
-    /// Reinstall the tap so the new HotkeyConfig is picked up. Called when bindings change.
-    /// Only touches the tap — wake observers + health timer stay in place.
+    /// Pause interception while the Settings key recorder owns the keyboard.
+    func setSuspended(_ value: Bool) {
+        stateLock.lock()
+        suspended = value
+        if value {
+            armed = nil
+            armedAt = nil
+            advanced = false
+        }
+        stateLock.unlock()
+    }
+
+    /// Called by the armed watchdog while the picker is visible: if the arming
+    /// modifiers are no longer physically held in hold-to-switch mode, the
+    /// release event was lost (tap disabled at the wrong moment). Commit.
+    func recoverIfReleaseWasMissed() {
+        let hardware = CGEventSource.flagsState(.combinedSessionState)
+        stateLock.lock()
+        guard let mode = armed else {
+            stateLock.unlock()
+            return
+        }
+        stateLock.unlock()
+        let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
+        guard !sticky, !armingModifiersHeld(mode, hardware) else { return }
+        stateLock.lock()
+        let stillArmed = armed != nil
+        armed = nil
+        armedAt = nil
+        advanced = false
+        stateLock.unlock()
+        if stillArmed {
+            DispatchQueue.main.async { [weak self] in
+                self?.onCommit?()
+            }
+        }
+    }
+
+    /// Reinstall the tap after a binding change. Not strictly required (the
+    /// callback reads HotkeyConfig live) but clears any stale tap state.
     func reload() {
-        guard tap != nil else { return }
-        uninstallTap()
-        installTap()
+        reinstall()
+    }
+
+    private func reinstall() {
+        performOnTapThread { [weak self] in
+            self?.uninstallTap()
+            self?.installTap()
+        }
     }
 
     private func filterChar(from event: CGEvent) -> Character? {
@@ -332,8 +489,8 @@ final class HotkeyManager {
         switch kc {
         case Self.kcLeftArrow:  return .left
         case Self.kcRightArrow: return .right
-        case Self.kcUpArrow:    return .up
         case Self.kcDownArrow:  return .down
+        case Self.kcUpArrow:    return .up
         default:                return nil
         }
     }

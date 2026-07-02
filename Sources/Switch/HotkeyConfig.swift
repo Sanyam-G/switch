@@ -55,7 +55,10 @@ struct HotkeyBinding: Codable, Equatable {
     }
 }
 
-/// Persistent config for the two arming hotkeys. Singleton to allow lock-free reads from the event tap.
+/// Persistent config for the arming hotkeys. Bindings are decoded once and
+/// cached in memory behind a lock — the event tap callback reads them for
+/// every system keystroke, so per-read UserDefaults + JSONDecoder traffic is
+/// off the table.
 final class HotkeyConfig {
     static let shared = HotkeyConfig()
 
@@ -65,6 +68,12 @@ final class HotkeyConfig {
     private let spacesKey = "switch.hotkey.spaces"
     private let stickyKey = "switch.hotkey.stickyToggle"
     private let seededKey = "switch.hotkey.seeded"
+
+    private let lock = NSLock()
+    private var cachedAll: HotkeyBinding?
+    private var cachedApp: HotkeyBinding?
+    private var cachedSpaces: HotkeyBinding?
+    private var cachedSticky: HotkeyBinding?
 
     static let didChangeNotification = Notification.Name("com.sanyamgarg.switch.hotkeyConfigDidChange")
 
@@ -76,26 +85,30 @@ final class HotkeyConfig {
             if load(spacesKey) == nil { write(.defaultSpaces, key: spacesKey) }
             defaults.set(true, forKey: seededKey)
         }
+        cachedAll = load(allKey)
+        cachedApp = load(appKey)
+        cachedSpaces = load(spacesKey)
+        cachedSticky = load(stickyKey)
     }
 
     var allWindows: HotkeyBinding? {
-        get { load(allKey) }
-        set { store(newValue, key: allKey) }
+        get { lock.lock(); defer { lock.unlock() }; return cachedAll }
+        set { store(newValue, key: allKey) { self.cachedAll = newValue } }
     }
 
     var currentApp: HotkeyBinding? {
-        get { load(appKey) }
-        set { store(newValue, key: appKey) }
+        get { lock.lock(); defer { lock.unlock() }; return cachedApp }
+        set { store(newValue, key: appKey) { self.cachedApp = newValue } }
     }
 
     var spaces: HotkeyBinding? {
-        get { load(spacesKey) }
-        set { store(newValue, key: spacesKey) }
+        get { lock.lock(); defer { lock.unlock() }; return cachedSpaces }
+        set { store(newValue, key: spacesKey) { self.cachedSpaces = newValue } }
     }
 
     var stickyToggle: HotkeyBinding? {
-        get { load(stickyKey) }
-        set { store(newValue, key: stickyKey) }
+        get { lock.lock(); defer { lock.unlock() }; return cachedSticky }
+        set { store(newValue, key: stickyKey) { self.cachedSticky = newValue } }
     }
 
     func resetToDefaults() {
@@ -103,6 +116,12 @@ final class HotkeyConfig {
         write(.defaultCurrentApp, key: appKey)
         write(.defaultSpaces, key: spacesKey)
         defaults.removeObject(forKey: stickyKey)
+        lock.lock()
+        cachedAll = .defaultAllWindows
+        cachedApp = .defaultCurrentApp
+        cachedSpaces = .defaultSpaces
+        cachedSticky = nil
+        lock.unlock()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
@@ -111,12 +130,15 @@ final class HotkeyConfig {
         return try? JSONDecoder().decode(HotkeyBinding.self, from: data)
     }
 
-    private func store(_ b: HotkeyBinding?, key: String) {
+    private func store(_ b: HotkeyBinding?, key: String, updateCache: () -> Void) {
         if let b, let data = try? JSONEncoder().encode(b) {
             defaults.set(data, forKey: key)
         } else {
             defaults.removeObject(forKey: key)
         }
+        lock.lock()
+        updateCache()
+        lock.unlock()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
