@@ -45,17 +45,149 @@ enum WindowEnumerator {
         let crossSpace: [WindowInfo]
     }
 
+    struct FullSnapshot {
+        let activeSpace: [WindowInfo]
+        let crossSpace: [WindowInfo]
+        let spaceRepresentatives: [WindowInfo]
+
+        var allWindows: [WindowInfo] { activeSpace + crossSpace }
+        var allIDs: Set<CGWindowID> { Set(allWindows.map(\.id)) }
+        var allPIDs: Set<pid_t> { Set(allWindows.map(\.pid)) }
+    }
+
+    static func fullSnapshot() -> FullSnapshot {
+        let onScreen = enumerate(option: [.optionOnScreenOnly, .excludeDesktopElements])
+        let everything = enumerate(option: [.optionAll, .excludeDesktopElements])
+        let pids = Set(everything.map(\.pid)).union(onScreen.map(\.pid))
+        let ax = axWindowState(for: pids)
+        let cid = CGSMainConnectionID()
+        let metadata = spaceMetadata(cid: cid)
+        let stageManager = stageManagerEnabled
+
+        let active = pruneGhosts(onScreen, axBacked: ax.axBacked, cid: cid)
+        let activeIDs = Set(active.map(\.id))
+        let marked = everything.map { w -> WindowInfo in
+            var out = w
+            out.isCrossSpace = !activeIDs.contains(w.id)
+            return out
+        }
+        let annotatedAll = annotateAndPrune(marked, ax: ax, cid: cid, metadata: metadata, stageManager: stageManager)
+        let cross = annotatedAll.filter { !activeIDs.contains($0.id) }
+        let reps = spaceRepresentatives(from: annotatedAll, cid: cid, metadata: metadata)
+        return FullSnapshot(activeSpace: active, crossSpace: cross, spaceRepresentatives: reps)
+    }
+
     static func currentWindows(scope: HotkeyManager.Mode, frontmostPID: pid_t?) -> [WindowInfo] {
         let e = enumerate(scope: scope, frontmostPID: frontmostPID)
         return e.activeSpace + e.crossSpace
     }
 
-    static func spaceRepresentatives(frontmostPID: pid_t?) -> [WindowInfo] {
-        let all = enumerate(option: [.optionAll, .excludeDesktopElements], scope: .allWindows, frontmostPID: frontmostPID)
-        let annotated = annotateAndPrune(all)
-        let cid = CGSMainConnectionID()
+    static func enumerate(scope: HotkeyManager.Mode, frontmostPID: pid_t?) -> Enumeration {
+        let full = fullSnapshot()
+        var active = full.activeSpace
+        var cross = full.crossSpace
+        if scope == .currentApp, let f = frontmostPID {
+            active = active.filter { $0.pid == f }
+            cross = cross.filter { $0.pid == f }
+        }
+        let showCross = (UserDefaults.standard.object(forKey: "switch.showCrossSpace") as? Bool) ?? true
+        if !showCross {
+            cross = cross.filter { !$0.isCrossSpace }
+        }
+        return Enumeration(activeSpace: active, crossSpace: cross)
+    }
+
+    private static var stageManagerEnabled: Bool {
+        UserDefaults(suiteName: "com.apple.WindowManager")?.bool(forKey: "GloballyEnabled") ?? false
+    }
+
+    private static func appElement(for pid: pid_t) -> AXUIElement {
+        let el = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(el, 0.25)
+        return el
+    }
+
+    // AX-backed and minimized window IDs for the given processes; an orderedOut leftover appears in neither.
+    private static func axWindowState(for pids: Set<pid_t>) -> (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>) {
+        var axBacked: Set<CGWindowID> = []
+        var minimized: Set<CGWindowID> = []
+        for pid in pids {
+            let appAX = appElement(for: pid)
+            var ref: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success,
+                  let axWindows = ref as? [AXUIElement] else { continue }
+            for ax in axWindows {
+                var id: CGWindowID = 0
+                if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
+                    axBacked.insert(id)
+                    var minRef: CFTypeRef?
+                    if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
+                       let isMin = minRef as? Bool, isMin {
+                        minimized.insert(id)
+                    }
+                }
+            }
+        }
+        return (axBacked, minimized)
+    }
+
+    // Drop orphaned on-screen entries: no live AX window and no Space. Real windows always have a Space.
+    private static func pruneGhosts(_ windows: [WindowInfo], axBacked: Set<CGWindowID>, cid: CGSConnectionID) -> [WindowInfo] {
+        guard !windows.isEmpty else { return windows }
+        return windows.filter { w in
+            if axBacked.contains(w.id) { return true }
+            let arr = [NSNumber(value: w.id)] as CFArray
+            let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
+            return !spaces.isEmpty
+        }
+    }
+
+    private static func annotateAndPrune(
+        _ candidates: [WindowInfo],
+        ax: (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>),
+        cid: CGSConnectionID,
+        metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int]),
+        stageManager: Bool
+    ) -> [WindowInfo] {
+        return candidates.compactMap { w in
+            var out = w
+            if out.isHidden {
+                out.isCrossSpace = false
+                return out
+            }
+            if ax.minimized.contains(w.id) {
+                out.isMinimized = true
+                out.isCrossSpace = false
+                return out
+            }
+            let arr = [NSNumber(value: w.id)] as CFArray
+            let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
+            if spaces.isEmpty {
+                // Empty Space list + no AX window = orderOut'd ghost, drop it.
+                // Empty Space list + live AX window = a real window the window
+                // server has ordered out (Stage Manager off-stage). With Stage
+                // Manager off that signature is a closed Settings/Preferences
+                // leftover, so it only survives while Stage Manager is on.
+                guard ax.axBacked.contains(w.id), stageManager else { return nil }
+                out.isCrossSpace = false
+                return out
+            }
+            if let sid = spaces.first {
+                let info = metadata.labels[sid]
+                out.spaceID = sid
+                out.spaceLabel = info?.label
+                out.isFullscreenSpace = info?.isFullscreen ?? false
+            }
+            return out
+        }
+    }
+
+    private static func spaceRepresentatives(
+        from annotated: [WindowInfo],
+        cid: CGSConnectionID,
+        metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int])
+    ) -> [WindowInfo] {
         let active = Int(CGSGetActiveSpace(cid))
-        let metadata = spaceMetadata(cid: cid)
         let grouped = Dictionary(grouping: annotated) { $0.spaceID ?? -1 }
         return metadata.order.compactMap { sid in
             guard sid != -1, let windows = grouped[sid], !windows.isEmpty else { return nil }
@@ -83,108 +215,6 @@ enum WindowEnumerator {
         }
     }
 
-    static func windowOwningPIDs(scope: HotkeyManager.Mode, frontmostPID: pid_t?) -> Set<pid_t> {
-        let activeSpace = enumerate(option: [.optionOnScreenOnly, .excludeDesktopElements], scope: scope, frontmostPID: frontmostPID)
-        let activeIDs = Set(activeSpace.map { $0.id })
-        let everything = enumerate(option: [.optionAll, .excludeDesktopElements], scope: scope, frontmostPID: frontmostPID)
-        let crossSpace = everything
-            .filter { !activeIDs.contains($0.id) }
-            .map { var w = $0; w.isCrossSpace = true; return w }
-        let realCrossSpace = annotateAndPrune(crossSpace)
-        return Set((activeSpace + realCrossSpace).map { $0.pid })
-    }
-
-    static func enumerate(scope: HotkeyManager.Mode, frontmostPID: pid_t?) -> Enumeration {
-        let activeSpace = pruneGhosts(enumerate(option: [.optionOnScreenOnly, .excludeDesktopElements], scope: scope, frontmostPID: frontmostPID))
-
-        // UserDefaults read direct — SwitchPreferences is @MainActor and this
-        // static func runs from prewarm background queues.
-        let showCross = (UserDefaults.standard.object(forKey: "switch.showCrossSpace") as? Bool) ?? true
-        let everything = enumerate(option: [.optionAll, .excludeDesktopElements], scope: scope, frontmostPID: frontmostPID)
-        let activeIDs = Set(activeSpace.map { $0.id })
-        let crossSpace = everything
-            .filter { !activeIDs.contains($0.id) }
-            .map { var w = $0; w.isCrossSpace = true; return w }
-        let annotated = annotateAndPrune(crossSpace)
-        guard showCross else {
-            return Enumeration(activeSpace: activeSpace, crossSpace: annotated.filter { !$0.isCrossSpace })
-        }
-        return Enumeration(activeSpace: activeSpace, crossSpace: annotated)
-    }
-
-    // AX-backed and minimized window IDs for the given processes; an orderedOut leftover appears in neither.
-    private static func axWindowState(for pids: Set<pid_t>) -> (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>) {
-        var axBacked: Set<CGWindowID> = []
-        var minimized: Set<CGWindowID> = []
-        for pid in pids {
-            let appAX = AXUIElementCreateApplication(pid)
-            var ref: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success,
-                  let axWindows = ref as? [AXUIElement] else { continue }
-            for ax in axWindows {
-                var id: CGWindowID = 0
-                if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
-                    axBacked.insert(id)
-                    var minRef: CFTypeRef?
-                    if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
-                       let isMin = minRef as? Bool, isMin {
-                        minimized.insert(id)
-                    }
-                }
-            }
-        }
-        return (axBacked, minimized)
-    }
-
-    // Drop orphaned on-screen entries: no live AX window and no Space. Real windows always have a Space.
-    private static func pruneGhosts(_ windows: [WindowInfo]) -> [WindowInfo] {
-        guard !windows.isEmpty else { return windows }
-        let axBacked = axWindowState(for: Set(windows.map { $0.pid })).axBacked
-        let cid = CGSMainConnectionID()
-        return windows.filter { w in
-            if axBacked.contains(w.id) { return true }
-            let arr = [NSNumber(value: w.id)] as CFArray
-            let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
-            return !spaces.isEmpty
-        }
-    }
-
-    private static func annotateAndPrune(_ candidates: [WindowInfo]) -> [WindowInfo] {
-        let (axBackedIDs, minimizedIDs) = axWindowState(for: Set(candidates.map { $0.pid }))
-        let cid = CGSMainConnectionID()
-        let metadata = spaceMetadata(cid: cid)
-        return candidates.compactMap { w in
-            var out = w
-            if out.isHidden {
-                out.isCrossSpace = false
-                return out
-            }
-            if minimizedIDs.contains(w.id) {
-                out.isMinimized = true
-                out.isCrossSpace = false
-                return out
-            }
-            let arr = [NSNumber(value: w.id)] as CFArray
-            let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
-            if spaces.isEmpty {
-                // Empty Space list + no AX window = orderOut'd ghost, drop it.
-                // Empty Space list + live AX window = a real window the window
-                // server has ordered out (Stage Manager off-stage). It's on the
-                // current Space, so it survives the cross-space toggle.
-                guard axBackedIDs.contains(w.id) else { return nil }
-                out.isCrossSpace = false
-                return out
-            }
-            if let sid = spaces.first {
-                let info = metadata.labels[sid]
-                out.spaceID = sid
-                out.spaceLabel = info?.label
-                out.isFullscreenSpace = info?.isFullscreen ?? false
-            }
-            return out
-        }
-    }
-
     /// Builds a `spaceID → "Desktop N" / "Fullscreen"` map by walking CGS's managed-display spaces in order.
     private static func spaceMetadata(cid: CGSConnectionID) -> (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int]) {
         guard let displays = CGSCopyManagedDisplaySpaces(cid)?.takeRetainedValue() as? [[String: Any]] else { return ([:], []) }
@@ -208,7 +238,7 @@ enum WindowEnumerator {
         return (labels, order)
     }
 
-    private static func enumerate(option: CGWindowListOption, scope: HotkeyManager.Mode, frontmostPID: pid_t?) -> [WindowInfo] {
+    private static func enumerate(option: CGWindowListOption) -> [WindowInfo] {
         guard let raw = CGWindowListCopyWindowInfo(option, kCGNullWindowID) as? [[String: Any]] else {
             return []
         }
@@ -250,7 +280,6 @@ enum WindowEnumerator {
             // Chrome windows that shared the same active-tab title.
             if seenIDs.contains(id) { continue }
             seenIDs.insert(id)
-            if scope == .currentApp, let f = frontmostPID, pid != f { continue }
             out.append(WindowInfo(
                 id: id,
                 pid: pid,

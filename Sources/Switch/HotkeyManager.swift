@@ -2,20 +2,6 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 
-/// Global hotkey interception via a CGEventTap on a dedicated thread.
-///
-/// The tap must NOT live on the main run loop: an active tap gates every
-/// keystroke in the session, so any main-thread stall (AX calls to a
-/// beachballing app, SwiftUI work) would stall system-wide typing until
-/// WindowServer disables the tap — the "Switch stops responding to ⌘Tab
-/// while still running" failure. On its own thread the callback always
-/// services events, and the disabled-by-timeout recovery path stays alive
-/// even when the main thread is wedged.
-///
-/// All picker state (`armed`, `advanced`, …) is mutated synchronously in the
-/// callback under `stateLock`; only the side-effect closures hop to main.
-/// Deferring the mutations themselves (the old design) let a missed or
-/// re-ordered event strand the tap in an armed state that ate keystrokes.
 final class HotkeyManager {
     enum Mode { case allWindows, currentApp, spaces }
     enum Direction { case left, right, up, down }
@@ -105,8 +91,6 @@ final class HotkeyManager {
                 self.stateLock.unlock()
                 if shouldStop { break }
                 let result = CFRunLoopRunInMode(.defaultMode, 3600, false)
-                // No sources means tap creation failed; idle until the health
-                // check retries the install instead of spinning.
                 if result == .finished { Thread.sleep(forTimeInterval: 1.0) }
             }
         }
@@ -179,7 +163,6 @@ final class HotkeyManager {
         return AXIsProcessTrustedWithOptions(opts)
     }
 
-    /// Runs on the tap thread; the source joins the tap thread's run loop.
     private func installTap() {
         let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
         let info = Unmanaged.passUnretained(self).toOpaque()
@@ -275,10 +258,6 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                // Arming modifiers gone in hold-to-switch mode means the
-                // release event was missed (tap was disabled at the time).
-                // Commit as if the release had been seen and let this
-                // keystroke through to whatever the user is now typing in.
                 if !sticky && !armingModifiersHeld(mode, flags) {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
@@ -310,8 +289,6 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                // Any-modifier comma: ⌘, works everywhere, and ⌥, works while
-                // arming with ⌥ so opening Settings doesn't need a second hand.
                 if kc == Self.kcComma {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
@@ -424,7 +401,6 @@ final class HotkeyManager {
         stateLock.unlock()
     }
 
-    /// Pause interception while the Settings key recorder owns the keyboard.
     func setSuspended(_ value: Bool) {
         stateLock.lock()
         suspended = value
@@ -436,9 +412,6 @@ final class HotkeyManager {
         stateLock.unlock()
     }
 
-    /// Called by the armed watchdog while the picker is visible: if the arming
-    /// modifiers are no longer physically held in hold-to-switch mode, the
-    /// release event was lost (tap disabled at the wrong moment). Commit.
     func recoverIfReleaseWasMissed() {
         let hardware = CGEventSource.flagsState(.combinedSessionState)
         stateLock.lock()
@@ -462,8 +435,6 @@ final class HotkeyManager {
         }
     }
 
-    /// Reinstall the tap after a binding change. Not strictly required (the
-    /// callback reads HotkeyConfig live) but clears any stale tap state.
     func reload() {
         reinstall()
     }

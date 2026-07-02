@@ -17,6 +17,7 @@ enum AXWindowCache {
     static func capture(pids: Set<pid_t>) {
         for pid in pids {
             let appAX = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(appAX, 0.25)
             var ref: CFTypeRef?
             guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success,
                   let axWindows = ref as? [AXUIElement] else { continue }

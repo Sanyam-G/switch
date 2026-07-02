@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.5)
         #if DEBUG
         debugHarness.start()
         #endif
@@ -183,10 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Watchdog: armed with no panel visible and none pending means the tap
         // is consuming keystrokes for a picker that doesn't exist (the "keyboard
-        // stops working until Switch quits" report). Clear it. With the panel
-        // visible, verify the arming modifiers are still physically held —
-        // a release that arrived while the tap was disabled otherwise leaves
-        // the picker stranded open, eating keys.
+        // stops working until Switch quits" report). Clear it.
         armedWatchdog = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let hotkey = self.hotkey, let model = self.model else { return }
@@ -199,8 +197,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // The Settings key recorder owns the keyboard while capturing a new
-        // binding; pause the main tap so the two don't fight over events.
         NotificationCenter.default.addObserver(
             forName: .switchRecorderBegan, object: nil, queue: .main
         ) { [weak self] _ in
@@ -272,10 +268,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Seed the AX window cache right away — the prewarm timer only runs
         // after the first arm, and a window that goes fullscreen before then
         // would otherwise be unfocusable in Chromium apps.
-        let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let pids = Set(WindowEnumerator.currentWindows(scope: .allWindows, frontmostPID: frontmost).map { $0.pid })
-        Task.detached(priority: .utility) {
-            AXWindowCache.capture(pids: pids)
+        WindowStore.shared.refresh { snap in
+            let pids = snap.windows.allPIDs
+            Task.detached(priority: .utility) {
+                AXWindowCache.capture(pids: pids)
+            }
         }
     }
 

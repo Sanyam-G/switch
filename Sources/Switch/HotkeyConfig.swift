@@ -55,10 +55,7 @@ struct HotkeyBinding: Codable, Equatable {
     }
 }
 
-/// Persistent config for the arming hotkeys. Bindings are decoded once and
-/// cached in memory behind a lock — the event tap callback reads them for
-/// every system keystroke, so per-read UserDefaults + JSONDecoder traffic is
-/// off the table.
+/// Persistent config for the arming hotkeys.
 final class HotkeyConfig {
     static let shared = HotkeyConfig()
 

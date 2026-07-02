@@ -910,10 +910,6 @@ final class KeyRecorderNSView: NSView {
         return super.resignFirstResponder()
     }
 
-    // A click into another app never reaches this view or its window's
-    // responder chain, so without these teardowns the recorder tap would stay
-    // live, swallowing every modifier press system-wide and capturing the
-    // next keystroke typed anywhere as the binding.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil { stopRecording(commit: false) }

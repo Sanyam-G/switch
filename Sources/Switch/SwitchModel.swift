@@ -19,6 +19,8 @@ final class SwitchModel: ObservableObject {
     private var refreshTimer: Timer?
     private var prewarmTimer: Timer?
     private var hasArmedOnce = false
+    private var armGeneration = 0
+    private var armFrontmostPID: pid_t?
 
     var filteredWindows: [WindowInfo] {
         let q = filterText.lowercased()
@@ -52,39 +54,93 @@ final class SwitchModel: ObservableObject {
     }
 
     func arm(_ mode: HotkeyManager.Mode) {
+        armGeneration &+= 1
+        let gen = armGeneration
         self.mode = mode
         filterText = ""
-        let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        if mode == .spaces {
-            let final = WindowEnumerator.spaceRepresentatives(frontmostPID: frontmostPID)
-            windows = final
-            if let current = final.firstIndex(where: { !$0.isCrossSpace }), final.count > 1 {
-                selected = (current + 1) % final.count
-            } else {
-                selected = 0
-            }
-            visible = true
-            let liveIDs = Set(final.map { $0.id })
-            Task {
-                if SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) {
-                    await WindowSnapshotter.shared.purge(keeping: liveIDs)
-                }
-                await fetchThumbnails(for: final, force: false)
-            }
-            startRefreshTimer()
-            if !hasArmedOnce {
-                hasArmedOnce = true
-                startPrewarmTimer()
-            }
-            return
+        armFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        if let snap = WindowStore.shared.current, snap.age < 10 {
+            apply(snapshot: snap, initial: true)
+        } else {
+            windows = []
+            selected = 0
         }
-        // FocusTracker keeps WindowMRU current across all focus events (Switch-driven
-        // and external clicks). MRU-sort active-Space too so that when an Arc window
-        // is raised, all OTHER Arc windows don't cluster ahead of the previously-focused
-        // window from a different app. CGWindowList z-order groups windows by app
-        // when any one is raised, which is the wrong signal for a window switcher.
-        let enumeration = WindowEnumerator.enumerate(scope: mode, frontmostPID: frontmostPID)
-        let activeFront = enumeration.activeSpace.first
+        visible = true
+        WindowStore.shared.refresh { [weak self] snap in
+            guard let self, self.armGeneration == gen, self.visible else { return }
+            self.apply(snapshot: snap, initial: self.windows.isEmpty)
+            WindowMRU.purge(keeping: snap.windows.allIDs)
+        }
+        startRefreshTimer()
+        if !hasArmedOnce {
+            hasArmedOnce = true
+            startPrewarmTimer()
+        }
+    }
+
+    private func apply(snapshot: WindowStore.Snapshot, initial: Bool) {
+        let previousSelectedID: CGWindowID? = {
+            guard !initial else { return nil }
+            let list = filteredWindows
+            return list.indices.contains(selected) ? list[selected].id : nil
+        }()
+
+        let final = mode == .spaces
+            ? snapshot.windows.spaceRepresentatives
+            : buildWindowList(from: snapshot.windows)
+        windows = final
+
+        if initial {
+            if mode == .spaces {
+                let reps = filteredWindows
+                if let current = reps.firstIndex(where: { !$0.isCrossSpace }), reps.count > 1 {
+                    selected = (current + 1) % reps.count
+                } else {
+                    selected = 0
+                }
+            } else {
+                selected = SwitchPreferences.shared.stickyMode ? 0 : (filteredWindows.count > 1 ? 1 : 0)
+            }
+        } else {
+            let list = filteredWindows
+            if let previousSelectedID, let idx = list.firstIndex(where: { $0.id == previousSelectedID }) {
+                selected = idx
+            } else if selected >= list.count {
+                selected = max(list.count - 1, 0)
+            }
+        }
+
+        let thumbTargets = final.filter { !$0.isWindowless }
+        let liveIDs = Set(thumbTargets.map { $0.id })
+        let capturePIDs = Set(thumbTargets.map { $0.pid })
+        Task.detached(priority: .utility) {
+            AXWindowCache.capture(pids: capturePIDs)
+        }
+        Task {
+            if SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) {
+                // Don't full-purge — pre-warmed thumbs are valid as long as the window still exists.
+                await WindowSnapshotter.shared.purge(keeping: liveIDs)
+            }
+            await fetchThumbnails(for: thumbTargets, force: false)
+        }
+    }
+
+    // FocusTracker keeps WindowMRU current across all focus events (Switch-driven
+    // and external clicks). MRU-sort active-Space too so that when an Arc window
+    // is raised, all OTHER Arc windows don't cluster ahead of the previously-focused
+    // window from a different app. CGWindowList z-order groups windows by app
+    // when any one is raised, which is the wrong signal for a window switcher.
+    private func buildWindowList(from full: WindowEnumerator.FullSnapshot) -> [WindowInfo] {
+        var active = full.activeSpace
+        var cross = full.crossSpace
+        if mode == .currentApp, let f = armFrontmostPID {
+            active = active.filter { $0.pid == f }
+            cross = cross.filter { $0.pid == f }
+        }
+        if !SwitchPreferences.shared.showCrossSpace {
+            cross = cross.filter { !$0.isCrossSpace }
+        }
+        let activeFront = active.first
         let ws: [WindowInfo]
         if SwitchPreferences.shared.staticOrder {
             let order = SwitchPreferences.shared.appOrder
@@ -97,18 +153,15 @@ final class SwitchModel: ObservableObject {
                 }
                 return $0.id < $1.id
             }
-            ws = enumeration.activeSpace.sorted(by: stable) + enumeration.crossSpace.sorted(by: stable)
+            ws = active.sorted(by: stable) + cross.sorted(by: stable)
         } else if SwitchPreferences.shared.mruMixSpaces {
-            let merged = enumeration.activeSpace + enumeration.crossSpace
-            ws = WindowMRU.sorted(merged, frontmost: activeFront)
+            ws = WindowMRU.sorted(active + cross, frontmost: activeFront)
         } else {
-            let activeSorted = WindowMRU.sorted(enumeration.activeSpace, frontmost: activeFront)
-            let crossSorted = WindowMRU.sorted(enumeration.crossSpace, frontmost: nil)
-            ws = activeSorted + crossSorted
+            ws = WindowMRU.sorted(active, frontmost: activeFront) + WindowMRU.sorted(cross, frontmost: nil)
         }
         var final = ws
         if SwitchPreferences.shared.includeWindowlessApps && mode == .allWindows {
-            let switchablePIDs = WindowEnumerator.windowOwningPIDs(scope: mode, frontmostPID: frontmostPID)
+            let switchablePIDs = full.allPIDs
             let ownBundle = Bundle.main.bundleIdentifier
             let extras = NSWorkspace.shared.runningApplications
                 .filter { $0.activationPolicy == .regular && !switchablePIDs.contains($0.processIdentifier) && $0.bundleIdentifier != ownBundle }
@@ -134,28 +187,7 @@ final class SwitchModel: ObservableObject {
                 return aP && !bP
             }
         }
-        WindowMRU.purge(keeping: Set(final.map { $0.id }))
-        windows = final
-        selected = SwitchPreferences.shared.stickyMode ? 0 : (final.count > 1 ? 1 : 0)
-        visible = true
-        let liveIDs = Set(final.filter { !$0.isWindowless }.map { $0.id })
-        let thumbTargets = final.filter { !$0.isWindowless }
-        let capturePIDs = Set(thumbTargets.map { $0.pid })
-        Task.detached(priority: .utility) {
-            AXWindowCache.capture(pids: capturePIDs)
-        }
-        Task {
-            if SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) {
-                // Don't full-purge — pre-warmed thumbs are valid as long as the window still exists.
-                await WindowSnapshotter.shared.purge(keeping: liveIDs)
-            }
-            await fetchThumbnails(for: thumbTargets, force: false)
-        }
-        startRefreshTimer()
-        if !hasArmedOnce {
-            hasArmedOnce = true
-            startPrewarmTimer()
-        }
+        return final
     }
 
     func closeSelected() {
@@ -203,29 +235,32 @@ final class SwitchModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 if self.visible { return } // arm-driven refresh handles the visible case
-                await self.prewarmCache()
+                self.prewarmCache()
             }
         }
     }
 
-    private func prewarmCache() async {
-        let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let ws = WindowEnumerator.currentWindows(scope: .allWindows, frontmostPID: frontmost)
-        let liveIDs = Set(ws.map { $0.id })
-        // Keep AX elements for every visible window on hand: once a window goes
-        // fullscreen on its own Space, Chromium apps stop enumerating it via AX
-        // and this cached element is the only way to focus it.
-        let capturePIDs = Set(ws.map { $0.pid })
-        Task.detached(priority: .utility) {
-            AXWindowCache.purgeDead()
-            AXWindowCache.capture(pids: capturePIDs)
-        }
-        guard SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) else { return }
-        await WindowSnapshotter.shared.purge(keeping: liveIDs)
-        await withTaskGroup(of: Void.self) { group in
-            for w in ws {
-                group.addTask {
-                    _ = await WindowSnapshotter.shared.snapshot(for: w.id, force: false)
+    private func prewarmCache() {
+        WindowStore.shared.refresh { snap in
+            let ws = snap.windows.allWindows
+            let liveIDs = Set(ws.map { $0.id })
+            // Keep AX elements for every visible window on hand: once a window goes
+            // fullscreen on its own Space, Chromium apps stop enumerating it via AX
+            // and this cached element is the only way to focus it.
+            let capturePIDs = Set(ws.map { $0.pid })
+            Task.detached(priority: .utility) {
+                AXWindowCache.purgeDead()
+                AXWindowCache.capture(pids: capturePIDs)
+            }
+            guard SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) else { return }
+            Task {
+                await WindowSnapshotter.shared.purge(keeping: liveIDs)
+                await withTaskGroup(of: Void.self) { group in
+                    for w in ws {
+                        group.addTask {
+                            _ = await WindowSnapshotter.shared.snapshot(for: w.id, force: false)
+                        }
+                    }
                 }
             }
         }
