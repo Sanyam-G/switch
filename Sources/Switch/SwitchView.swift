@@ -295,7 +295,7 @@ struct SwitchView: View {
     private func tile(window: WindowInfo, index: Int, list: [WindowInfo]) -> some View {
         let selected = index == model.selected
         let hovered = hoveredID == window.id
-        let icon = appIcon(for: window.pid)
+        let icon = appIcon(for: window)
 
         return VStack(alignment: .leading, spacing: 7) {
             ZStack(alignment: .bottomLeading) {
@@ -381,7 +381,7 @@ struct SwitchView: View {
     private func listRow(window: WindowInfo, index: Int) -> some View {
         let selected = index == model.selected
         let hovered = hoveredID == window.id
-        let icon = appIcon(for: window.pid)
+        let icon = appIcon(for: window)
 
         return HStack(spacing: 11) {
             ZStack {
@@ -455,14 +455,16 @@ struct SwitchView: View {
         .onTapGesture { handleTap(index: index) }
     }
 
-    private func appIcon(for pid: pid_t) -> NSImage? {
-        if let cached = Self.iconCache[pid] { return cached }
-        guard let icon = NSRunningApplication(processIdentifier: pid)?.icon else { return nil }
-        Self.iconCache[pid] = icon
+    private func appIcon(for window: WindowInfo) -> NSImage? {
+        let key = window.bundleID ?? "pid:\(window.pid)"
+        if let cached = Self.iconCache[key] { return cached }
+        guard let icon = NSRunningApplication(processIdentifier: window.pid)?.icon else { return nil }
+        if Self.iconCache.count > 256 { Self.iconCache.removeAll() }
+        Self.iconCache[key] = icon
         return icon
     }
 
-    private static var iconCache: [pid_t: NSImage] = [:]
+    private static var iconCache: [String: NSImage] = [:]
 }
 
 private struct SelectionChrome: ViewModifier {

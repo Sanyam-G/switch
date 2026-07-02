@@ -36,6 +36,9 @@ actor WindowSnapshotter {
         inFlight.insert(id)
         defer { inFlight.remove(id) }
 
+        // Non-shareable = DRM; the capture attempts are what players detect and block on.
+        if !isShareable(id) { return nil }
+
         if let img = captureViaCG(id: id) {
             cache[id] = img
             return img
@@ -49,7 +52,6 @@ actor WindowSnapshotter {
     }
 
     private func captureViaSCK(id: CGWindowID) async -> NSImage? {
-        if !isShareable(id) { return nil }
         do {
             guard let content = await currentShareableContent(),
                   let scWindow = content.windows.first(where: { $0.windowID == id }) else { return nil }

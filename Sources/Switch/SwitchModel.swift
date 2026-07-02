@@ -21,6 +21,8 @@ final class SwitchModel: ObservableObject {
     private var hasArmedOnce = false
     private var armGeneration = 0
     private var armFrontmostPID: pid_t?
+    private var thumbnailTasks: [Task<Void, Never>] = []
+    private var didForceRefreshThisArm = false
 
     var filteredWindows: [WindowInfo] {
         let q = filterText.lowercased()
@@ -58,6 +60,7 @@ final class SwitchModel: ObservableObject {
         let gen = armGeneration
         self.mode = mode
         filterText = ""
+        didForceRefreshThisArm = false
         armFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         if let snap = WindowStore.shared.current, snap.age < 10 {
             apply(snapshot: snap, initial: true)
@@ -116,13 +119,18 @@ final class SwitchModel: ObservableObject {
         Task.detached(priority: .utility) {
             AXWindowCache.capture(pids: capturePIDs)
         }
-        Task {
+        let gen = armGeneration
+        let task = Task {
             if SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) {
                 // Don't full-purge — pre-warmed thumbs are valid as long as the window still exists.
                 await WindowSnapshotter.shared.purge(keeping: liveIDs)
             }
             await fetchThumbnails(for: thumbTargets, force: false)
+            guard armGeneration == gen, visible, !didForceRefreshThisArm else { return }
+            didForceRefreshThisArm = true
+            await fetchThumbnails(for: thumbTargets, force: true, batch: true)
         }
+        thumbnailTasks.append(task)
     }
 
     // FocusTracker keeps WindowMRU current across all focus events (Switch-driven
@@ -217,9 +225,9 @@ final class SwitchModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 guard SwitchPreferences.shared.showThumbnails else { return }
-                let ws = self.windows
+                let ws = self.windows.filter { !$0.isWindowless }
                 guard !ws.isEmpty, self.visible else { return }
-                await self.fetchThumbnails(for: ws, force: self.mode != .spaces)
+                await self.fetchThumbnails(for: ws, force: self.mode != .spaces, batch: true)
             }
         }
     }
@@ -349,14 +357,17 @@ final class SwitchModel: ObservableObject {
         thumbnails = [:]
         filterText = ""
         stopRefreshTimer()
+        thumbnailTasks.forEach { $0.cancel() }
+        thumbnailTasks = []
     }
 
-    private func fetchThumbnails(for windows: [WindowInfo], force: Bool) async {
+    private func fetchThumbnails(for windows: [WindowInfo], force: Bool, batch: Bool = false) async {
         guard SwitchPreferences.shared.showThumbnails else {
             thumbnails = [:]
             return
         }
         if #available(macOS 14.0, *) {
+            var collected: [CGWindowID: NSImage] = [:]
             await withTaskGroup(of: (CGWindowID, NSImage?).self) { group in
                 for w in windows {
                     group.addTask {
@@ -365,8 +376,15 @@ final class SwitchModel: ObservableObject {
                     }
                 }
                 for await (id, img) in group {
-                    if let img { thumbnails[id] = img }
+                    guard !Task.isCancelled else { return }
+                    if let img {
+                        if batch { collected[id] = img }
+                        else if visible { thumbnails[id] = img }
+                    }
                 }
+            }
+            if batch, !collected.isEmpty, visible, !Task.isCancelled {
+                thumbnails.merge(collected) { _, new in new }
             }
         }
     }
