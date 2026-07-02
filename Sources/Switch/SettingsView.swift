@@ -84,6 +84,7 @@ struct SettingsView: View {
     @State private var rejectMessage: String?
     @State private var tab: SettingsTab = .general
     @State private var draggedApp: String?
+    @State private var storeTick = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -355,6 +356,9 @@ struct SettingsView: View {
             }
             .padding(24)
         }
+        .onAppear {
+            WindowStore.shared.refresh { _ in storeTick += 1 }
+        }
     }
 
     private var advancedSection: some View {
@@ -503,7 +507,7 @@ struct SettingsView: View {
     }
 
     private func orderedPickerApps() -> [String] {
-        let names = Set(WindowEnumerator.currentWindows(scope: .allWindows, frontmostPID: nil).map(\.appName))
+        let names = Set((WindowStore.shared.current?.windows.allWindows ?? []).map(\.appName))
         let ranked = prefs.appOrder.filter { names.contains($0) }
         let unranked = names.subtracting(ranked).sorted { $0.lowercased() < $1.lowercased() }
         return ranked + unranked
@@ -560,11 +564,7 @@ struct SettingsView: View {
     }
 
     private func blacklistRow(bundleID: String) -> some View {
-        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
-        let icon = url.map { NSWorkspace.shared.icon(forFile: $0.path) }
-        let name = url.flatMap { Bundle(url: $0)?.infoDictionary?["CFBundleName"] as? String }
-            ?? url?.deletingPathExtension().lastPathComponent
-            ?? bundleID
+        let (name, icon) = appInfo(for: bundleID)
         return HStack(spacing: 8) {
             if let icon {
                 Image(nsImage: icon)
@@ -592,7 +592,7 @@ struct SettingsView: View {
     }
 
     private func addableApps() -> [NSRunningApplication] {
-        let pids = Set(WindowEnumerator.currentWindows(scope: .allWindows, frontmostPID: nil).map(\.pid))
+        let pids = WindowStore.shared.current?.windows.allPIDs ?? []
         let ownBundle = Bundle.main.bundleIdentifier
         return NSWorkspace.shared.runningApplications
             .filter { pids.contains($0.processIdentifier) }
@@ -600,11 +600,22 @@ struct SettingsView: View {
             .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
     }
 
-    private func sortKey(_ bid: String) -> String {
+    private static var appInfoCache: [String: (name: String, icon: NSImage?)] = [:]
+
+    private func appInfo(for bid: String) -> (name: String, icon: NSImage?) {
+        if let cached = Self.appInfoCache[bid] { return cached }
         let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid)
+        let icon = url.map { NSWorkspace.shared.icon(forFile: $0.path) }
         let name = url.flatMap { Bundle(url: $0)?.infoDictionary?["CFBundleName"] as? String }
             ?? url?.deletingPathExtension().lastPathComponent
-        return (name ?? bid).lowercased()
+            ?? bid
+        let info = (name, icon)
+        Self.appInfoCache[bid] = info
+        return info
+    }
+
+    private func sortKey(_ bid: String) -> String {
+        appInfo(for: bid).name.lowercased()
     }
 
     private var appearanceTab: some View {

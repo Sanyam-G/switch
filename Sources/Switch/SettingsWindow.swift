@@ -8,6 +8,7 @@ final class SettingsWindow {
     static let shared = SettingsWindow()
 
     private var window: NSWindow?
+    private var demoteWork: DispatchWorkItem?
 
     var isVisible: Bool { window?.isVisible == true }
 
@@ -20,6 +21,8 @@ final class SettingsWindow {
     private init() {}
 
     func show() {
+        demoteWork?.cancel()
+        demoteWork = nil
         if NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
         }
@@ -53,9 +56,12 @@ final class SettingsWindow {
 
     func handleClose() {
         window = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        demoteWork?.cancel()
+        let work = DispatchWorkItem {
             NSApp.setActivationPolicy(.accessory)
         }
+        demoteWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 }
 
