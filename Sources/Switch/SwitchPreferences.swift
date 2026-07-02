@@ -9,6 +9,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let defaultAppIconSize = 32.0
     nonisolated static let defaultGridColumns = 4
     nonisolated static let defaultPickerActivationDelay = 130.0
+    nonisolated static let compactThumbnailHeight = 72.0
 
     enum AccentChoice: String, CaseIterable, Identifiable {
         case system, rose, blue, mint, peach, lavender, monochrome
@@ -77,7 +78,7 @@ final class SwitchPreferences: ObservableObject {
     }
 
     @Published var disableMouse: Bool {
-        didSet { UserDefaults.standard.set(disableMouse, forKey: disableMouseKey) }
+        didSet { UserDefaults.standard.set(disableMouse, forKey: SwitchPreferences.disableMouseKey) }
     }
 
     @Published var disableAnimations: Bool {
@@ -169,7 +170,7 @@ final class SwitchPreferences: ObservableObject {
     private let showTitleFirstKey = "switch.showTitleFirst"
     private let crossSpaceKey = "switch.showCrossSpace"
     nonisolated static let stickyModeKey = "switch.stickyMode"
-    private let disableMouseKey = "switch.disableMouse"
+    nonisolated static let disableMouseKey = "switch.disableMouse"
     private let disableAnimationsKey = "switch.disableAnimations"
     nonisolated static let verticalListKey = "switch.verticalList"
     nonisolated static let blacklistKey = "switch.blacklist"
@@ -198,7 +199,7 @@ final class SwitchPreferences: ObservableObject {
         showTitleFirst = UserDefaults.standard.bool(forKey: showTitleFirstKey)
         showCrossSpace = (UserDefaults.standard.object(forKey: crossSpaceKey) as? Bool) ?? true
         stickyMode = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
-        disableMouse = UserDefaults.standard.bool(forKey: disableMouseKey)
+        disableMouse = UserDefaults.standard.bool(forKey: SwitchPreferences.disableMouseKey)
         disableAnimations = UserDefaults.standard.bool(forKey: disableAnimationsKey)
         verticalList = UserDefaults.standard.bool(forKey: SwitchPreferences.verticalListKey)
         blacklist = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.blacklistKey) ?? [])

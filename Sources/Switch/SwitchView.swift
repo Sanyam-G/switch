@@ -12,6 +12,11 @@ struct SwitchView: View {
     private func handleHover(_ isHovering: Bool, windowID: CGWindowID, index: Int) {
         guard !prefs.disableMouse else { return }
         if isHovering {
+            model.pointerWindowID = windowID
+        } else if model.pointerWindowID == windowID {
+            model.pointerWindowID = nil
+        }
+        if isHovering {
             // Ignore hover until cursor has actually moved 10pt+ since panel opened.
             // Otherwise a static cursor parked over a tile hijacks the default selection.
             if !hasMouseMovedSinceOpen {
@@ -319,7 +324,7 @@ struct SwitchView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: prefs.showThumbnails ? prefs.thumbnailHeight : 72)
+                .frame(height: prefs.showThumbnails ? prefs.thumbnailHeight : SwitchPreferences.compactThumbnailHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(alignment: .topLeading) {
                     if prefs.showStoplights && !window.isWindowless {

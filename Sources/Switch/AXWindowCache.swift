@@ -14,22 +14,10 @@ enum AXWindowCache {
     private static let lock = NSLock()
     private static var cache: [CGWindowID: AXUIElement] = [:]
 
-    static func capture(pids: Set<pid_t>) {
-        for pid in pids {
-            let appAX = AXUIElementCreateApplication(pid)
-            AXUIElementSetMessagingTimeout(appAX, 0.25)
-            var ref: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success,
-                  let axWindows = ref as? [AXUIElement] else { continue }
-            for ax in axWindows {
-                var wid: CGWindowID = 0
-                if _AXUIElementGetWindow(ax, &wid) == .success, wid != 0 {
-                    lock.lock()
-                    cache[wid] = ax
-                    lock.unlock()
-                }
-            }
-        }
+    static func store(_ element: AXUIElement, for wid: CGWindowID) {
+        lock.lock()
+        cache[wid] = element
+        lock.unlock()
     }
 
     static func element(for wid: CGWindowID) -> AXUIElement? {

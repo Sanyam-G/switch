@@ -33,6 +33,7 @@ final class HotkeyManager {
 
     private var tapThread: Thread?
     private var tapRunLoop: CFRunLoop?
+    private let tapReady = DispatchSemaphore(value: 0)
 
     private static let stickyQuickTapMS: Double = 200
     private var wakeToken: NSObjectProtocol?
@@ -76,15 +77,23 @@ final class HotkeyManager {
             CFRunLoopStop(CFRunLoopGetCurrent())
         }
         tapThread = nil
+        stateLock.lock()
         tapRunLoop = nil
+        stateLock.unlock()
     }
 
     private func startTapThread() {
         guard tapThread == nil else { return }
+        stateLock.lock()
+        stopRequested = false
+        stateLock.unlock()
         let thread = Thread { [weak self] in
             guard let self else { return }
+            self.stateLock.lock()
             self.tapRunLoop = CFRunLoopGetCurrent()
+            self.stateLock.unlock()
             self.installTap()
+            self.tapReady.signal()
             while true {
                 self.stateLock.lock()
                 let shouldStop = self.stopRequested
@@ -98,10 +107,14 @@ final class HotkeyManager {
         thread.qualityOfService = .userInteractive
         tapThread = thread
         thread.start()
+        _ = tapReady.wait(timeout: .now() + 1.0)
     }
 
     private func performOnTapThread(_ block: @escaping () -> Void) {
-        guard let rl = tapRunLoop else { return }
+        stateLock.lock()
+        let rl = tapRunLoop
+        stateLock.unlock()
+        guard let rl else { return }
         CFRunLoopPerformBlock(rl, CFRunLoopMode.defaultMode.rawValue, block)
         CFRunLoopWakeUp(rl)
     }
@@ -289,7 +302,7 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                if kc == Self.kcComma {
+                if kc == Self.kcComma && (cmd || armingModifiersHeld(mode, flags)) {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
                         self?.onCancel?()
@@ -344,9 +357,7 @@ final class HotkeyManager {
                 let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
                 let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < Self.stickyQuickTapMS } ?? false) && !advanced
                 if !sticky || quickTap {
-                    armed = nil
-                    armedAt = nil
-                    advanced = false
+                    clearArmedLocked()
                     stateLock.unlock()
                     DispatchQueue.main.async { [weak self] in
                         self?.onCommit?()
@@ -393,29 +404,29 @@ final class HotkeyManager {
         return armed != nil
     }
 
-    func clearArmed() {
-        stateLock.lock()
+    private func clearArmedLocked() {
         armed = nil
         armedAt = nil
         advanced = false
+    }
+
+    func clearArmed() {
+        stateLock.lock()
+        clearArmedLocked()
         stateLock.unlock()
     }
 
     func setSuspended(_ value: Bool) {
         stateLock.lock()
         suspended = value
-        if value {
-            armed = nil
-            armedAt = nil
-            advanced = false
-        }
+        if value { clearArmedLocked() }
         stateLock.unlock()
     }
 
     func recoverIfReleaseWasMissed() {
         let hardware = CGEventSource.flagsState(.combinedSessionState)
         stateLock.lock()
-        guard let mode = armed else {
+        guard let mode = armed, let at = armedAt else {
             stateLock.unlock()
             return
         }
@@ -423,15 +434,14 @@ final class HotkeyManager {
         let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
         guard !sticky, !armingModifiersHeld(mode, hardware) else { return }
         stateLock.lock()
-        let stillArmed = armed != nil
-        armed = nil
-        armedAt = nil
-        advanced = false
+        guard armed == mode, armedAt == at else {
+            stateLock.unlock()
+            return
+        }
+        clearArmedLocked()
         stateLock.unlock()
-        if stillArmed {
-            DispatchQueue.main.async { [weak self] in
-                self?.onCommit?()
-            }
+        DispatchQueue.main.async { [weak self] in
+            self?.onCommit?()
         }
     }
 

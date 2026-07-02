@@ -18,11 +18,10 @@ final class SwitchModel: ObservableObject {
 
     private var refreshTimer: Timer?
     private var prewarmTimer: Timer?
-    private var hasArmedOnce = false
     private var armGeneration = 0
     private var armFrontmostPID: pid_t?
     private var thumbnailTasks: [Task<Void, Never>] = []
-    private var didForceRefreshThisArm = false
+    var pointerWindowID: CGWindowID?
 
     var filteredWindows: [WindowInfo] {
         let q = filterText.lowercased()
@@ -60,9 +59,9 @@ final class SwitchModel: ObservableObject {
         let gen = armGeneration
         self.mode = mode
         filterText = ""
-        didForceRefreshThisArm = false
+        pointerWindowID = nil
         armFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        if let snap = WindowStore.shared.current, snap.age < 10 {
+        if let snap = WindowStore.shared.current {
             apply(snapshot: snap, initial: true)
         } else {
             windows = []
@@ -72,13 +71,8 @@ final class SwitchModel: ObservableObject {
         WindowStore.shared.refresh { [weak self] snap in
             guard let self, self.armGeneration == gen, self.visible else { return }
             self.apply(snapshot: snap, initial: self.windows.isEmpty)
-            WindowMRU.purge(keeping: snap.windows.allIDs)
         }
         startRefreshTimer()
-        if !hasArmedOnce {
-            hasArmedOnce = true
-            startPrewarmTimer()
-        }
     }
 
     private func apply(snapshot: WindowStore.Snapshot, initial: Bool) {
@@ -88,10 +82,20 @@ final class SwitchModel: ObservableObject {
             return list.indices.contains(selected) ? list[selected].id : nil
         }()
 
-        let final = mode == .spaces
-            ? snapshot.windows.spaceRepresentatives
-            : buildWindowList(from: snapshot.windows)
-        windows = final
+        let final: [WindowInfo]
+        if mode == .spaces {
+            let active = Int(CGSGetActiveSpace(CGSMainConnectionID()))
+            final = snapshot.windows.spaceRepresentatives.map { rep in
+                var out = rep
+                out.isCrossSpace = out.spaceID != active
+                out.spaceLabel = out.spaceID == active ? "Current" : nil
+                return out
+            }
+        } else {
+            final = buildWindowList(from: snapshot.windows)
+        }
+        let changed = final != windows
+        if changed { windows = final }
 
         if initial {
             if mode == .spaces {
@@ -104,7 +108,7 @@ final class SwitchModel: ObservableObject {
             } else {
                 selected = SwitchPreferences.shared.stickyMode ? 0 : (filteredWindows.count > 1 ? 1 : 0)
             }
-        } else {
+        } else if changed {
             let list = filteredWindows
             if let previousSelectedID, let idx = list.firstIndex(where: { $0.id == previousSelectedID }) {
                 selected = idx
@@ -113,24 +117,28 @@ final class SwitchModel: ObservableObject {
             }
         }
 
+        thumbnailTasks.forEach { $0.cancel() }
+        thumbnailTasks = []
         let thumbTargets = final.filter { !$0.isWindowless }
-        let liveIDs = Set(thumbTargets.map { $0.id })
-        let capturePIDs = Set(thumbTargets.map { $0.pid })
-        Task.detached(priority: .utility) {
-            AXWindowCache.capture(pids: capturePIDs)
-        }
         let gen = armGeneration
-        let task = Task {
-            if SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) {
-                // Don't full-purge — pre-warmed thumbs are valid as long as the window still exists.
-                await WindowSnapshotter.shared.purge(keeping: liveIDs)
+        if initial {
+            let task = Task {
+                await fetchThumbnails(for: thumbTargets, force: false)
             }
-            await fetchThumbnails(for: thumbTargets, force: false)
-            guard armGeneration == gen, visible, !didForceRefreshThisArm else { return }
-            didForceRefreshThisArm = true
-            await fetchThumbnails(for: thumbTargets, force: true, batch: true)
+            thumbnailTasks.append(task)
+        } else {
+            let liveIDs = Set(thumbTargets.map { $0.id })
+            let task = Task {
+                if SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) {
+                    // Don't full-purge — pre-warmed thumbs are valid as long as the window still exists.
+                    await WindowSnapshotter.shared.purge(keeping: liveIDs)
+                }
+                await fetchThumbnails(for: thumbTargets, force: false)
+                guard armGeneration == gen, visible else { return }
+                await fetchThumbnails(for: thumbTargets, force: true, batch: true)
+            }
+            thumbnailTasks.append(task)
         }
-        thumbnailTasks.append(task)
     }
 
     // FocusTracker keeps WindowMRU current across all focus events (Switch-driven
@@ -207,8 +215,20 @@ final class SwitchModel: ObservableObject {
     func close(_ target: WindowInfo) {
         guard mode != .spaces else { return }
         WindowCloser.close(target)
-        windows.removeAll { $0.id == target.id }
-        thumbnails[target.id] = nil
+        removeFromPicker { $0.id == target.id }
+    }
+
+    func quitApp(withWindowID id: CGWindowID) {
+        guard mode != .spaces else { return }
+        guard let target = windows.first(where: { $0.id == id }) else { return }
+        AppCloser.close(target)
+        removeFromPicker { $0.pid == target.pid }
+    }
+
+    private func removeFromPicker(_ shouldRemove: (WindowInfo) -> Bool) {
+        windows.removeAll(where: shouldRemove)
+        let liveIDs = Set(windows.map { $0.id })
+        thumbnails = thumbnails.filter { liveIDs.contains($0.key) }
         let remaining = filteredWindows
         if remaining.isEmpty {
             cancelAndDismiss?()
@@ -237,7 +257,7 @@ final class SwitchModel: ObservableObject {
         refreshTimer = nil
     }
 
-    private func startPrewarmTimer() {
+    func startPrewarm() {
         prewarmTimer?.invalidate()
         prewarmTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -252,13 +272,9 @@ final class SwitchModel: ObservableObject {
         WindowStore.shared.refresh { snap in
             let ws = snap.windows.allWindows
             let liveIDs = Set(ws.map { $0.id })
-            // Keep AX elements for every visible window on hand: once a window goes
-            // fullscreen on its own Space, Chromium apps stop enumerating it via AX
-            // and this cached element is the only way to focus it.
-            let capturePIDs = Set(ws.map { $0.pid })
+            WindowMRU.purge(keeping: snap.windows.allIDs)
             Task.detached(priority: .utility) {
                 AXWindowCache.purgeDead()
-                AXWindowCache.capture(pids: capturePIDs)
             }
             guard SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) else { return }
             Task {
@@ -317,24 +333,6 @@ final class SwitchModel: ObservableObject {
         cancelAndDismiss?()
     }
 
-    func quitSelectedAppKeepingPicker() {
-        guard mode != .spaces else { return }
-        let list = filteredWindows
-        guard list.indices.contains(selected) else { return }
-        let target = list[selected]
-        AppCloser.close(target)
-        windows.removeAll { $0.pid == target.pid }
-        let liveIDs = Set(windows.map { $0.id })
-        thumbnails = thumbnails.filter { liveIDs.contains($0.key) }
-        let remaining = filteredWindows
-        if remaining.isEmpty {
-            cancelAndDismiss?()
-            return
-        }
-        if selected >= remaining.count {
-            selected = remaining.count - 1
-        }
-    }
 
     func hideSelected() {
         guard mode != .spaces else { return }

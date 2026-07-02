@@ -54,21 +54,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.presentNowIfPending(window: window)
             model.advance(reverse: reverse)
         }
-        let commitAndDismiss: () -> Void = { [weak self, weak model, weak window] in
+        // Tap-originated commits already cleared armed on the tap thread; clearing again here races a fresh arm.
+        hotkey.onCommit = { [weak self, weak model, weak window] in
+            self?.cancelPendingPresent()
+            model?.commit()
+            window?.dismiss()
+        }
+        model.commitAndDismiss = { [weak self, weak model, weak window] in
             self?.cancelPendingPresent()
             self?.hotkey?.clearArmed()
             model?.commit()
             window?.dismiss()
         }
-        hotkey.onCommit = commitAndDismiss
-        model.commitAndDismiss = commitAndDismiss
+        hotkey.onCancel = { [weak self, weak model, weak window] in
+            self?.cancelPendingPresent()
+            model?.cancel()
+            window?.dismiss()
+        }
         let cancelAndDismiss: () -> Void = { [weak self, weak model, weak window] in
             self?.cancelPendingPresent()
             self?.hotkey?.clearArmed()
             model?.cancel()
             window?.dismiss()
         }
-        hotkey.onCancel = cancelAndDismiss
         model.cancelAndDismiss = cancelAndDismiss
         hotkey.onCloseSelected = { [weak self] in
             self?.presentNowIfPending(window: window)
@@ -135,11 +143,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.statusBar?.setHidden(hidden)
             }
             .store(in: &cancellables)
-        model.$visible
-            .dropFirst()
-            .filter { !$0 }
-            .sink { [weak self] _ in self?.hotkey?.clearArmed() }
-            .store(in: &cancellables)
 
         self.model = model
         self.hotkey = hotkey
@@ -200,7 +203,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             forName: .switchRecorderBegan, object: nil, queue: .main
         ) { [weak self] _ in
-            self?.hotkey?.setSuspended(true)
+            MainActor.assumeIsolated {
+                if self?.model?.visible == true { cancelAndDismiss() }
+                self?.hotkey?.setSuspended(true)
+            }
         }
         NotificationCenter.default.addObserver(
             forName: .switchRecorderEnded, object: nil, queue: .main
@@ -265,15 +271,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !hotkeyStarted else { return }
         hotkey?.start()
         hotkeyStarted = true
-        // Seed the AX window cache right away — the prewarm timer only runs
-        // after the first arm, and a window that goes fullscreen before then
-        // would otherwise be unfocusable in Chromium apps.
-        WindowStore.shared.refresh { snap in
-            let pids = snap.windows.allPIDs
-            Task.detached(priority: .utility) {
-                AXWindowCache.capture(pids: pids)
-            }
-        }
+        WindowStore.shared.refresh()
+        MainActor.assumeIsolated { model?.startPrewarm() }
     }
 
     private func startFocusTrackerIfNeeded() {
@@ -375,8 +374,10 @@ final class SwitcherWindow: NSPanel {
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .otherMouseUp, event.buttonNumber == 2, model.visible,
-           !UserDefaults.standard.bool(forKey: "switch.disableMouse") {
-            model.quitSelectedAppKeepingPicker()
+           model.mode != .spaces,
+           !UserDefaults.standard.bool(forKey: SwitchPreferences.disableMouseKey),
+           let wid = model.pointerWindowID {
+            model.quitApp(withWindowID: wid)
             return
         }
         super.sendEvent(event)
@@ -454,7 +455,7 @@ private enum SwitcherPanelSize {
     private static func gridSize(defaults: UserDefaults, count: Int, thumb: CGFloat, scale: CGFloat) -> NSSize {
         let showHints = (defaults.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
         let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
-        let tileThumb: CGFloat = showThumbs ? thumb : 72
+        let tileThumb: CGFloat = showThumbs ? thumb : SwitchPreferences.compactThumbnailHeight
         let configuredColumns = (defaults.object(forKey: SwitchPreferences.gridColumnsKey) as? Int) ?? SwitchPreferences.defaultGridColumns
         let columns = min(max(configuredColumns, 1), max(count, 3))
         let baseWidth: CGFloat = 880 * scale

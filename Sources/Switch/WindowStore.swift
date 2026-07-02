@@ -13,6 +13,7 @@ final class WindowStore {
     private let lock = NSLock()
     private var latest: Snapshot?
     private var inFlight = false
+    private var rerunRequested = false
     private var completions: [(Snapshot) -> Void] = []
 
     var current: Snapshot? {
@@ -25,16 +26,27 @@ final class WindowStore {
         lock.lock()
         if let completion { completions.append(completion) }
         if inFlight {
+            // A completion queued mid-run must see a snapshot taken after the request.
+            rerunRequested = true
             lock.unlock()
             return
         }
         inFlight = true
         lock.unlock()
+        enumerateOnce()
+    }
 
+    private func enumerateOnce() {
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             let snap = Snapshot(windows: WindowEnumerator.fullSnapshot(), takenAt: Date())
             lock.lock()
             latest = snap
+            if rerunRequested {
+                rerunRequested = false
+                lock.unlock()
+                enumerateOnce()
+                return
+            }
             let pending = completions
             completions = []
             inFlight = false

@@ -120,6 +120,7 @@ enum WindowEnumerator {
                 var id: CGWindowID = 0
                 if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
                     axBacked.insert(id)
+                    AXWindowCache.store(ax, for: id)
                     var minRef: CFTypeRef?
                     if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
                        let isMin = minRef as? Bool, isMin {

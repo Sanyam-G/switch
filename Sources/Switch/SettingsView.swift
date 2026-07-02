@@ -84,7 +84,7 @@ struct SettingsView: View {
     @State private var rejectMessage: String?
     @State private var tab: SettingsTab = .general
     @State private var draggedApp: String?
-    @State private var storeTick = 0
+    @State private var openWindows: [WindowInfo] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -357,7 +357,13 @@ struct SettingsView: View {
             .padding(24)
         }
         .onAppear {
-            WindowStore.shared.refresh { _ in storeTick += 1 }
+            if let snap = WindowStore.shared.current {
+                openWindows = snap.windows.allWindows
+                if snap.age < 3 { return }
+            }
+            WindowStore.shared.refresh { snap in
+                openWindows = snap.windows.allWindows
+            }
         }
     }
 
@@ -507,7 +513,7 @@ struct SettingsView: View {
     }
 
     private func orderedPickerApps() -> [String] {
-        let names = Set((WindowStore.shared.current?.windows.allWindows ?? []).map(\.appName))
+        let names = Set(openWindows.map(\.appName))
         let ranked = prefs.appOrder.filter { names.contains($0) }
         let unranked = names.subtracting(ranked).sorted { $0.lowercased() < $1.lowercased() }
         return ranked + unranked
@@ -592,7 +598,7 @@ struct SettingsView: View {
     }
 
     private func addableApps() -> [NSRunningApplication] {
-        let pids = WindowStore.shared.current?.windows.allPIDs ?? []
+        let pids = Set(openWindows.map(\.pid))
         let ownBundle = Bundle.main.bundleIdentifier
         return NSWorkspace.shared.runningApplications
             .filter { pids.contains($0.processIdentifier) }
