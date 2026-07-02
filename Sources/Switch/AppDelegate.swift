@@ -373,6 +373,15 @@ final class SwitcherWindow: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .otherMouseUp, event.buttonNumber == 2, model.visible,
+           !UserDefaults.standard.bool(forKey: "switch.disableMouse") {
+            model.quitSelectedAppKeepingPicker()
+            return
+        }
+        super.sendEvent(event)
+    }
+
     func applyContentSize(for screen: NSScreen? = nil) {
         let fitted = SwitcherPanelSize.current(
             mode: model.mode,
@@ -432,7 +441,8 @@ private enum SwitcherPanelSize {
 
     private static func listSize(defaults: UserDefaults, count: Int, scale: CGFloat) -> NSSize {
         let showHints = (defaults.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
-        let showPreview = (defaults.object(forKey: SwitchPreferences.verticalShowPreviewKey) as? Bool) ?? true
+        let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
+        let showPreview = ((defaults.object(forKey: SwitchPreferences.verticalShowPreviewKey) as? Bool) ?? true) && showThumbs
         let hintHeight: CGFloat = showHints ? 38 : 0
         let rowHeight: CGFloat = showPreview ? 62 : 48
         let visibleRows = min(count, 8)
@@ -443,6 +453,8 @@ private enum SwitcherPanelSize {
 
     private static func gridSize(defaults: UserDefaults, count: Int, thumb: CGFloat, scale: CGFloat) -> NSSize {
         let showHints = (defaults.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
+        let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
+        let tileThumb: CGFloat = showThumbs ? thumb : 72
         let configuredColumns = (defaults.object(forKey: SwitchPreferences.gridColumnsKey) as? Int) ?? SwitchPreferences.defaultGridColumns
         let columns = min(max(configuredColumns, 1), max(count, 3))
         let baseWidth: CGFloat = 880 * scale
@@ -453,7 +465,7 @@ private enum SwitcherPanelSize {
         let width = horizontalPadding + CGFloat(columns) * columnWidth + CGFloat(max(columns - 1, 0)) * columnSpacing
 
         let rows = Int(ceil(Double(count) / Double(columns)))
-        let tileHeight = thumb + 52
+        let tileHeight = tileThumb + 52
         let rowsHeight = CGFloat(rows) * tileHeight + CGFloat(max(rows - 1, 0)) * 14
         let hintHeight: CGFloat = showHints ? 38 : 0
         let height = 26 + 16 + rowsHeight + hintHeight

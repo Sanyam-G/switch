@@ -285,7 +285,7 @@ final class SwitchModel: ObservableObject {
         let list = filteredWindows
         guard !list.isEmpty else { return }
         let n = list.count
-        let cols = SwitchPreferences.shared.verticalList ? 1 : 4
+        let cols = (SwitchPreferences.shared.verticalList || mode == .spaces) ? 1 : SwitchPreferences.shared.gridColumns
         let delta: Int
         switch direction {
         case .left:  delta = -1
@@ -315,6 +315,25 @@ final class SwitchModel: ObservableObject {
         guard list.indices.contains(selected) else { return }
         AppCloser.close(list[selected])
         cancelAndDismiss?()
+    }
+
+    func quitSelectedAppKeepingPicker() {
+        guard mode != .spaces else { return }
+        let list = filteredWindows
+        guard list.indices.contains(selected) else { return }
+        let target = list[selected]
+        AppCloser.close(target)
+        windows.removeAll { $0.pid == target.pid }
+        let liveIDs = Set(windows.map { $0.id })
+        thumbnails = thumbnails.filter { liveIDs.contains($0.key) }
+        let remaining = filteredWindows
+        if remaining.isEmpty {
+            cancelAndDismiss?()
+            return
+        }
+        if selected >= remaining.count {
+            selected = remaining.count - 1
+        }
     }
 
     func hideSelected() {

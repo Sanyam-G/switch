@@ -319,7 +319,7 @@ struct SwitchView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: prefs.thumbnailHeight)
+                .frame(height: prefs.showThumbnails ? prefs.thumbnailHeight : 72)
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(alignment: .topLeading) {
                     if prefs.showStoplights && !window.isWindowless {
