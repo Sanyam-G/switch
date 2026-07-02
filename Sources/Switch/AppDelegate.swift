@@ -296,7 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showOnboarding() {
         guard let onboardingModel else { return }
         if onboardingWindow == nil {
-            let host = NSHostingView(rootView: OnboardingView().environmentObject(onboardingModel))
+            let host = NSHostingController(rootView: OnboardingView().environmentObject(onboardingModel))
             let win = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 440, height: 260),
                 styleMask: [.titled, .closable],
@@ -304,14 +304,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 defer: false
             )
             win.title = "Switch"
-            win.contentView = host
+            win.contentViewController = host
             win.center()
             win.isReleasedWhenClosed = false
+            win.delegate = self
             onboardingWindow = win
         }
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         onboardingWindow?.makeKeyAndOrderFront(nil)
+    }
+}
+
+extension AppDelegate: NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        guard let win = notification.object as? NSWindow, win == onboardingWindow else { return }
+        onboardingModel?.stopPolling()
+        onboardingWindow = nil
+        let settingsOpen = MainActor.assumeIsolated { SettingsWindow.shared.isVisible }
+        if !settingsOpen { NSApp.setActivationPolicy(.accessory) }
     }
 }
 

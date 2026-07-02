@@ -48,6 +48,13 @@ struct OnboardingView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if model.accessibility && model.requiresScreenCapture && !model.screenCapture {
+                    Button("Continue without thumbnails") {
+                        SwitchPreferences.shared.showThumbnails = false
+                        model.refresh()
+                    }
+                    .controlSize(.small)
+                }
             }
         }
         .padding(20)
