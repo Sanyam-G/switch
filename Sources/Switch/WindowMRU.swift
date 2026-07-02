@@ -38,6 +38,15 @@ enum WindowMRU {
         return sorted
     }
 
+    static func mostRecent(in windows: [WindowInfo]) -> WindowInfo? {
+        lock.lock()
+        let snapshot = stamps
+        lock.unlock()
+        return windows
+            .compactMap { w in snapshot[w.id].map { (w, $0) } }
+            .max { $0.1 < $1.1 }?.0
+    }
+
     static func purge(keeping ids: Set<CGWindowID>) {
         lock.lock(); defer { lock.unlock() }
         stamps = stamps.filter { ids.contains($0.key) }

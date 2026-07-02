@@ -148,7 +148,7 @@ final class SwitchModel: ObservableObject {
         if !SwitchPreferences.shared.showCrossSpace {
             cross = cross.filter { !$0.isCrossSpace }
         }
-        let activeFront = active.first
+        let activeFront = WindowMRU.mostRecent(in: active) ?? active.first
         let ws: [WindowInfo]
         if SwitchPreferences.shared.staticOrder {
             let order = SwitchPreferences.shared.appOrder
