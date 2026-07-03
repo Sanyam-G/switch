@@ -338,8 +338,15 @@ struct SettingsView: View {
                                 .tint(prefs.accent.color)
                         }
                         Divider().opacity(0.4)
+                        row(title: "Corner radius",
+                            detail: "Roundness of the picker and its tiles. \(Int(prefs.panelCornerRadius))pt") {
+                            Slider(value: $prefs.panelCornerRadius, in: 0...28, step: 2)
+                                .frame(width: 140)
+                                .tint(prefs.accent.color)
+                        }
+                        Divider().opacity(0.4)
                         row(title: "Reset sizing",
-                            detail: "Restore columns, thumbnail size, and app icon size.") {
+                            detail: "Restore columns, thumbnail size, app icon size, and corner radius.") {
                             Button("Reset") {
                                 resetSizing()
                             }
@@ -438,6 +445,7 @@ struct SettingsView: View {
         prefs.gridColumns = SwitchPreferences.defaultGridColumns
         prefs.thumbnailHeight = SwitchPreferences.defaultThumbnailHeight
         prefs.appIconSize = SwitchPreferences.defaultAppIconSize
+        prefs.panelCornerRadius = SwitchPreferences.defaultPanelCornerRadius
     }
 
     private var stickyToggleRow: some View {

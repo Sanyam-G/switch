@@ -102,7 +102,7 @@ struct SwitchView: View {
         }
         .frame(width: model.panelSize.width, height: model.panelSize.height)
         .background(prefs.backgroundBlur.material)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: prefs.panelCornerRadius, style: .continuous))
         .scaleEffect(panelScale)
         .offset(y: panelYOffset)
         .opacity(model.visible ? 1 : 0)
@@ -325,7 +325,7 @@ struct SwitchView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: prefs.showThumbnails ? prefs.thumbnailHeight : SwitchPreferences.compactThumbnailHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: prefs.tileThumbnailCornerRadius, style: .continuous))
                 .overlay(alignment: .topLeading) {
                     if prefs.showStoplights && !window.isWindowless {
                         stoplights(for: window).padding(7)
@@ -377,7 +377,7 @@ struct SwitchView: View {
             .padding(.horizontal, 2)
         }
         .padding(9)
-        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 9, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animationsEnabled: animationsEnabled))
+        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: prefs.tileCornerRadius, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animationsEnabled: animationsEnabled))
         .contentShape(Rectangle())
         .onHover { handleHover($0, windowID: window.id, index: index) }
         .onTapGesture { handleTap(index: index) }
@@ -448,13 +448,13 @@ struct SwitchView: View {
                             .frame(width: 88, height: 50)
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: prefs.listThumbnailCornerRadius, style: .continuous))
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 8, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animationsEnabled: animationsEnabled))
+        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: prefs.listRowCornerRadius, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animationsEnabled: animationsEnabled))
         .contentShape(Rectangle())
         .onHover { handleHover($0, windowID: window.id, index: index) }
         .onTapGesture { handleTap(index: index) }

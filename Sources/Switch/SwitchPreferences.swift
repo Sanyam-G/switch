@@ -10,6 +10,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let defaultGridColumns = 4
     nonisolated static let defaultPickerActivationDelay = 130.0
     nonisolated static let compactThumbnailHeight = 72.0
+    nonisolated static let defaultPanelCornerRadius = 12.0
 
     enum AccentChoice: String, CaseIterable, Identifiable {
         case system, rose, blue, mint, peach, lavender, monochrome
@@ -153,6 +154,17 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(gridColumns, forKey: SwitchPreferences.gridColumnsKey) }
     }
 
+    @Published var panelCornerRadius: Double {
+        didSet { UserDefaults.standard.set(panelCornerRadius, forKey: SwitchPreferences.panelCornerRadiusKey) }
+    }
+
+    // Nested radii derived from the panel radius so corners stay concentric.
+    // Ratios chosen so the default (12) reproduces the original hardcoded values.
+    var tileCornerRadius: Double { panelCornerRadius * 0.75 }          // 12 → 9
+    var listRowCornerRadius: Double { panelCornerRadius * 2 / 3 }      // 12 → 8
+    var tileThumbnailCornerRadius: Double { panelCornerRadius * 0.58 } // 12 → 7
+    var listThumbnailCornerRadius: Double { panelCornerRadius * 0.42 } // 12 → 5
+
     @Published var pinnedBundleIDs: Set<String> {
         didSet { UserDefaults.standard.set(Array(pinnedBundleIDs), forKey: SwitchPreferences.pinnedBundleIDsKey) }
     }
@@ -189,6 +201,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let thumbnailHeightKey = "switch.thumbnailHeight"
     nonisolated static let appIconSizeKey = "switch.appIconSize"
     nonisolated static let gridColumnsKey = "switch.gridColumns"
+    nonisolated static let panelCornerRadiusKey = "switch.panelCornerRadius"
     nonisolated static let pinnedBundleIDsKey = "switch.pinnedBundleIDs"
     nonisolated static let pickerActivationDelayKey = "switch.pickerActivationDelay"
     nonisolated static let shiftTapReversesKey = "switch.shiftTapReverses"
@@ -218,6 +231,7 @@ final class SwitchPreferences: ObservableObject {
         thumbnailHeight = (UserDefaults.standard.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double) ?? Self.defaultThumbnailHeight
         appIconSize = (UserDefaults.standard.object(forKey: SwitchPreferences.appIconSizeKey) as? Double) ?? Self.defaultAppIconSize
         gridColumns = (UserDefaults.standard.object(forKey: SwitchPreferences.gridColumnsKey) as? Int) ?? Self.defaultGridColumns
+        panelCornerRadius = (UserDefaults.standard.object(forKey: SwitchPreferences.panelCornerRadiusKey) as? Double) ?? Self.defaultPanelCornerRadius
         pinnedBundleIDs = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.pinnedBundleIDsKey) ?? [])
         pickerActivationDelay = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? Self.defaultPickerActivationDelay
         shiftTapReverses = UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey)
