@@ -66,7 +66,7 @@ final class SettingsModel: ObservableObject {
 }
 
 private enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, picker, permissions, appearance
+    case general, picker, permissions, appearance, about
     var id: String { rawValue }
     var label: String {
         switch self {
@@ -74,6 +74,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .picker: return "Picker"
         case .permissions: return "Permissions"
         case .appearance: return "Appearance"
+        case .about: return "About"
         }
     }
 }
@@ -96,6 +97,7 @@ struct SettingsView: View {
                 case .picker:      pickerTab
                 case .permissions: permissionsTab
                 case .appearance:  appearanceTab
+                case .about:       AboutView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
