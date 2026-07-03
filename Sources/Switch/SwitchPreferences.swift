@@ -55,6 +55,13 @@ final class SwitchPreferences: ObservableObject {
             case .heavy: return .ultraThickMaterial
             }
         }
+        var nsMaterial: NSVisualEffectView.Material {
+            switch self {
+            case .light: return .hudWindow
+            case .medium: return .popover
+            case .heavy: return .underWindowBackground
+            }
+        }
     }
 
     @Published var accent: AccentChoice {

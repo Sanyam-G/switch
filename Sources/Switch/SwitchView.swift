@@ -101,7 +101,14 @@ struct SwitchView: View {
             if prefs.showHintStrip { hintStrip }
         }
         .frame(width: model.panelSize.width, height: model.panelSize.height)
-        .background(prefs.backgroundBlur.material)
+        .background {
+            // SwiftUI materials don't sample behind the panel pre-Tahoe (#81).
+            if #available(macOS 26.0, *) {
+                Rectangle().fill(prefs.backgroundBlur.material)
+            } else {
+                VisualEffectBackdrop(material: prefs.backgroundBlur.nsMaterial, blendingMode: .behindWindow)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .scaleEffect(panelScale)
         .offset(y: panelYOffset)
