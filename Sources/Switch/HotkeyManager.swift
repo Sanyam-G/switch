@@ -456,10 +456,14 @@ final class HotkeyManager {
         }
     }
 
+    // NSEvent character APIs hit TSM, which asserts main-queue on macOS 26.2+ and traps this thread.
     private func filterChar(from event: CGEvent) -> Character? {
-        guard let ns = NSEvent(cgEvent: event),
-              let chars = ns.charactersIgnoringModifiers,
-              let c = chars.first else { return nil }
+        guard let copy = event.copy() else { return nil }
+        copy.flags = copy.flags.intersection(.maskShift)
+        var length = 0
+        var buffer = [UniChar](repeating: 0, count: 4)
+        copy.keyboardGetUnicodeString(maxStringLength: 4, actualStringLength: &length, unicodeString: &buffer)
+        guard length > 0, let c = String(utf16CodeUnits: buffer, count: length).first else { return nil }
         if c.isLetter || c == " " || c == "-" || c == "." {
             return Character(c.lowercased())
         }
