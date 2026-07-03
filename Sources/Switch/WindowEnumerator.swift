@@ -150,6 +150,7 @@ enum WindowEnumerator {
         metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int]),
         stageManager: Bool
     ) -> [WindowInfo] {
+        let activeSpace = Int(CGSGetActiveSpace(cid))
         return candidates.compactMap { w in
             var out = w
             if out.isHidden {
@@ -163,6 +164,15 @@ enum WindowEnumerator {
             }
             let arr = [NSNumber(value: w.id)] as CFArray
             let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
+            // macOS 26 keeps the Space assignment for orderOut'd windows, so a
+            // closed window can still report the *active* Space here. A real
+            // active-Space window would be in the on-screen list (isCrossSpace
+            // false), and a real cross-Space window lives on another Space —
+            // so an off-screen window claiming the active Space with no live
+            // AX window is a closed leftover. Drop it.
+            if out.isCrossSpace, spaces.contains(activeSpace), !ax.axBacked.contains(w.id) {
+                return nil
+            }
             if spaces.isEmpty {
                 // Empty Space list + no AX window = orderOut'd ghost, drop it.
                 // Empty Space list + live AX window = a real window the window
