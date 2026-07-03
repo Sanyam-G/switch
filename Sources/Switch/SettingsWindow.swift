@@ -1,8 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Promotes app to .regular while open, reverts to .accessory on close.
-/// Required because SwiftUI's Settings scene + .accessory don't cooperate.
+/// Settings window host. Close demotes in case Sparkle promoted to .regular.
 @MainActor
 final class SettingsWindow {
     static let shared = SettingsWindow()
@@ -12,20 +11,12 @@ final class SettingsWindow {
 
     var isVisible: Bool { window?.isVisible == true }
 
-    /// Drop level so Sparkle's update sheet/window isn't covered by the floating Settings.
-    /// Restored to .floating when Settings regains key (see delegate).
-    func dropLevelForDialog() {
-        window?.level = .normal
-    }
-
     private init() {}
 
     func show() {
         demoteWork?.cancel()
         demoteWork = nil
-        if NSApp.activationPolicy() != .regular {
-            NSApp.setActivationPolicy(.regular)
-        }
+        // Stays .accessory: an inactive .regular app's activate() calls are ignored, breaking switching.
 
         if let existing = window {
             NSApp.activate()
@@ -45,7 +36,6 @@ final class SettingsWindow {
         win.contentViewController = host
         win.center()
         win.isReleasedWhenClosed = false
-        win.level = .floating
         win.delegate = SettingsWindowDelegate.shared
 
         window = win
@@ -72,9 +62,5 @@ private final class SettingsWindowDelegate: NSObject, NSWindowDelegate {
         Task { @MainActor in
             SettingsWindow.shared.handleClose()
         }
-    }
-
-    func windowDidBecomeKey(_ notification: Notification) {
-        if let win = notification.object as? NSWindow { win.level = .floating }
     }
 }

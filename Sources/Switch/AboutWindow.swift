@@ -8,9 +8,7 @@ final class AboutWindow {
     private init() {}
 
     func show() {
-        if NSApp.activationPolicy() != .regular {
-            NSApp.setActivationPolicy(.regular)
-        }
+        // Stays .accessory, same reason as SettingsWindow.
         if let existing = window {
             NSApp.activate()
             existing.makeKeyAndOrderFront(nil)

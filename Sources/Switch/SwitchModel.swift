@@ -106,7 +106,9 @@ final class SwitchModel: ObservableObject {
                     selected = 0
                 }
             } else {
-                selected = SwitchPreferences.shared.stickyMode ? 0 : (filteredWindows.count > 1 ? 1 : 0)
+                // Own windows aren't listed, so with Switch frontmost index 0 is already the previous window.
+                let selfFront = armFrontmostPID == ProcessInfo.processInfo.processIdentifier
+                selected = (SwitchPreferences.shared.stickyMode || selfFront) ? 0 : (filteredWindows.count > 1 ? 1 : 0)
             }
         } else if changed {
             let list = filteredWindows
