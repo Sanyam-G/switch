@@ -16,7 +16,15 @@ Notarized by Apple. macOS 14+. Free.
 
 ## Star History
 
-<img width="244" height="173" alt="image" src="https://github.com/user-attachments/assets/6b202f16-5ea7-40c9-ab5e-70b251bb5c3e" />
+## Star History
+
+<a href="https://www.star-history.com/?type=date&repos=Sanyam-G%2Fswitch">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Sanyam-G/switch&type=date&theme=dark&legend=top-left&sealed_token=Oqc1yZ3pGaCd3XlrVjmzqe6ohmUVCIqrKAO5TMfdbGoo2KEYxz60aOTvgYdWkNyRPMxLvTPgnmQwXOfV42TNN4TJxLP2xjoLoD5dl5B1PPHcUf2l3eBmYg" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Sanyam-G/switch&type=date&legend=top-left&sealed_token=Oqc1yZ3pGaCd3XlrVjmzqe6ohmUVCIqrKAO5TMfdbGoo2KEYxz60aOTvgYdWkNyRPMxLvTPgnmQwXOfV42TNN4TJxLP2xjoLoD5dl5B1PPHcUf2l3eBmYg" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Sanyam-G/switch&type=date&legend=top-left&sealed_token=Oqc1yZ3pGaCd3XlrVjmzqe6ohmUVCIqrKAO5TMfdbGoo2KEYxz60aOTvgYdWkNyRPMxLvTPgnmQwXOfV42TNN4TJxLP2xjoLoD5dl5B1PPHcUf2l3eBmYg" />
+ </picture>
+</a>
 
 
 ## Uninstall
