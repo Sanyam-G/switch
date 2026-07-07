@@ -16,7 +16,8 @@ Notarized by Apple. macOS 14+. Free.
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Sanyam-G/switch&type=Date)](https://www.star-history.com/#Sanyam-G/switch&Date)
+<img width="244" height="173" alt="image" src="https://github.com/user-attachments/assets/6b202f16-5ea7-40c9-ab5e-70b251bb5c3e" />
+
 
 ## Uninstall
 
