@@ -16,8 +16,6 @@ Notarized by Apple. macOS 14+. Free.
 
 ## Star History
 
-## Star History
-
 <a href="https://www.star-history.com/?type=date&repos=Sanyam-G%2Fswitch">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Sanyam-G/switch&type=date&theme=dark&legend=top-left&sealed_token=Oqc1yZ3pGaCd3XlrVjmzqe6ohmUVCIqrKAO5TMfdbGoo2KEYxz60aOTvgYdWkNyRPMxLvTPgnmQwXOfV42TNN4TJxLP2xjoLoD5dl5B1PPHcUf2l3eBmYg" />
