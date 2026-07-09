@@ -55,6 +55,55 @@ enum WindowEnumerator {
         var allPIDs: Set<pid_t> { Set(allWindows.map(\.pid)) }
     }
 
+    // Ghost-confirmation state. Every access takes `ghostLock`; sweeps run on a
+    // background queue and noteSwitchMovedWindow is called from the focus path.
+    private static let ghostLock = NSLock()
+    private static var ghostStrikes: [CGWindowID: (first: Date, count: Int)] = [:]
+    private static var switchMovedWindows: Set<CGWindowID> = []
+
+    /// Record a window Switch just pulled to the current Space via
+    /// CGSMoveWindowsToManagedSpace so the current-space-claim prune skips it: a
+    /// failed raise must not strand it as a self-inflicted ghost (v0.3.9 rescue path).
+    static func noteSwitchMovedWindow(_ id: CGWindowID) {
+        ghostLock.lock()
+        switchMovedWindows.insert(id)
+        ghostLock.unlock()
+    }
+
+    // True once the current-space-claim ghost is confirmed: count ≥ 2 and ≥ 2.5s
+    // since the first strike. Exempt (Switch-moved) wids never accrue strikes.
+    private static func ghostStrikeConfirmed(_ id: CGWindowID) -> Bool {
+        ghostLock.lock()
+        defer { ghostLock.unlock() }
+        if switchMovedWindows.contains(id) { return false }
+        let now = Date()
+        if var entry = ghostStrikes[id] {
+            entry.count += 1
+            ghostStrikes[id] = entry
+            return entry.count >= 2 && now.timeIntervalSince(entry.first) >= 2.5
+        }
+        ghostStrikes[id] = (first: now, count: 1)
+        return false
+    }
+
+    // The condition no longer holds for this wid → forget its strikes so a dropped
+    // window reappears automatically. There is no permanent drop set.
+    private static func clearGhostStrike(_ id: CGWindowID) {
+        ghostLock.lock()
+        ghostStrikes.removeValue(forKey: id)
+        ghostLock.unlock()
+    }
+
+    // Forget ghost state for windows that are on-screen, AX-backed, or gone.
+    private static func housekeepGhostState(onScreen: Set<CGWindowID>, enumerated: Set<CGWindowID>, axBacked: Set<CGWindowID>) {
+        ghostLock.lock()
+        defer { ghostLock.unlock() }
+        for id in ghostStrikes.keys where onScreen.contains(id) || axBacked.contains(id) || !enumerated.contains(id) {
+            ghostStrikes.removeValue(forKey: id)
+        }
+        switchMovedWindows.subtract(onScreen)
+    }
+
     static func fullSnapshot() -> FullSnapshot {
         let onScreen = enumerate(option: [.optionOnScreenOnly, .excludeDesktopElements])
         let everything = enumerate(option: [.optionAll, .excludeDesktopElements])
@@ -72,6 +121,12 @@ enum WindowEnumerator {
             return out
         }
         let annotatedAll = annotateAndPrune(marked, ax: ax, cid: cid, metadata: metadata, stageManager: stageManager)
+        let onScreenIDs = Set(onScreen.map(\.id))
+        housekeepGhostState(
+            onScreen: onScreenIDs,
+            enumerated: onScreenIDs.union(everything.map(\.id)),
+            axBacked: ax.axBacked
+        )
         let cross = annotatedAll.filter { !activeIDs.contains($0.id) }
         let reps = spaceRepresentatives(from: annotatedAll, cid: cid, metadata: metadata)
         return FullSnapshot(activeSpace: active, crossSpace: cross, spaceRepresentatives: reps)
@@ -147,7 +202,7 @@ enum WindowEnumerator {
         _ candidates: [WindowInfo],
         ax: (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>),
         cid: CGSConnectionID,
-        metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int]),
+        metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>),
         stageManager: Bool
     ) -> [WindowInfo] {
         return candidates.compactMap { w in
@@ -173,6 +228,26 @@ enum WindowEnumerator {
                 out.isCrossSpace = false
                 return out
             }
+            if !ax.axBacked.contains(w.id) {
+                // Every Space it claims has been deleted → can't be a real window
+                // (real windows always sit on a live Space). Stateless, self-heals.
+                if !spaces.contains(where: { metadata.labels[$0] != nil }) {
+                    clearGhostStrike(w.id)
+                    return nil
+                }
+                // orderOut'd shell signatures, confirmed across two strikes ≥2.5s apart
+                // so a real window caught mid Space-transition survives (transitions
+                // settle in <1s; Current Space races ahead of CGWindowList and Chromium
+                // exposes no AX in that gap): claims the current Space, or has an empty
+                // CG title — real cross-Space windows always carry one (browser windows
+                // have a page title), so an untitled shell on any live Space is a ghost.
+                let currentClaim = spaces.contains(where: { metadata.currentSpaces.contains($0) })
+                if out.isCrossSpace && (currentClaim || out.title.isEmpty) {
+                    if ghostStrikeConfirmed(w.id) { return nil }
+                } else {
+                    clearGhostStrike(w.id)
+                }
+            }
             if let sid = spaces.first {
                 let info = metadata.labels[sid]
                 out.spaceID = sid
@@ -186,7 +261,7 @@ enum WindowEnumerator {
     private static func spaceRepresentatives(
         from annotated: [WindowInfo],
         cid: CGSConnectionID,
-        metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int])
+        metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>)
     ) -> [WindowInfo] {
         let active = Int(CGSGetActiveSpace(cid))
         let grouped = Dictionary(grouping: annotated) { $0.spaceID ?? -1 }
@@ -217,12 +292,16 @@ enum WindowEnumerator {
     }
 
     /// Builds a `spaceID → "Desktop N" / "Fullscreen"` map by walking CGS's managed-display spaces in order.
-    private static func spaceMetadata(cid: CGSConnectionID) -> (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int]) {
-        guard let displays = CGSCopyManagedDisplaySpaces(cid)?.takeRetainedValue() as? [[String: Any]] else { return ([:], []) }
+    private static func spaceMetadata(cid: CGSConnectionID) -> (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>) {
+        guard let displays = CGSCopyManagedDisplaySpaces(cid)?.takeRetainedValue() as? [[String: Any]] else { return ([:], [], []) }
         var labels: [Int: (label: String, isFullscreen: Bool)] = [:]
         var order: [Int] = []
+        var currentSpaces: Set<Int> = []
         var desktop = 0
         for display in displays {
+            if let current = display["Current Space"] as? [String: Any], let id = current["id64"] as? Int {
+                currentSpaces.insert(id)
+            }
             guard let spaces = display["Spaces"] as? [[String: Any]] else { continue }
             for space in spaces {
                 guard let id = space["id64"] as? Int else { continue }
@@ -236,7 +315,7 @@ enum WindowEnumerator {
                 }
             }
         }
-        return (labels, order)
+        return (labels, order, currentSpaces)
     }
 
     private static func enumerate(option: CGWindowListOption) -> [WindowInfo] {

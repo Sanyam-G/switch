@@ -31,6 +31,9 @@ enum WindowFocuser {
             if !isFullscreenSpace(currentSpace, cid: cid) {
                 let ids = [NSNumber(value: window.id)] as CFArray
                 CGSMoveWindowsToManagedSpace(cid, ids, currentSpace)
+                // Exempt from the current-space-claim prune: if the raise below
+                // fails, the moved window sits here off-screen with no AX element.
+                WindowEnumerator.noteSwitchMovedWindow(window.id)
             }
         }
 
