@@ -156,7 +156,8 @@ struct SettingsView: View {
                         hotkeyRow(label: "Current app", binding: model.currentApp) { b in
                             applyHotkey(b) { model.updateCurrentApp($0) }
                         }
-                        hotkeyRow(label: "Spaces", binding: model.spaces) { b in
+                        hotkeyRow(label: "Spaces", binding: model.spaces,
+                                  detail: "Cycle Spaces. Conflicts with browser tab switching if set to ⌃Tab.") { b in
                             applyHotkey(b) { model.updateSpaces($0) }
                         }
                         stickyToggleRow
@@ -716,23 +717,31 @@ struct SettingsView: View {
         .background(rowBackground)
     }
 
-    private func hotkeyRow(label: String, binding: HotkeyBinding?, onCapture: @escaping (HotkeyBinding?) -> Void) -> some View {
-        HStack(spacing: 12) {
-            Text(label)
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 100, alignment: .leading)
-            KeyRecorderField(
-                initialBinding: binding ?? HotkeyBinding(keyCode: 0, modifiersRaw: 0),
-                onCapture: { onCapture($0) },
-                accent: prefs.accent.color,
-                placeholder: "Not set"
-            )
-            .frame(width: 180, height: 28)
-            if binding != nil {
-                Button("Clear") { onCapture(nil) }
-                    .controlSize(.small)
+    private func hotkeyRow(label: String, binding: HotkeyBinding?, detail: String? = nil, onCapture: @escaping (HotkeyBinding?) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                Text(label)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 100, alignment: .leading)
+                KeyRecorderField(
+                    initialBinding: binding ?? HotkeyBinding(keyCode: 0, modifiersRaw: 0),
+                    onCapture: { onCapture($0) },
+                    accent: prefs.accent.color,
+                    placeholder: "Not set"
+                )
+                .frame(width: 180, height: 28)
+                if binding != nil {
+                    Button("Clear") { onCapture(nil) }
+                        .controlSize(.small)
+                }
+                Spacer()
             }
-            Spacer()
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 112)
+            }
         }
     }
 

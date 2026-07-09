@@ -79,7 +79,7 @@ final class HotkeyConfig {
         if !defaults.bool(forKey: seededKey) {
             if load(allKey) == nil { write(.defaultAllWindows, key: allKey) }
             if load(appKey) == nil { write(.defaultCurrentApp, key: appKey) }
-            if load(spacesKey) == nil { write(.defaultSpaces, key: spacesKey) }
+            // Spaces ships unbound; ⌃Tab would swallow browser tab switching (#91). Opt in via Settings.
             defaults.set(true, forKey: seededKey)
         }
         cachedAll = load(allKey)
@@ -111,12 +111,12 @@ final class HotkeyConfig {
     func resetToDefaults() {
         write(.defaultAllWindows, key: allKey)
         write(.defaultCurrentApp, key: appKey)
-        write(.defaultSpaces, key: spacesKey)
+        defaults.removeObject(forKey: spacesKey)
         defaults.removeObject(forKey: stickyKey)
         lock.lock()
         cachedAll = .defaultAllWindows
         cachedApp = .defaultCurrentApp
-        cachedSpaces = .defaultSpaces
+        cachedSpaces = nil
         cachedSticky = nil
         lock.unlock()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
