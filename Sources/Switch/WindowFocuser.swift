@@ -150,6 +150,23 @@ enum AppCloser {
 
 enum WindowCloser {
     static func close(_ window: WindowInfo) { pressButton(window, attribute: kAXCloseButtonAttribute) }
+
+    /// Close only the specific window, resolving its AX element the way focus does
+    /// (live wid match, then AXWindowCache) — never an arbitrary sibling. Returns
+    /// false without acting when nothing resolves, so callers can decline to fall back.
+    @discardableResult
+    static func closeExact(_ window: WindowInfo) -> Bool {
+        let appAX = AXUIElementCreateApplication(window.pid)
+        var ref: CFTypeRef?
+        let axWindows = (AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success
+            ? ref as? [AXUIElement] : nil) ?? []
+        guard let target = axWindows.first(where: { axWindowID($0) == window.id })
+            ?? AXWindowCache.element(for: window.id) else { return false }
+        var btnRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(target, kAXCloseButtonAttribute as CFString, &btnRef) == .success,
+              let btn = btnRef else { return false }
+        return AXUIElementPerformAction(btn as! AXUIElement, kAXPressAction as CFString) == .success
+    }
 }
 
 enum WindowMinimizer {

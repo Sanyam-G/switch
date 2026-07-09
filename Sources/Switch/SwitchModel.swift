@@ -225,11 +225,13 @@ final class SwitchModel: ObservableObject {
         removeFromPicker { $0.id == target.id }
     }
 
-    func quitApp(withWindowID id: CGWindowID) {
+    func closeWindow(withWindowID id: CGWindowID) {
         guard mode != .spaces else { return }
         guard let target = windows.first(where: { $0.id == id }) else { return }
-        AppCloser.close(target)
-        removeFromPicker { $0.pid == target.pid }
+        // Only the clicked window, like middle-clicking a browser tab. If no AX element
+        // resolves (e.g. cross-Space Chromium window), do nothing rather than quit the app.
+        guard WindowCloser.closeExact(target) else { return }
+        removeFromPicker { $0.id == target.id }
     }
 
     private func removeFromPicker(_ shouldRemove: (WindowInfo) -> Bool) {

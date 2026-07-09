@@ -377,7 +377,7 @@ final class SwitcherWindow: NSPanel {
            model.mode != .spaces,
            !UserDefaults.standard.bool(forKey: SwitchPreferences.disableMouseKey),
            let wid = model.pointerWindowID {
-            model.quitApp(withWindowID: wid)
+            model.closeWindow(withWindowID: wid)
             return
         }
         super.sendEvent(event)
