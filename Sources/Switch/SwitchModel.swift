@@ -20,6 +20,7 @@ final class SwitchModel: ObservableObject {
     private var prewarmTimer: Timer?
     private var armGeneration = 0
     private var armFrontmostPID: pid_t?
+    private var armSelfHadKeyWindow = false
     private var thumbnailTasks: [Task<Void, Never>] = []
     var pointerWindowID: CGWindowID?
 
@@ -61,6 +62,7 @@ final class SwitchModel: ObservableObject {
         filterText = ""
         pointerWindowID = nil
         armFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        armSelfHadKeyWindow = NSApp.keyWindow != nil
         if let snap = WindowStore.shared.current {
             apply(snapshot: snap, initial: true)
         } else {
@@ -107,7 +109,10 @@ final class SwitchModel: ObservableObject {
                 }
             } else {
                 // Own windows aren't listed, so with Switch frontmost index 0 is already the previous window.
-                let selfFront = armFrontmostPID == ProcessInfo.processInfo.processIdentifier
+                // Only treat Switch as frontmost when it genuinely owns a visible key window (Settings/About/
+                // onboarding); the picker panel can't become key, so keyWindow != nil rules out the stale
+                // "still frontmost after closing a window" state behind #90.
+                let selfFront = armFrontmostPID == ProcessInfo.processInfo.processIdentifier && armSelfHadKeyWindow
                 selected = (SwitchPreferences.shared.stickyMode || selfFront) ? 0 : (filteredWindows.count > 1 ? 1 : 0)
             }
         } else if changed {
