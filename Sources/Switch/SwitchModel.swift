@@ -178,7 +178,13 @@ final class SwitchModel: ObservableObject {
             }
             ws = active.sorted(by: stable) + cross.sorted(by: stable)
         } else if SwitchPreferences.shared.mruMixSpaces {
-            ws = WindowMRU.sorted(active + cross, frontmost: activeFront)
+            // Right after a cross-Space switch the cached snapshot still lists the
+            // focused window as cross-Space; pin the frontmost app's MRU window from
+            // either list so rows don't reshuffle under the selection when the fresh
+            // sweep lands (#stale-arm reorder).
+            let all = active + cross
+            let front = armFrontmostPID.flatMap { p in WindowMRU.mostRecent(in: all.filter { $0.pid == p }) } ?? activeFront
+            ws = WindowMRU.sorted(all, frontmost: front)
         } else {
             ws = WindowMRU.sorted(active, frontmost: activeFront) + WindowMRU.sorted(cross, frontmost: nil)
         }
@@ -369,6 +375,11 @@ final class SwitchModel: ObservableObject {
         let list = filteredWindows
         if list.indices.contains(selected) {
             WindowFocuser.focus(list[selected])
+            // Warm the cache once the Space transition settles so an immediate
+            // re-invoke doesn't arm from a pre-switch snapshot (3s prewarm gap).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                WindowStore.shared.refresh()
+            }
         }
         teardown()
     }
