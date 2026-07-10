@@ -60,6 +60,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model?.commit()
             window?.dismiss()
         }
+        hotkey.onQuickSwitch = { [weak self, weak model, weak window] in
+            self?.cancelPendingPresent()
+            model?.commitRecent()
+            window?.dismiss()
+        }
         model.commitAndDismiss = { [weak self, weak model, weak window] in
             self?.cancelPendingPresent()
             self?.hotkey?.clearArmed()

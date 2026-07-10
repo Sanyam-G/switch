@@ -108,12 +108,7 @@ final class SwitchModel: ObservableObject {
                     selected = 0
                 }
             } else {
-                // Own windows aren't listed, so with Switch frontmost index 0 is already the previous window.
-                // Only treat Switch as frontmost when it genuinely owns a visible key window (Settings/About/
-                // onboarding); the picker panel can't become key, so keyWindow != nil rules out the stale
-                // "still frontmost after closing a window" state behind #90.
-                let selfFront = armFrontmostPID == ProcessInfo.processInfo.processIdentifier && armSelfHadKeyWindow
-                selected = (SwitchPreferences.shared.stickyMode || selfFront) ? 0 : (filteredWindows.count > 1 ? 1 : 0)
+                selected = SwitchPreferences.shared.stickyMode ? 0 : recentIndex(in: filteredWindows)
             }
         } else if changed {
             let list = filteredWindows
@@ -369,6 +364,28 @@ final class SwitchModel: ObservableObject {
         guard !filterText.isEmpty else { return }
         filterText.removeLast()
         selected = 0
+    }
+
+    // Index of the previous window: 1, or 0 when Switch itself was frontmost since our
+    // own windows aren't listed. Only treat Switch as frontmost when it genuinely owns a
+    // visible key window (Settings/About/onboarding); the picker panel can't become key,
+    // so keyWindow != nil rules out the stale "still frontmost after closing a window"
+    // state behind #90.
+    private func recentIndex(in list: [WindowInfo]) -> Int {
+        let selfFront = armFrontmostPID == ProcessInfo.processInfo.processIdentifier && armSelfHadKeyWindow
+        return (selfFront || list.count <= 1) ? 0 : 1
+    }
+
+    // Sticky-mode quick tap: the panel never floated, so behave like a non-sticky
+    // commit — switch to the recent window instead of the preselected current one.
+    // Spaces mode already preselects the next space regardless of sticky.
+    func commitRecent() {
+        if mode != .spaces {
+            let list = filteredWindows
+            let idx = recentIndex(in: list)
+            if list.indices.contains(idx) { selected = idx }
+        }
+        commit()
     }
 
     func commit() {

@@ -9,6 +9,7 @@ final class HotkeyManager {
     var onArm: ((Mode) -> Void)?
     var onAdvance: ((Bool) -> Void)?
     var onCommit: (() -> Void)?
+    var onQuickSwitch: (() -> Void)?
     var onCancel: (() -> Void)?
     var onCloseSelected: (() -> Void)?
     var onCloseSelectedApp: (() -> Void)?
@@ -355,12 +356,24 @@ final class HotkeyManager {
 
             if !armingHeld {
                 let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
-                let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < Self.stickyQuickTapMS } ?? false) && !advanced
-                if !sticky || quickTap {
+                if !sticky {
                     clearArmedLocked()
                     stateLock.unlock()
                     DispatchQueue.main.async { [weak self] in
                         self?.onCommit?()
+                    }
+                    return Unmanaged.passUnretained(event)
+                }
+                // A tap released before the picker would have appeared is a classic
+                // alt-tab switch, not a request to float the panel.
+                let delayMS = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? SwitchPreferences.defaultPickerActivationDelay
+                let thresholdMS = max(Self.stickyQuickTapMS, delayMS)
+                let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < thresholdMS } ?? false) && !advanced
+                if quickTap {
+                    clearArmedLocked()
+                    stateLock.unlock()
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onQuickSwitch?()
                     }
                     return Unmanaged.passUnretained(event)
                 }
