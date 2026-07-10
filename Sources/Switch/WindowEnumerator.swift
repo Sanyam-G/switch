@@ -130,11 +130,13 @@ enum WindowEnumerator {
         }
         let annotatedAll = annotateAndPrune(marked, ax: ax, cid: cid, metadata: metadata, stageManager: stageManager, titlesReliable: titlesReliable)
         let onScreenIDs = Set(onScreen.map(\.id))
+        let allEnumeratedIDs = onScreenIDs.union(everything.map(\.id))
         housekeepGhostState(
             onScreen: onScreenIDs,
-            enumerated: onScreenIDs.union(everything.map(\.id)),
+            enumerated: allEnumeratedIDs,
             axBacked: ax.axBacked
         )
+        purgeAXEverSeen(keeping: allEnumeratedIDs)
         let cross = annotatedAll.filter { !activeIDs.contains($0.id) }
         let reps = spaceRepresentatives(from: annotatedAll, cid: cid, metadata: metadata)
         return FullSnapshot(activeSpace: active, crossSpace: cross, spaceRepresentatives: reps)
@@ -184,6 +186,7 @@ enum WindowEnumerator {
                 if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
                     axBacked.insert(id)
                     AXWindowCache.store(ax, for: id)
+                    rememberAXBacked(id)
                     var minRef: CFTypeRef?
                     if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
                        let isMin = minRef as? Bool, isMin {
@@ -193,6 +196,30 @@ enum WindowEnumerator {
             }
         }
         return (axBacked, minimized)
+    }
+
+    // Stage Manager suspends AX for whichever app isn't the current stage, so a
+    // real off-stage window reports zero AX windows just like a closed one would.
+    // Remembering "was AX-backed at some point this session" lets the off-stage
+    // ghost check in annotateAndPrune tell the two apart instead of pruning both.
+    private static let axEverSeenLock = NSLock()
+    private static var axEverSeen: Set<CGWindowID> = []
+
+    private static func rememberAXBacked(_ id: CGWindowID) {
+        axEverSeenLock.lock(); defer { axEverSeenLock.unlock() }
+        axEverSeen.insert(id)
+    }
+
+    private static func wasEverAXBacked(_ id: CGWindowID) -> Bool {
+        axEverSeenLock.lock(); defer { axEverSeenLock.unlock() }
+        return axEverSeen.contains(id)
+    }
+
+    // A window id that's gone from every CGWindowList sweep is fully closed, not
+    // just off-stage — forget it so the cache doesn't grow unbounded.
+    private static func purgeAXEverSeen(keeping ids: Set<CGWindowID>) {
+        axEverSeenLock.lock(); defer { axEverSeenLock.unlock() }
+        axEverSeen.formIntersection(ids)
     }
 
     // Drop orphaned on-screen entries: no live AX window and no Space. Real windows always have a Space.
@@ -233,7 +260,14 @@ enum WindowEnumerator {
                 // server has ordered out (Stage Manager off-stage). With Stage
                 // Manager off that signature is a closed Settings/Preferences
                 // leftover, so it only survives while Stage Manager is on.
-                guard ax.axBacked.contains(w.id), stageManager else { return nil }
+                //
+                // Stage Manager suspends AX entirely for whichever app isn't the
+                // current stage, so a real off-stage window can report zero live
+                // AX windows too — indistinguishable from a closed one by
+                // ax.axBacked alone. wasEverAXBacked remembers that this id was
+                // confirmed real earlier in the session, so it survives being
+                // temporarily un-inspectable while off-stage.
+                guard (ax.axBacked.contains(w.id) || wasEverAXBacked(w.id)), stageManager else { return nil }
                 out.isCrossSpace = false
                 return out
             }
@@ -363,7 +397,15 @@ enum WindowEnumerator {
                 width: boundsDict["Width"] ?? 0,
                 height: boundsDict["Height"] ?? 0
             )
-            if bounds.width < 100 || bounds.height < 80 { continue }
+            // Stage Manager reports garbage/degenerate bounds for a real window
+            // while it's off-stage (observed: a titled window's bounds fluctuating
+            // between e.g. 112x102 and 78x109 across successive queries). A titled
+            // window is essentially never the tooltip/overlay junk this minimum-size
+            // check exists to catch, so only enforce it here when title is empty or
+            // Stage Manager is off.
+            if bounds.width < 100 || bounds.height < 80 {
+                if title.isEmpty || !stageManagerEnabled { continue }
+            }
             if title.isEmpty && titlesReliable
                 && (bounds.width < 400 || bounds.height < 300) { continue }
             // Dedupe by CGWindowID only — it's already unique per window.
