@@ -63,16 +63,22 @@ final class FocusTracker {
 
     /// Touch MRU on app activation as a backstop — AX observers don't always
     /// fire reliably immediately after an app launches, but didActivate does.
+    /// Apps with no focused window (e.g. all windows closed) still get touched
+    /// via their synthetic windowless id, so the "no window" picker entry
+    /// participates in MRU ordering like any other app.
     private func touchFocused(of pid: pid_t) {
         let appAX = AXUIElementCreateApplication(pid)
         var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appAX, kAXFocusedWindowAttribute as CFString, &ref) == .success,
-              let element = ref else { return }
-        let ax = element as! AXUIElement
-        var id: CGWindowID = 0
-        if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
-            WindowMRU.touch(id)
+        if AXUIElementCopyAttributeValue(appAX, kAXFocusedWindowAttribute as CFString, &ref) == .success,
+           let element = ref {
+            let ax = element as! AXUIElement
+            var id: CGWindowID = 0
+            if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
+                WindowMRU.touch(id)
+                return
+            }
         }
+        WindowMRU.touch(WindowInfo.windowlessID(for: pid))
     }
 }
 

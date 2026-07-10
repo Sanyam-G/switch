@@ -16,6 +16,12 @@ struct WindowInfo: Identifiable, Hashable {
     var isFullscreenSpace: Bool = false
     var isWindowless: Bool = false
     var bundleID: String?
+
+    /// Stable synthetic CGWindowID for a windowless app's picker entry, so it can be
+    /// tracked in WindowMRU the same way real windows are.
+    static func windowlessID(for pid: pid_t) -> CGWindowID {
+        CGWindowID(0xF0000000) | CGWindowID(UInt32(bitPattern: Int32(pid)))
+    }
 }
 
 enum WindowEnumerator {

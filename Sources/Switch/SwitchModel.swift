@@ -197,7 +197,7 @@ final class SwitchModel: ObservableObject {
                 .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
                 .map { app in
                     WindowInfo(
-                        id: CGWindowID(0xF0000000) | CGWindowID(UInt32(bitPattern: Int32(app.processIdentifier))),
+                        id: WindowInfo.windowlessID(for: app.processIdentifier),
                         pid: app.processIdentifier,
                         appName: app.localizedName ?? "",
                         title: "",
@@ -206,7 +206,17 @@ final class SwitchModel: ObservableObject {
                         bundleID: app.bundleIdentifier
                     )
                 }
-            final += extras
+            // In MRU modes, merge windowless entries into the same recency ordering
+            // as real windows instead of always appending them at the end — a
+            // windowless app that was just focused should sort like any other app.
+            // staticOrder is rank-based, not recency-based, so it keeps the old
+            // append-at-end behavior for unranked windowless apps.
+            if !SwitchPreferences.shared.staticOrder, let frontmost = ws.first {
+                let rest = WindowMRU.sorted(Array(ws.dropFirst()) + extras, frontmost: nil)
+                final = [frontmost] + rest
+            } else {
+                final = ws + extras
+            }
         }
         let pinned = SwitchPreferences.shared.pinnedBundleIDs
         if !pinned.isEmpty {
