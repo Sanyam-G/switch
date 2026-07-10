@@ -7,6 +7,7 @@ import ServiceManagement
 final class SettingsModel: ObservableObject {
     @Published var launchAtLogin: Bool = false
     @Published var allWindows: HotkeyBinding? = HotkeyConfig.shared.allWindows
+    @Published var secondaryAllWindows: HotkeyBinding? = HotkeyConfig.shared.secondaryAllWindows
     @Published var currentApp: HotkeyBinding? = HotkeyConfig.shared.currentApp
     @Published var spaces: HotkeyBinding? = HotkeyConfig.shared.spaces
     @Published var stickyToggle: HotkeyBinding? = HotkeyConfig.shared.stickyToggle
@@ -18,6 +19,7 @@ final class SettingsModel: ObservableObject {
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
         allWindows = HotkeyConfig.shared.allWindows
+        secondaryAllWindows = HotkeyConfig.shared.secondaryAllWindows
         currentApp = HotkeyConfig.shared.currentApp
         spaces = HotkeyConfig.shared.spaces
         stickyToggle = HotkeyConfig.shared.stickyToggle
@@ -42,6 +44,11 @@ final class SettingsModel: ObservableObject {
     func updateAllWindows(_ b: HotkeyBinding?) {
         HotkeyConfig.shared.allWindows = b
         allWindows = b
+    }
+
+    func updateSecondaryAllWindows(_ b: HotkeyBinding?) {
+        HotkeyConfig.shared.secondaryAllWindows = b
+        secondaryAllWindows = b
     }
 
     func updateCurrentApp(_ b: HotkeyBinding?) {
@@ -84,6 +91,8 @@ struct SettingsView: View {
     @ObservedObject private var prefs = SwitchPreferences.shared
     @State private var rejectMessage: String?
     @State private var tab: SettingsTab = .general
+    @State private var secondaryHotkeyExpanded = false
+    @State private var showSecondaryHotkeyWhy = false
     @State private var draggedApp: String?
     @State private var openWindows: [WindowInfo] = []
 
@@ -153,6 +162,50 @@ struct SettingsView: View {
                         hotkeyRow(label: "All windows", binding: model.allWindows) { b in
                             applyHotkey(b) { model.updateAllWindows($0) }
                         }
+                        DisclosureGroup(isExpanded: Binding(
+                            get: { model.secondaryAllWindows != nil || secondaryHotkeyExpanded },
+                            set: { if model.secondaryAllWindows == nil { secondaryHotkeyExpanded = $0 } }
+                        )) {
+                            hotkeyRow(label: "", binding: model.secondaryAllWindows,
+                                      detail: "Supports modifier combinations and bare F13-F20.") { b in
+                                applyHotkey(b, allowBare: true) { model.updateSecondaryAllWindows($0) }
+                            }
+                            .padding(.top, 8)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Secondary shortcut")
+                                    .font(.system(size: 13, weight: .medium))
+                                HStack(spacing: 4) {
+                                    Text("Optional shortcut that always keeps the All windows picker open.")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                    Button("Why?") {
+                                        showSecondaryHotkeyWhy = true
+                                    }
+                                    .buttonStyle(.plain)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(prefs.accent.color)
+                                    .onHover { hovering in
+                                        if hovering { showSecondaryHotkeyWhy = true }
+                                    }
+                                    .popover(isPresented: $showSecondaryHotkeyWhy, arrowEdge: .bottom) {
+                                        Text("Useful with gesture and remapping tools. For example, map a BetterTouchTool three-finger Force Click to F14, then assign F14 here to open the picker without holding a keyboard shortcut.")
+                                            .font(.system(size: 12))
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .frame(width: 280, alignment: .leading)
+                                            .padding(12)
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if model.secondaryAllWindows == nil {
+                                    secondaryHotkeyExpanded.toggle()
+                                }
+                            }
+                        }
+                        .tint(prefs.accent.color)
                         hotkeyRow(label: "Current app", binding: model.currentApp) { b in
                             applyHotkey(b) { model.updateCurrentApp($0) }
                         }
@@ -785,13 +838,13 @@ struct SettingsView: View {
         }
     }
 
-    private func applyHotkey(_ b: HotkeyBinding?, save: (HotkeyBinding?) -> Void) {
+    private func applyHotkey(_ b: HotkeyBinding?, allowBare: Bool = false, save: (HotkeyBinding?) -> Void) {
         guard let b else {
             rejectMessage = nil
             save(nil)
             return
         }
-        if let msg = HotkeyValidator.reject(keyCode: b.keyCode, flags: b.cgFlags) {
+        if let msg = HotkeyValidator.reject(keyCode: b.keyCode, flags: b.cgFlags, allowBare: allowBare) {
             rejectMessage = msg
         } else {
             rejectMessage = nil

@@ -27,6 +27,7 @@ final class HotkeyManager {
     private var armed: Mode?
     private var armedAt: Date?
     private var advanced = false
+    private var forcePickerOpen = false
     private var lastShift = false
     private var suspended = false
     private var stopRequested = false
@@ -225,6 +226,7 @@ final class HotkeyManager {
 
         if type == .keyDown {
             let allBinding = HotkeyConfig.shared.allWindows
+            let secondaryAllBinding = HotkeyConfig.shared.secondaryAllWindows
             let appBinding = HotkeyConfig.shared.currentApp
             let spacesBinding = HotkeyConfig.shared.spaces
 
@@ -236,6 +238,10 @@ final class HotkeyManager {
                 return nil
             }
 
+            if let secondaryAllBinding, secondaryAllBinding.matchesTrigger(keyCode: kc, flags: flags) {
+                armOrAdvance(.allWindows, shift: shift, forceOpen: true)
+                return nil
+            }
             if let allBinding, allBinding.matchesTrigger(keyCode: kc, flags: flags) {
                 armOrAdvance(.allWindows, shift: shift)
                 return nil
@@ -251,12 +257,14 @@ final class HotkeyManager {
 
             stateLock.lock()
             let armedMode = armed
+            let forcedOpen = forcePickerOpen
             stateLock.unlock()
 
             if let mode = armedMode {
-                let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
+                let storedStickyPreference = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
+                let effectiveSticky = storedStickyPreference || forcedOpen
                 let typeToFilter = (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
-                let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
+                let actionModifierMatches = cmd && (effectiveSticky || !typeToFilter || shift)
                 if kc == Self.kcEscape {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
@@ -271,7 +279,7 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                if !sticky && !armingModifiersHeld(mode, flags) {
+                if !effectiveSticky && !armingModifiersHeld(mode, flags) {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
                         self?.onCommit?()
@@ -354,9 +362,10 @@ final class HotkeyManager {
             }
 
             if !armingHeld {
-                let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
+                let storedStickyPreference = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
+                let effectiveSticky = storedStickyPreference || forcePickerOpen
                 let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < Self.stickyQuickTapMS } ?? false) && !advanced
-                if !sticky || quickTap {
+                if !effectiveSticky || (!forcePickerOpen && quickTap) {
                     clearArmedLocked()
                     stateLock.unlock()
                     DispatchQueue.main.async { [weak self] in
@@ -372,13 +381,14 @@ final class HotkeyManager {
         return Unmanaged.passUnretained(event)
     }
 
-    private func armOrAdvance(_ mode: Mode, shift: Bool) {
+    private func armOrAdvance(_ mode: Mode, shift: Bool, forceOpen: Bool = false) {
         stateLock.lock()
         let isFirst = armed == nil
         if isFirst {
             armed = mode
             armedAt = Date()
             advanced = false
+            forcePickerOpen = forceOpen
         } else {
             advanced = true
         }
@@ -408,6 +418,7 @@ final class HotkeyManager {
         armed = nil
         armedAt = nil
         advanced = false
+        forcePickerOpen = false
     }
 
     func clearArmed() {
@@ -430,11 +441,13 @@ final class HotkeyManager {
             stateLock.unlock()
             return
         }
+        let forcedOpen = forcePickerOpen
         stateLock.unlock()
-        let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
-        guard !sticky, !armingModifiersHeld(mode, hardware) else { return }
+        let storedStickyPreference = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
+        let effectiveSticky = storedStickyPreference || forcedOpen
+        guard !effectiveSticky, !armingModifiersHeld(mode, hardware) else { return }
         stateLock.lock()
-        guard armed == mode, armedAt == at else {
+        guard armed == mode, armedAt == at, forcePickerOpen == forcedOpen else {
             stateLock.unlock()
             return
         }

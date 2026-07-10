@@ -61,6 +61,7 @@ final class HotkeyConfig {
 
     private let defaults = UserDefaults.standard
     private let allKey = "switch.hotkey.allWindows"
+    private let secondaryAllKey = "switch.hotkey.secondaryAllWindows"
     private let appKey = "switch.hotkey.currentApp"
     private let spacesKey = "switch.hotkey.spaces"
     private let stickyKey = "switch.hotkey.stickyToggle"
@@ -68,6 +69,7 @@ final class HotkeyConfig {
 
     private let lock = NSLock()
     private var cachedAll: HotkeyBinding?
+    private var cachedSecondaryAll: HotkeyBinding?
     private var cachedApp: HotkeyBinding?
     private var cachedSpaces: HotkeyBinding?
     private var cachedSticky: HotkeyBinding?
@@ -83,6 +85,7 @@ final class HotkeyConfig {
             defaults.set(true, forKey: seededKey)
         }
         cachedAll = load(allKey)
+        cachedSecondaryAll = load(secondaryAllKey)
         cachedApp = load(appKey)
         cachedSpaces = load(spacesKey)
         cachedSticky = load(stickyKey)
@@ -91,6 +94,11 @@ final class HotkeyConfig {
     var allWindows: HotkeyBinding? {
         get { lock.lock(); defer { lock.unlock() }; return cachedAll }
         set { store(newValue, key: allKey) { self.cachedAll = newValue } }
+    }
+
+    var secondaryAllWindows: HotkeyBinding? {
+        get { lock.lock(); defer { lock.unlock() }; return cachedSecondaryAll }
+        set { store(newValue, key: secondaryAllKey) { self.cachedSecondaryAll = newValue } }
     }
 
     var currentApp: HotkeyBinding? {
@@ -111,10 +119,12 @@ final class HotkeyConfig {
     func resetToDefaults() {
         write(.defaultAllWindows, key: allKey)
         write(.defaultCurrentApp, key: appKey)
+        defaults.removeObject(forKey: secondaryAllKey)
         defaults.removeObject(forKey: spacesKey)
         defaults.removeObject(forKey: stickyKey)
         lock.lock()
         cachedAll = .defaultAllWindows
+        cachedSecondaryAll = nil
         cachedApp = .defaultCurrentApp
         cachedSpaces = nil
         cachedSticky = nil
@@ -160,10 +170,13 @@ enum HotkeyValidator {
     ]
 
     /// Returns nil if the combo is allowed; otherwise a short human reason.
-    static func reject(keyCode: UInt16, flags: CGEventFlags) -> String? {
+    static func reject(keyCode: UInt16, flags: CGEventFlags, allowBare: Bool = false) -> String? {
         let mask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
         let cleaned = flags.intersection(mask)
-        if cleaned.intersection([.maskCommand, .maskAlternate, .maskControl]).rawValue == 0 {
+        if cleaned.intersection([.maskCommand, .maskAlternate, .maskControl]).rawValue == 0,
+           !(allowBare
+             && cleaned.rawValue == 0
+             && [105, 107, 113, 106, 64, 79, 80, 90].contains(keyCode)) {
             return "Needs at least one modifier (⌘, ⌥, or ⌃)."
         }
         for (rk, rf) in reserved where rk == keyCode && rf == cleaned {
@@ -194,7 +207,9 @@ enum KeyName {
         123: "←", 124: "→", 125: "↓", 126: "↑",
         122: "F1", 120: "F2", 99: "F3", 118: "F4",
         96: "F5", 97: "F6", 98: "F7", 100: "F8",
-        101: "F9", 109: "F10", 103: "F11", 111: "F12"
+        101: "F9", 109: "F10", 103: "F11", 111: "F12",
+        105: "F13", 107: "F14", 113: "F15", 106: "F16",
+        64: "F17", 79: "F18", 80: "F19", 90: "F20"
     ]
 
     private static func chars(for code: UInt16) -> String? {
