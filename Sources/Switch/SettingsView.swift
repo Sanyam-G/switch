@@ -29,6 +29,13 @@ enum HotkeyAction: CaseIterable {
         case .stickyToggle:  return "Sticky toggle"
         }
     }
+
+    var hint: String? {
+        switch self {
+        case .spaces: return "Cycle Spaces. Conflicts with browser tab switching if set to ⌃Tab."
+        default:      return nil
+        }
+    }
 }
 
 @MainActor
@@ -525,35 +532,43 @@ struct SettingsView: View {
 
     private func hotkeyActionGroup(_ action: HotkeyAction) -> some View {
         let rows = model.bindings(for: action)
-        return HStack(alignment: .top, spacing: 10) {
-            Text(action.label)
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 100, alignment: .leading)
-                .padding(.top, 4)
-            FlowLayout(spacing: 6, lineSpacing: 6) {
-                ForEach(rows) { row in
-                    hotkeyEditorRow(action: action, row: row)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 10) {
+                Text(action.label)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 100, alignment: .leading)
+                    .padding(.top, 4)
+                FlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(rows) { row in
+                        hotkeyEditorRow(action: action, row: row)
+                    }
+                    if rows.isEmpty {
+                        Text("Not set")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .frame(height: 24)
+                            .padding(.trailing, 2)
+                    }
+                    Button {
+                        rejectMessage = nil
+                        model.addBinding(action)
+                    } label: {
+                        Text("+ Add")
+                            .font(.system(size: 11, weight: .medium))
+                            .padding(.horizontal, 6)
+                            .frame(height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(prefs.accent.color)
                 }
-                if rows.isEmpty {
-                    Text("Not set")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .frame(height: 24)
-                        .padding(.trailing, 2)
-                }
-                Button {
-                    rejectMessage = nil
-                    model.addBinding(action)
-                } label: {
-                    Text("+ Add")
-                        .font(.system(size: 11, weight: .medium))
-                        .padding(.horizontal, 6)
-                        .frame(height: 24)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(prefs.accent.color)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            if let hint = action.hint {
+                Text(hint)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 110)
+            }
         }
     }
 
