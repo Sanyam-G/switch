@@ -69,7 +69,7 @@ Built-in. Daily background check. Settings → About → Check for Updates for m
 
 ## Contributing
 
-Open an issue before starting on a PR so the approach is agreed on first. Hand-written changes only: AI-generated PRs (disclosed, or carrying AI co-author trailers) get closed unreviewed. Small, single-purpose PRs are the ones that get merged.
+Open an issue before starting on a PR so we agree on the approach first. I don't merge AI-generated PRs, disclosed or not, but good ideas in them still count: I'll take the feature and build it myself. Small, single-purpose, hand-written PRs are what gets merged.
 
 ## License
 
