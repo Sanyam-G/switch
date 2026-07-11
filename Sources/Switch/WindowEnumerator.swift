@@ -186,7 +186,6 @@ enum WindowEnumerator {
                 if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
                     axBacked.insert(id)
                     AXWindowCache.store(ax, for: id)
-                    rememberAXBacked(id)
                     var minRef: CFTypeRef?
                     if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
                        let isMin = minRef as? Bool, isMin {
@@ -195,6 +194,7 @@ enum WindowEnumerator {
                 }
             }
         }
+        rememberAXBacked(axBacked)
         return (axBacked, minimized)
     }
 
@@ -204,9 +204,9 @@ enum WindowEnumerator {
     private static let axEverSeenLock = NSLock()
     private static var axEverSeen: Set<CGWindowID> = []
 
-    private static func rememberAXBacked(_ id: CGWindowID) {
+    private static func rememberAXBacked(_ ids: Set<CGWindowID>) {
         axEverSeenLock.lock(); defer { axEverSeenLock.unlock() }
-        axEverSeen.insert(id)
+        axEverSeen.formUnion(ids)
     }
 
     private static func wasEverAXBacked(_ id: CGWindowID) -> Bool {
@@ -386,12 +386,8 @@ enum WindowEnumerator {
                 width: boundsDict["Width"] ?? 0,
                 height: boundsDict["Height"] ?? 0
             )
-            // Stage Manager reports garbage/degenerate bounds for a real window
-            // while it's off-stage (observed: a titled window's bounds fluctuating
-            // between e.g. 112x102 and 78x109 across successive queries). A titled
-            // window is essentially never the tooltip/overlay junk this minimum-size
-            // check exists to catch, so only enforce it here when title is empty or
-            // Stage Manager is off.
+            // Stage Manager reports garbage bounds for real off-stage windows,
+            // so skip the size check for titled ones (untitled junk still caught).
             if bounds.width < 100 || bounds.height < 80 {
                 if title.isEmpty || !stageManagerEnabled { continue }
             }
