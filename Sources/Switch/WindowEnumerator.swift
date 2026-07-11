@@ -198,18 +198,9 @@ enum WindowEnumerator {
         return (axBacked, minimized)
     }
 
-    // Stage Manager suspends kAXWindowsAttribute for whichever app isn't the current
-    // stage, so a real off-stage window reports zero AX windows — indistinguishable
-    // from a closed one via axBacked alone. Remembering "was AX-backed at some point"
-    // (no time limit — enumeration only runs at launch and while the picker is open,
-    // so a short TTL would routinely expire between checks) lets it survive being
-    // temporarily un-inspectable. Purged only when the id disappears from CGWindowList
-    // entirely, since off-stage windows keep appearing there, just with junk bounds.
-    //
-    // A Window-menu title match was tried instead of this and reverted: it isn't
-    // keyed to a specific window id, so it can't tell a stray duplicate CGWindowList
-    // entry apart from the real window, and there's no reliable way to tell a real
-    // per-window menu entry apart from an app's own custom commands in the same menu.
+    // Stage Manager suspends AX for off-stage apps, so a real off-stage window
+    // looks just like a closed one. Remember windows ever confirmed AX-backed,
+    // no TTL (enumeration is too infrequent for one to make sense).
     private static let axEverSeenLock = NSLock()
     private static var axEverSeen: Set<CGWindowID> = []
 
@@ -263,9 +254,8 @@ enum WindowEnumerator {
             let arr = [NSNumber(value: w.id)] as CFArray
             let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
             if spaces.isEmpty {
-                // Empty Space list + no AX window = orderOut'd ghost, drop it.
-                // Empty Space list + AX-backed (now or previously) = a real window
-                // Stage Manager parked off-stage — only possible while it's on.
+                // No Space, never AX-backed = ghost. AX-backed now or before = real
+                // window Stage Manager parked off-stage.
                 guard stageManager, ax.axBacked.contains(w.id) || wasEverAXBacked(w.id) else { return nil }
                 out.isCrossSpace = false
                 return out
