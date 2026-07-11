@@ -198,10 +198,29 @@ enum WindowEnumerator {
         return (axBacked, minimized)
     }
 
-    // Stage Manager suspends AX for whichever app isn't the current stage, so a
-    // real off-stage window reports zero AX windows just like a closed one would.
-    // Remembering "was AX-backed at some point this session" lets the off-stage
-    // ghost check in annotateAndPrune tell the two apart instead of pruning both.
+    // Stage Manager suspends kAXWindowsAttribute for whichever app isn't the current
+    // stage, so a real off-stage window reports zero AX windows — indistinguishable
+    // from a closed one via axBacked alone.
+    //
+    // A per-app "Window" menu title match was tried here first and reverted: it can't
+    // tell apart a stray duplicate CGWindowList entry from the real window (both share
+    // the same title), and there's no reliable, app-agnostic way to tell a real window
+    // entry apart from a custom command in that menu — every app tested (Zoom, Mail,
+    // Chrome, Claude) added its own command names a hardcoded exclusion list didn't
+    // know about, each one a fresh false positive. Matching by exact CGWindowID
+    // sidesteps both problems: a duplicate entry with a different id simply never
+    // earns a cache entry on its own.
+    //
+    // Remembering "was AX-backed at some point" (no time limit) lets a real off-stage
+    // window survive being temporarily un-inspectable. A time-based expiry was tried
+    // here and doesn't fit: window enumeration only runs at app launch and while the
+    // picker is actually open (no continuous background polling — see WindowStore /
+    // SwitchModel.startRefreshTimer), so a window confirmed real during an earlier
+    // picker session could easily be un-refreshed for longer than any reasonable TTL,
+    // incorrectly dropping it. Purging only when the id disappears from every
+    // CGWindowList sweep (i.e. actually closed, not just off-stage — off-stage
+    // windows keep appearing in CGWindowList, just with degenerate bounds) is the
+    // correct lifetime for this cache.
     private static let axEverSeenLock = NSLock()
     private static var axEverSeen: Set<CGWindowID> = []
 
@@ -260,14 +279,13 @@ enum WindowEnumerator {
                 // server has ordered out (Stage Manager off-stage). With Stage
                 // Manager off that signature is a closed Settings/Preferences
                 // leftover, so it only survives while Stage Manager is on.
-                //
                 // Stage Manager suspends AX entirely for whichever app isn't the
                 // current stage, so a real off-stage window can report zero live
                 // AX windows too — indistinguishable from a closed one by
-                // ax.axBacked alone. wasEverAXBacked remembers that this id was
-                // confirmed real earlier in the session, so it survives being
+                // ax.axBacked alone. wasEverAXBacked remembers that this exact
+                // window id was confirmed real earlier, so it survives being
                 // temporarily un-inspectable while off-stage.
-                guard (ax.axBacked.contains(w.id) || wasEverAXBacked(w.id)), stageManager else { return nil }
+                guard stageManager, ax.axBacked.contains(w.id) || wasEverAXBacked(w.id) else { return nil }
                 out.isCrossSpace = false
                 return out
             }
