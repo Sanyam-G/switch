@@ -255,8 +255,10 @@ enum WindowEnumerator {
             let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
             if spaces.isEmpty {
                 // No Space, never AX-backed = ghost. AX-backed now or before = real
-                // window Stage Manager parked off-stage.
-                guard stageManager, ax.axBacked.contains(w.id) || wasEverAXBacked(w.id) else { return nil }
+                // window Stage Manager parked off-stage. (axWindowState already
+                // folds the current axBacked set into the ever-seen cache, so
+                // checking wasEverAXBacked alone covers both cases.)
+                guard stageManager, wasEverAXBacked(w.id) else { return nil }
                 out.isCrossSpace = false
                 return out
             }
@@ -363,6 +365,7 @@ enum WindowEnumerator {
                 }
             }
         }
+        let stageManager = stageManagerEnabled
         var out: [WindowInfo] = []
         var seenIDs: Set<CGWindowID> = []
         let titlesReliable = CGPreflightScreenCaptureAccess()
@@ -389,7 +392,7 @@ enum WindowEnumerator {
             // Stage Manager reports garbage bounds for real off-stage windows,
             // so skip the size check for titled ones (untitled junk still caught).
             if bounds.width < 100 || bounds.height < 80 {
-                if title.isEmpty || !stageManagerEnabled { continue }
+                if title.isEmpty || !stageManager { continue }
             }
             if title.isEmpty && titlesReliable
                 && (bounds.width < 400 || bounds.height < 300) { continue }
