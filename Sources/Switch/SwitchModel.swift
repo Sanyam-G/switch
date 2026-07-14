@@ -21,6 +21,7 @@ final class SwitchModel: ObservableObject {
     private var armGeneration = 0
     private var armFrontmostPID: pid_t?
     private var armSelfHadKeyWindow = false
+    private var quitPIDs: Set<pid_t> = []
     private var thumbnailTasks: [Task<Void, Never>] = []
     var pointerWindowID: CGWindowID?
 
@@ -59,6 +60,7 @@ final class SwitchModel: ObservableObject {
         armGeneration &+= 1
         let gen = armGeneration
         self.mode = mode
+        quitPIDs.removeAll()
         filterText = ""
         pointerWindowID = nil
         armFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
@@ -156,6 +158,8 @@ final class SwitchModel: ObservableObject {
     private func buildWindowList(from full: WindowEnumerator.FullSnapshot) -> [WindowInfo] {
         var active = full.activeSpace
         var cross = full.crossSpace
+        active.removeAll { quitPIDs.contains($0.pid) }
+        cross.removeAll { quitPIDs.contains($0.pid) }
         if mode == .currentApp, let f = armFrontmostPID {
             active = active.filter { $0.pid == f }
             cross = cross.filter { $0.pid == f }
@@ -344,8 +348,10 @@ final class SwitchModel: ObservableObject {
         guard mode != .spaces else { return }
         let list = filteredWindows
         guard list.indices.contains(selected) else { return }
-        AppCloser.close(list[selected])
-        cancelAndDismiss?()
+        let target = list[selected]
+        AppCloser.close(target)
+        quitPIDs.insert(target.pid)
+        removeFromPicker { $0.pid == target.pid }
     }
 
 
