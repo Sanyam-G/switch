@@ -7,8 +7,11 @@ import ServiceManagement
 final class SettingsModel: ObservableObject {
     @Published var launchAtLogin: Bool = false
     @Published var allWindows: HotkeyBinding? = HotkeyConfig.shared.allWindows
+    @Published var allWindowsAlternate: HotkeyBinding? = HotkeyConfig.shared.allWindowsAlternate
     @Published var currentApp: HotkeyBinding? = HotkeyConfig.shared.currentApp
+    @Published var currentAppAlternate: HotkeyBinding? = HotkeyConfig.shared.currentAppAlternate
     @Published var spaces: HotkeyBinding? = HotkeyConfig.shared.spaces
+    @Published var spacesAlternate: HotkeyBinding? = HotkeyConfig.shared.spacesAlternate
     @Published var stickyToggle: HotkeyBinding? = HotkeyConfig.shared.stickyToggle
 
     init() { refresh() }
@@ -18,8 +21,11 @@ final class SettingsModel: ObservableObject {
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
         allWindows = HotkeyConfig.shared.allWindows
+        allWindowsAlternate = HotkeyConfig.shared.allWindowsAlternate
         currentApp = HotkeyConfig.shared.currentApp
+        currentAppAlternate = HotkeyConfig.shared.currentAppAlternate
         spaces = HotkeyConfig.shared.spaces
+        spacesAlternate = HotkeyConfig.shared.spacesAlternate
         stickyToggle = HotkeyConfig.shared.stickyToggle
     }
 
@@ -44,14 +50,29 @@ final class SettingsModel: ObservableObject {
         allWindows = b
     }
 
+    func updateAllWindowsAlternate(_ b: HotkeyBinding?) {
+        HotkeyConfig.shared.allWindowsAlternate = b
+        allWindowsAlternate = b
+    }
+
     func updateCurrentApp(_ b: HotkeyBinding?) {
         HotkeyConfig.shared.currentApp = b
         currentApp = b
     }
 
+    func updateCurrentAppAlternate(_ b: HotkeyBinding?) {
+        HotkeyConfig.shared.currentAppAlternate = b
+        currentAppAlternate = b
+    }
+
     func updateSpaces(_ b: HotkeyBinding?) {
         HotkeyConfig.shared.spaces = b
         spaces = b
+    }
+
+    func updateSpacesAlternate(_ b: HotkeyBinding?) {
+        HotkeyConfig.shared.spacesAlternate = b
+        spacesAlternate = b
     }
 
     func updateStickyToggle(_ b: HotkeyBinding?) {
@@ -150,16 +171,19 @@ struct SettingsView: View {
 
                 section("Hotkeys") {
                     VStack(alignment: .leading, spacing: 12) {
-                        hotkeyRow(label: "All windows", binding: model.allWindows) { b in
-                            applyHotkey(b) { model.updateAllWindows($0) }
-                        }
-                        hotkeyRow(label: "Current app", binding: model.currentApp) { b in
-                            applyHotkey(b) { model.updateCurrentApp($0) }
-                        }
+                        hotkeyRow(label: "All windows", binding: model.allWindows,
+                                  alternate: model.allWindowsAlternate,
+                                  onCapture: { applyHotkey($0, replacing: model.allWindows) { model.updateAllWindows($0) } },
+                                  onAlternateCapture: { applyHotkey($0, replacing: model.allWindowsAlternate) { model.updateAllWindowsAlternate($0) } })
+                        hotkeyRow(label: "Current app", binding: model.currentApp,
+                                  alternate: model.currentAppAlternate,
+                                  onCapture: { applyHotkey($0, replacing: model.currentApp) { model.updateCurrentApp($0) } },
+                                  onAlternateCapture: { applyHotkey($0, replacing: model.currentAppAlternate) { model.updateCurrentAppAlternate($0) } })
                         hotkeyRow(label: "Spaces", binding: model.spaces,
-                                  detail: "Cycle Spaces. Conflicts with browser tab switching if set to ⌃Tab.") { b in
-                            applyHotkey(b) { model.updateSpaces($0) }
-                        }
+                                  alternate: model.spacesAlternate,
+                                  detail: "Cycle Spaces. Conflicts with browser tab switching if set to ⌃Tab.",
+                                  onCapture: { applyHotkey($0, replacing: model.spaces) { model.updateSpaces($0) } },
+                                  onAlternateCapture: { applyHotkey($0, replacing: model.spacesAlternate) { model.updateSpacesAlternate($0) } })
                         stickyToggleRow
                         if let msg = rejectMessage {
                             Text(msg)
@@ -450,7 +474,7 @@ struct SettingsView: View {
                 .frame(width: 100, alignment: .leading)
             KeyRecorderField(
                 initialBinding: model.stickyToggle ?? HotkeyBinding(keyCode: 0, modifiersRaw: 0),
-                onCapture: { b in apply(b) { model.updateStickyToggle($0) } },
+                onCapture: { b in applyHotkey(b, replacing: model.stickyToggle) { model.updateStickyToggle($0) } },
                 accent: prefs.accent.color,
                 placeholder: "Not set"
             )
@@ -717,22 +741,17 @@ struct SettingsView: View {
         .background(rowBackground)
     }
 
-    private func hotkeyRow(label: String, binding: HotkeyBinding?, detail: String? = nil, onCapture: @escaping (HotkeyBinding?) -> Void) -> some View {
+    private func hotkeyRow(label: String, binding: HotkeyBinding?, alternate: HotkeyBinding?, detail: String? = nil,
+                           onCapture: @escaping (HotkeyBinding?) -> Void,
+                           onAlternateCapture: @escaping (HotkeyBinding?) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 Text(label)
                     .font(.system(size: 13, weight: .medium))
                     .frame(width: 100, alignment: .leading)
-                KeyRecorderField(
-                    initialBinding: binding ?? HotkeyBinding(keyCode: 0, modifiersRaw: 0),
-                    onCapture: { onCapture($0) },
-                    accent: prefs.accent.color,
-                    placeholder: "Not set"
-                )
-                .frame(width: 180, height: 28)
-                if binding != nil {
-                    Button("Clear") { onCapture(nil) }
-                        .controlSize(.small)
+                VStack(alignment: .leading, spacing: 6) {
+                    hotkeyBindingRow(label: "Primary", binding: binding, onCapture: onCapture)
+                    hotkeyBindingRow(label: "Alternate", binding: alternate, onCapture: onAlternateCapture)
                 }
                 Spacer()
             }
@@ -743,6 +762,31 @@ struct SettingsView: View {
                     .padding(.leading, 112)
             }
         }
+    }
+
+    private func hotkeyBindingRow(label: String, binding: HotkeyBinding?, onCapture: @escaping (HotkeyBinding?) -> Void) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .frame(width: 54, alignment: .leading)
+            KeyRecorderField(
+                initialBinding: binding ?? HotkeyBinding(keyCode: 0, modifiersRaw: 0),
+                onCapture: { onCapture($0) },
+                accent: prefs.accent.color,
+                placeholder: "Not set"
+            )
+            .frame(width: 150, height: 28)
+            if binding != nil {
+                Button { onCapture(nil) } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear \(label.lowercased()) shortcut")
+            }
+        }
+        .frame(height: 28)
     }
 
     private func accentSwatch(_ choice: SwitchPreferences.AccentChoice) -> some View {
@@ -776,16 +820,7 @@ struct SettingsView: View {
         }
     }
 
-    private func apply(_ b: HotkeyBinding, save: (HotkeyBinding) -> Void) {
-        if let msg = HotkeyValidator.reject(keyCode: b.keyCode, flags: b.cgFlags) {
-            rejectMessage = msg
-        } else {
-            rejectMessage = nil
-            save(b)
-        }
-    }
-
-    private func applyHotkey(_ b: HotkeyBinding?, save: (HotkeyBinding?) -> Void) {
+    private func applyHotkey(_ b: HotkeyBinding?, replacing old: HotkeyBinding?, save: (HotkeyBinding?) -> Void) {
         guard let b else {
             rejectMessage = nil
             save(nil)
@@ -793,10 +828,19 @@ struct SettingsView: View {
         }
         if let msg = HotkeyValidator.reject(keyCode: b.keyCode, flags: b.cgFlags) {
             rejectMessage = msg
+        } else if configuredHotkeys.contains(where: { $0 != old && $0.conflicts(with: b) }) {
+            rejectMessage = "That shortcut is already assigned."
         } else {
             rejectMessage = nil
             save(b)
         }
+    }
+
+    private var configuredHotkeys: [HotkeyBinding] {
+        [model.allWindows, model.allWindowsAlternate,
+         model.currentApp, model.currentAppAlternate,
+         model.spaces, model.spacesAlternate,
+         model.stickyToggle].compactMap { $0 }
     }
 
 }

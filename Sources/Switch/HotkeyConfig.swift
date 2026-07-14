@@ -44,6 +44,12 @@ struct HotkeyBinding: Codable, Equatable {
         return flags.intersection(mask) == needNeeded
     }
 
+    func conflicts(with other: HotkeyBinding) -> Bool {
+        let mask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
+        return keyCode == other.keyCode
+            && cgFlags.intersection(mask) == other.cgFlags.intersection(mask)
+    }
+
     var displayString: String {
         var s = ""
         if cgFlags.contains(.maskControl) { s += "⌃" }
@@ -61,15 +67,21 @@ final class HotkeyConfig {
 
     private let defaults = UserDefaults.standard
     private let allKey = "switch.hotkey.allWindows"
+    private let allAlternateKey = "switch.hotkey.allWindows.alternate"
     private let appKey = "switch.hotkey.currentApp"
+    private let appAlternateKey = "switch.hotkey.currentApp.alternate"
     private let spacesKey = "switch.hotkey.spaces"
+    private let spacesAlternateKey = "switch.hotkey.spaces.alternate"
     private let stickyKey = "switch.hotkey.stickyToggle"
     private let seededKey = "switch.hotkey.seeded"
 
     private let lock = NSLock()
     private var cachedAll: HotkeyBinding?
+    private var cachedAllAlternate: HotkeyBinding?
     private var cachedApp: HotkeyBinding?
+    private var cachedAppAlternate: HotkeyBinding?
     private var cachedSpaces: HotkeyBinding?
+    private var cachedSpacesAlternate: HotkeyBinding?
     private var cachedSticky: HotkeyBinding?
 
     static let didChangeNotification = Notification.Name("com.sanyamgarg.switch.hotkeyConfigDidChange")
@@ -83,8 +95,11 @@ final class HotkeyConfig {
             defaults.set(true, forKey: seededKey)
         }
         cachedAll = load(allKey)
+        cachedAllAlternate = load(allAlternateKey)
         cachedApp = load(appKey)
+        cachedAppAlternate = load(appAlternateKey)
         cachedSpaces = load(spacesKey)
+        cachedSpacesAlternate = load(spacesAlternateKey)
         cachedSticky = load(stickyKey)
     }
 
@@ -93,14 +108,29 @@ final class HotkeyConfig {
         set { store(newValue, key: allKey) { self.cachedAll = newValue } }
     }
 
+    var allWindowsAlternate: HotkeyBinding? {
+        get { lock.lock(); defer { lock.unlock() }; return cachedAllAlternate }
+        set { store(newValue, key: allAlternateKey) { self.cachedAllAlternate = newValue } }
+    }
+
     var currentApp: HotkeyBinding? {
         get { lock.lock(); defer { lock.unlock() }; return cachedApp }
         set { store(newValue, key: appKey) { self.cachedApp = newValue } }
     }
 
+    var currentAppAlternate: HotkeyBinding? {
+        get { lock.lock(); defer { lock.unlock() }; return cachedAppAlternate }
+        set { store(newValue, key: appAlternateKey) { self.cachedAppAlternate = newValue } }
+    }
+
     var spaces: HotkeyBinding? {
         get { lock.lock(); defer { lock.unlock() }; return cachedSpaces }
         set { store(newValue, key: spacesKey) { self.cachedSpaces = newValue } }
+    }
+
+    var spacesAlternate: HotkeyBinding? {
+        get { lock.lock(); defer { lock.unlock() }; return cachedSpacesAlternate }
+        set { store(newValue, key: spacesAlternateKey) { self.cachedSpacesAlternate = newValue } }
     }
 
     var stickyToggle: HotkeyBinding? {
@@ -111,12 +141,18 @@ final class HotkeyConfig {
     func resetToDefaults() {
         write(.defaultAllWindows, key: allKey)
         write(.defaultCurrentApp, key: appKey)
+        defaults.removeObject(forKey: allAlternateKey)
+        defaults.removeObject(forKey: appAlternateKey)
         defaults.removeObject(forKey: spacesKey)
+        defaults.removeObject(forKey: spacesAlternateKey)
         defaults.removeObject(forKey: stickyKey)
         lock.lock()
         cachedAll = .defaultAllWindows
+        cachedAllAlternate = nil
         cachedApp = .defaultCurrentApp
+        cachedAppAlternate = nil
         cachedSpaces = nil
+        cachedSpacesAlternate = nil
         cachedSticky = nil
         lock.unlock()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
