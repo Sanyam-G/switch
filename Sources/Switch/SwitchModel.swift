@@ -208,8 +208,8 @@ final class SwitchModel: ObservableObject {
                         id: CGWindowID(0xF0000000) | CGWindowID(UInt32(bitPattern: Int32(app.processIdentifier))),
                         pid: app.processIdentifier,
                         appName: app.localizedName ?? "",
-                        title: "",
                         bounds: .zero,
+                        title: "",
                         isWindowless: true,
                         bundleID: app.bundleIdentifier
                     )
