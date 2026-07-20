@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updaterDelegate: nil,
         userDriverDelegate: self
     )
+    var sparkleUpdater: SPUUpdater? { updaterController.updater }
     #endif
     private var model: SwitchModel?
     private var hotkey: HotkeyManager?

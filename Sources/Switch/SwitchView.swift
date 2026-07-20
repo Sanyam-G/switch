@@ -50,15 +50,19 @@ struct SwitchView: View {
     @ViewBuilder
     private func windowBadge(for window: WindowInfo) -> some View {
         if window.isMinimized || window.isHidden || window.isCrossSpace || window.isWindowless {
-            Text(windowBadgeText(for: window))
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(0.5)
-                .foregroundStyle(.white.opacity(0.85))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.ultraThinMaterial)
-                .clipShape(Capsule())
+            capsuleBadge(windowBadgeText(for: window))
         }
+    }
+
+    private func capsuleBadge(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .semibold))
+            .tracking(0.5)
+            .foregroundStyle(.white.opacity(0.9))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.black.opacity(0.55))
+            .clipShape(Capsule())
     }
 
     private func windowBadgeText(for window: WindowInfo) -> String {
@@ -431,14 +435,7 @@ struct SwitchView: View {
             }
             if isSpaceMode {
                 if window.spaceLabel == "Current" {
-                    Text("CURRENT")
-                        .font(.system(size: 9, weight: .semibold))
-                        .tracking(0.5)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
+                    capsuleBadge("CURRENT")
                 }
             } else {
                 windowBadge(for: window)
