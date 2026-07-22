@@ -172,6 +172,14 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(shiftTapReverses, forKey: SwitchPreferences.shiftTapReversesKey) }
     }
 
+    @Published var hideMinimizedWindows: Bool {
+        didSet { UserDefaults.standard.set(hideMinimizedWindows, forKey: SwitchPreferences.hideMinimizedWindowsKey) }
+    }
+
+    @Published var showNumberKeyHints: Bool {
+        didSet { UserDefaults.standard.set(showNumberKeyHints, forKey: SwitchPreferences.showNumberKeyHintsKey) }
+    }
+
     private let accentKey = "switch.accent"
     private let backgroundBlurKey = "switch.backgroundBlur"
     private let showTitleFirstKey = "switch.showTitleFirst"
@@ -199,6 +207,8 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let pinnedBundleIDsKey = "switch.pinnedBundleIDs"
     nonisolated static let pickerActivationDelayKey = "switch.pickerActivationDelay"
     nonisolated static let shiftTapReversesKey = "switch.shiftTapReverses"
+    nonisolated static let hideMinimizedWindowsKey = "switch.hideMinimizedWindows"
+    nonisolated static let showNumberKeyHintsKey = "switch.showNumberKeyHints"
 
     private init() {
         accent = AccentChoice(rawValue: UserDefaults.standard.string(forKey: accentKey) ?? "") ?? .system
@@ -228,5 +238,7 @@ final class SwitchPreferences: ObservableObject {
         pinnedBundleIDs = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.pinnedBundleIDsKey) ?? [])
         pickerActivationDelay = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? Self.defaultPickerActivationDelay
         shiftTapReverses = UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey)
+        hideMinimizedWindows = UserDefaults.standard.bool(forKey: SwitchPreferences.hideMinimizedWindowsKey)
+        showNumberKeyHints = UserDefaults.standard.bool(forKey: SwitchPreferences.showNumberKeyHintsKey)
     }
 }

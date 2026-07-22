@@ -65,6 +65,18 @@ struct SwitchView: View {
             .clipShape(Capsule())
     }
 
+    @ViewBuilder
+    private func numberHint(index: Int) -> some View {
+        if prefs.showNumberKeyHints && !isSpaceMode && index < 9 {
+            Text("\(index + 1)")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(width: 16, height: 16)
+                .background(Color.black.opacity(0.55))
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        }
+    }
+
     private func windowBadgeText(for window: WindowInfo) -> String {
         if window.isMinimized { return "MINIMIZED" }
         if window.isHidden { return "HIDDEN" }
@@ -370,6 +382,7 @@ struct SwitchView: View {
 
             HStack(spacing: 6) {
                 let titleFirst = prefs.showTitleFirst && !window.title.isEmpty
+                numberHint(index: index)
                 Text(titleFirst ? window.title : window.appName)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.primary)
@@ -400,6 +413,7 @@ struct SwitchView: View {
         let icon = appIcon(for: window)
 
         return HStack(spacing: 11) {
+            numberHint(index: index)
             ZStack {
                 if let icon {
                     Image(nsImage: icon)

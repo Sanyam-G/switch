@@ -301,6 +301,20 @@ struct SettingsView: View {
                             appOrderList
                         }
                         Divider().opacity(0.4)
+                        row(title: "Hide minimized and hidden windows",
+                            detail: "Leave out windows that are minimized to the Dock or belong to hidden apps.") {
+                            Toggle("", isOn: $prefs.hideMinimizedWindows)
+                                .labelsHidden().toggleStyle(.switch)
+                                .tint(prefs.accent.color)
+                        }
+                        Divider().opacity(0.4)
+                        row(title: "Show number key hints",
+                            detail: "Label the first nine windows with the 1-9 key that picks them.") {
+                            Toggle("", isOn: $prefs.showNumberKeyHints)
+                                .labelsHidden().toggleStyle(.switch)
+                                .tint(prefs.accent.color)
+                        }
+                        Divider().opacity(0.4)
                         row(title: "Include apps with no windows",
                             detail: "Show running Dock apps that don't currently have any windows. Picking one activates the app.") {
                             Toggle("", isOn: $prefs.includeWindowlessApps)
