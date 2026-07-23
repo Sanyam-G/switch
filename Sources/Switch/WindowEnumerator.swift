@@ -59,23 +59,27 @@ enum WindowEnumerator {
     // background queue and noteSwitchMovedWindow is called from the focus path.
     private static let ghostLock = NSLock()
     private static var ghostStrikes: [CGWindowID: (first: Date, count: Int)] = [:]
-    private static var switchMovedWindows: Set<CGWindowID> = []
+    private static var switchMovedWindows: [CGWindowID: Date] = [:]
+    private static let switchMovedGrace: TimeInterval = 10
 
     /// Record a window Switch just pulled to the current Space via
     /// CGSMoveWindowsToManagedSpace so the current-space-claim prune skips it: a
     /// failed raise must not strand it as a self-inflicted ghost (v0.3.9 rescue path).
     static func noteSwitchMovedWindow(_ id: CGWindowID) {
         ghostLock.lock()
-        switchMovedWindows.insert(id)
+        switchMovedWindows[id] = Date()
         ghostLock.unlock()
     }
 
     // True once the current-space-claim ghost is confirmed: count ≥ 2 and ≥ 2.5s
-    // since the first strike. Exempt (Switch-moved) wids never accrue strikes.
+    // since the first strike. Switch-moved wids don't accrue strikes for 10s (#115).
     private static func ghostStrikeConfirmed(_ id: CGWindowID) -> Bool {
         ghostLock.lock()
         defer { ghostLock.unlock() }
-        if switchMovedWindows.contains(id) { return false }
+        if let moved = switchMovedWindows[id] {
+            if Date().timeIntervalSince(moved) < switchMovedGrace { return false }
+            switchMovedWindows.removeValue(forKey: id)
+        }
         let now = Date()
         if var entry = ghostStrikes[id] {
             entry.count += 1
@@ -101,7 +105,9 @@ enum WindowEnumerator {
         for id in ghostStrikes.keys where onScreen.contains(id) || axBacked.contains(id) || !enumerated.contains(id) {
             ghostStrikes.removeValue(forKey: id)
         }
-        switchMovedWindows.subtract(onScreen)
+        for id in switchMovedWindows.keys where onScreen.contains(id) || !enumerated.contains(id) {
+            switchMovedWindows.removeValue(forKey: id)
+        }
     }
 
     static func fullSnapshot() -> FullSnapshot {

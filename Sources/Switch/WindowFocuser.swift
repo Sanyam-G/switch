@@ -82,9 +82,8 @@ enum WindowFocuser {
         var menusRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(bar as! AXUIElement, kAXChildrenAttribute as CFString, &menusRef) == .success,
               let menus = menusRef as? [AXUIElement] else { return false }
-        // Window menu is conventionally second-to-last (before Help); walk from
-        // the end so we hit it fast without relying on localized titles.
-        for menuBarItem in menus.reversed() {
+        // Window/Help only; Chrome's History menu matches closed windows by title and pressing one reopens it (#115).
+        for menuBarItem in menus.suffix(2).reversed() {
             var subRef: CFTypeRef?
             guard AXUIElementCopyAttributeValue(menuBarItem, kAXChildrenAttribute as CFString, &subRef) == .success,
                   let submenus = subRef as? [AXUIElement] else { continue }
