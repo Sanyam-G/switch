@@ -40,6 +40,12 @@ enum WindowFocuser {
         let app = NSRunningApplication(processIdentifier: window.pid)
         if app?.isHidden == true { app?.unhide() }
 
+        // When Switch itself is the active app (owns a key Settings/About window while
+        // staying .accessory), macOS 26 cooperative activation can ignore an activate()
+        // from the active app; yield first so the target actually comes forward.
+        if let app, NSApp.isActive { NSApp.yieldActivation(to: app) }
+        app?.activate(options: [])
+
         let appAX = AXUIElementCreateApplication(window.pid)
         var ref: CFTypeRef?
         let axWindows = (AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success
@@ -57,12 +63,6 @@ enum WindowFocuser {
         if !raised && window.isCrossSpace {
             focusViaWindowMenu(window)
         }
-
-        // When Switch itself is the active app (owns a key Settings/About window while
-        // staying .accessory), macOS 26 cooperative activation can ignore an activate()
-        // from the active app; yield first so the target actually comes forward.
-        if let app, NSApp.isActive { NSApp.yieldActivation(to: app) }
-        app?.activate(options: [])
 
         WindowMRU.touch(window.id)
     }
