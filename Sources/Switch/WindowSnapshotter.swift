@@ -88,10 +88,6 @@ actor WindowSnapshotter {
         return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
-    func purge() {
-        cache.removeAll()
-    }
-
     /// Drop cached entries for windows no longer in `keep`. Used by the pre-warm path
     /// so live thumbs survive between panel opens but dead window IDs don't accumulate.
     func purge(keeping keep: Set<CGWindowID>) {

@@ -54,10 +54,6 @@ final class StatusBarController {
         }
     }
 
-    @objc private func showOnboarding() {
-        NotificationCenter.default.post(name: .switchShowOnboarding, object: nil)
-    }
-
     @objc private func openSettings() {
         MainActor.assumeIsolated { SettingsWindow.shared.show() }
     }
@@ -65,8 +61,4 @@ final class StatusBarController {
     @objc private func openAbout() {
         MainActor.assumeIsolated { AboutWindow.shared.show() }
     }
-}
-
-extension Notification.Name {
-    static let switchShowOnboarding = Notification.Name("com.sanyamgarg.switch.showOnboarding")
 }
