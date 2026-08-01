@@ -1072,11 +1072,13 @@ final class KeyRecorderNSView: NSView {
         if type == .flagsChanged { return nil }
         guard type == .keyDown else { return Unmanaged.passUnretained(event) }
         let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+        let mods: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
+        let held = event.flags.intersection(mods)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if kc != 53 {
-                let mods: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
-                let b = HotkeyBinding(keyCode: UInt16(kc), modifiersRaw: event.flags.intersection(mods).rawValue)
+            // Bare Esc cancels; Esc with a modifier is a recordable combo (#116).
+            if kc != 53 || !held.isEmpty {
+                let b = HotkeyBinding(keyCode: UInt16(kc), modifiersRaw: held.rawValue)
                 self.binding = b
                 self.onCapture?(b)
             }

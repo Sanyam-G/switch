@@ -40,6 +40,15 @@ enum WindowFocuser {
         let app = NSRunningApplication(processIdentifier: window.pid)
         if app?.isHidden == true { app?.unhide() }
 
+        // Same-Space targets get an early best-effort activate so slow AX apps
+        // (Godot, #117) start coming forward before the raise calls below. The
+        // late activate still runs; cross-Space skips this because the
+        // focused-window write must steer activation first.
+        if !window.isCrossSpace {
+            if let app, NSApp.isActive { NSApp.yieldActivation(to: app) }
+            app?.activate(options: [])
+        }
+
         let appAX = AXUIElementCreateApplication(window.pid)
         var ref: CFTypeRef?
         let axWindows = (AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success
