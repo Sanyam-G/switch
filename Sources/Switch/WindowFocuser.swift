@@ -40,6 +40,16 @@ enum WindowFocuser {
         let app = NSRunningApplication(processIdentifier: window.pid)
         if app?.isHidden == true { app?.unhide() }
 
+        // Same-Space targets activate immediately so slow AX apps (Godot, #117)
+        // come forward without waiting on the raise calls below. Cross-Space keeps
+        // activation last: the focused-window write must steer it first.
+        // ponytail: if the app's internal focus sits on another Space this can flash
+        // that Space before the raise corrects it; per-window Space check if reported.
+        if !window.isCrossSpace {
+            if let app, NSApp.isActive { NSApp.yieldActivation(to: app) }
+            app?.activate(options: [])
+        }
+
         let appAX = AXUIElementCreateApplication(window.pid)
         var ref: CFTypeRef?
         let axWindows = (AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success
@@ -61,8 +71,10 @@ enum WindowFocuser {
         // When Switch itself is the active app (owns a key Settings/About window while
         // staying .accessory), macOS 26 cooperative activation can ignore an activate()
         // from the active app; yield first so the target actually comes forward.
-        if let app, NSApp.isActive { NSApp.yieldActivation(to: app) }
-        app?.activate(options: [])
+        if window.isCrossSpace {
+            if let app, NSApp.isActive { NSApp.yieldActivation(to: app) }
+            app?.activate(options: [])
+        }
 
         WindowMRU.touch(window.id)
     }
