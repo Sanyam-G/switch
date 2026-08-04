@@ -4,7 +4,7 @@ import ApplicationServices
 /// Watches AX focused-window changes across every running app so WindowMRU
 /// reflects all focus events, not just the ones Switch initiated. Without
 /// this, MRU only knows about Switch-driven focus, and active-Space ordering
-/// falls back to CGWindowList z-order — which clusters all of an app's
+/// falls back to CGWindowList z-order, which clusters all of an app's
 /// windows together when any one of them is raised.
 /// All methods run on the main thread; not @MainActor-annotated so AppDelegate
 /// can call start() from synchronous lifecycle hooks.
@@ -61,7 +61,7 @@ final class FocusTracker {
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
     }
 
-    /// Touch MRU on app activation as a backstop — AX observers don't always
+    /// Touch MRU on app activation as a backstop; AX observers don't always
     /// fire reliably immediately after an app launches, but didActivate does.
     private func touchFocused(of pid: pid_t) {
         let appAX = AXUIElementCreateApplication(pid)

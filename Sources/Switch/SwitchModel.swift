@@ -139,7 +139,7 @@ final class SwitchModel: ObservableObject {
             let liveIDs = Set(thumbTargets.map { $0.id })
             let task = Task {
                 if SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) {
-                    // Don't full-purge — pre-warmed thumbs are valid as long as the window still exists.
+                    // Don't full-purge; pre-warmed thumbs are valid as long as the window still exists.
                     await WindowSnapshotter.shared.purge(keeping: liveIDs)
                 }
                 await fetchThumbnails(for: thumbTargets, force: false)

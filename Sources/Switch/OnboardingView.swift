@@ -38,7 +38,7 @@ struct OnboardingView: View {
 
             HStack {
                 if model.allGranted {
-                    Label("Ready — hold ⌘-Tab to switch windows.",
+                    Label("Ready. Hold ⌘-Tab to switch windows.",
                           systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .font(.system(size: 12, weight: .medium))

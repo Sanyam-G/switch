@@ -193,7 +193,7 @@ struct SwitchView: View {
                         }
                     }
                     .onChange(of: model.selected) { _, new in
-                        // Skip auto-scroll when selection came from mouse hover —
+                        // Skip auto-scroll when selection came from mouse hover;
                         // user is already looking at where they're pointing.
                         if lastSelectionFromMouse {
                             lastSelectionFromMouse = false
