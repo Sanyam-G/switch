@@ -85,7 +85,7 @@ final class DebugFocusHarness {
     }
 
     /// AX elements captured while their windows were on the active Space.
-    /// Remote AX handles stay valid after the window leaves the Space — this is
+    /// Remote AX handles stay valid after the window leaves the Space; this is
     /// how AltTab can raise windows Chromium no longer enumerates.
     nonisolated(unsafe) static var stash: [CGWindowID: AXUIElement] = [:]
 
