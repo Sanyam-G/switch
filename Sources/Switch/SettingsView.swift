@@ -21,7 +21,7 @@ final class SettingsModel: ObservableObject {
     init() { refresh() }
 
     #if canImport(Sparkle)
-    private var updater: SPUUpdater? { (NSApp.delegate as? AppDelegate)?.sparkleUpdater }
+    private var updater: SPUUpdater? { AppDelegate.shared?.sparkleUpdater }
     #endif
 
     func refresh() {
