@@ -216,17 +216,22 @@ enum WindowEnumerator {
     ) -> [WindowInfo] {
         return candidates.compactMap { w in
             var out = w
-            if out.isHidden {
-                out.isCrossSpace = false
-                return out
-            }
-            if ax.minimized.contains(w.id) {
-                out.isMinimized = true
-                out.isCrossSpace = false
-                return out
-            }
             let arr = [NSNumber(value: w.id)] as CFArray
             let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
+            if out.isHidden || ax.minimized.contains(w.id) {
+                // Real hidden/minimized windows are AX-backed; hidden Electron shells aren't and showed as duplicates (#126).
+                guard ax.axBacked.contains(w.id) else { return nil }
+                out.isMinimized = ax.minimized.contains(w.id)
+                // Keep the Space claim so the cross-Space toggle applies (#129); no claim counts as current.
+                out.isCrossSpace = !spaces.isEmpty && !spaces.contains(where: { metadata.currentSpaces.contains($0) })
+                if let sid = spaces.first {
+                    let info = metadata.labels[sid]
+                    out.spaceID = sid
+                    out.spaceLabel = info?.label
+                    out.isFullscreenSpace = info?.isFullscreen ?? false
+                }
+                return out
+            }
             if spaces.isEmpty {
                 // Empty Space list + no AX window = orderOut'd ghost, drop it.
                 // Empty Space list + live AX window = a real window the window
