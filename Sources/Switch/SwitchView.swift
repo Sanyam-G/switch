@@ -506,17 +506,19 @@ private struct SelectionChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(
+                // Rounded fills, not clipShape: the row's static clip hid the matched-geometry fill mid-flight (#133).
                 ZStack {
                     if hovered && !selected {
-                        Color.white.opacity(0.06)
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
                     }
                     if selected {
-                        accent.opacity(0.22)
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(accent.opacity(0.22))
                             .matchedGeometryEffect(id: "selectionBG", in: namespace)
                     }
                 }
             )
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 ZStack {
                     if selected {
