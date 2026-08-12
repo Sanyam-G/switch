@@ -180,7 +180,7 @@ enum WindowEnumerator {
             var ref: CFTypeRef?
             guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success,
                   let axWindows = ref as? [AXUIElement] else { continue }
-            responsive.insert(pid)
+            var allMapped = true
             for ax in axWindows {
                 var id: CGWindowID = 0
                 if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
@@ -191,8 +191,12 @@ enum WindowEnumerator {
                        let isMin = minRef as? Bool, isMin {
                         minimized.insert(id)
                     }
+                } else {
+                    allMapped = false
                 }
             }
+            // An unmapped AX window could be any of the pid's unbacked CG windows, so a partial answer proves nothing against them.
+            if allMapped { responsive.insert(pid) }
         }
         return (axBacked, minimized, responsive)
     }
