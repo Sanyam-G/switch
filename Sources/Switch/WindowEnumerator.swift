@@ -221,18 +221,20 @@ enum WindowEnumerator {
             let arr = [NSNumber(value: w.id)] as CFArray
             let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
             if out.isHidden || ax.minimized.contains(w.id) {
+                out.isMinimized = ax.minimized.contains(w.id)
+                // A window with no Space claim counts as current, older macOS drops the assignment once a window is ordered out (#129).
+                out.isCrossSpace = !spaces.isEmpty && !spaces.contains(where: { metadata.currentSpaces.contains($0) })
                 // Hidden Electron apps keep AX-less shell windows; only an app that answered AX and still doesn't list the window marks a shell, a timed-out query is no evidence (#126).
                 if ax.responsive.contains(w.pid) {
                     let backed = ax.axBacked.contains(w.id) || AXWindowCache.element(for: w.id) != nil
-                    if backed {
+                    // Same real-window signature as the cross-Space prune below: uncached hidden Chromium windows on another Space answer to neither AX nor the cache.
+                    let offSpaceReal = out.isCrossSpace && (!titlesReliable || !w.title.isEmpty)
+                    if backed || offSpaceReal {
                         clearGhostStrike(w.id)
                     } else if ghostStrikeConfirmed(w.id) {
                         return nil
                     }
                 }
-                out.isMinimized = ax.minimized.contains(w.id)
-                // A window with no Space claim counts as current, older macOS drops the assignment once a window is ordered out (#129).
-                out.isCrossSpace = !spaces.isEmpty && !spaces.contains(where: { metadata.currentSpaces.contains($0) })
                 if let sid = spaces.first {
                     let info = metadata.labels[sid]
                     out.spaceID = sid
