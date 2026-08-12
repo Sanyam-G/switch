@@ -171,16 +171,14 @@ enum WindowEnumerator {
     }
 
     // AX-backed and minimized window IDs for the given processes; an orderedOut leftover appears in neither.
-    private static func axWindowState(for pids: Set<pid_t>) -> (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, responsive: Set<pid_t>) {
+    private static func axWindowState(for pids: Set<pid_t>) -> (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>) {
         var axBacked: Set<CGWindowID> = []
         var minimized: Set<CGWindowID> = []
-        var responsive: Set<pid_t> = []
         for pid in pids {
             let appAX = appElement(for: pid)
             var ref: CFTypeRef?
             guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success,
                   let axWindows = ref as? [AXUIElement] else { continue }
-            var allMapped = true
             for ax in axWindows {
                 var id: CGWindowID = 0
                 if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
@@ -191,14 +189,10 @@ enum WindowEnumerator {
                        let isMin = minRef as? Bool, isMin {
                         minimized.insert(id)
                     }
-                } else {
-                    allMapped = false
                 }
             }
-            // An unmapped AX window could be any of the pid's unbacked CG windows, so a partial answer proves nothing against them.
-            if allMapped { responsive.insert(pid) }
         }
-        return (axBacked, minimized, responsive)
+        return (axBacked, minimized)
     }
 
     // Drop orphaned on-screen entries: no live AX window and no Space. Real windows always have a Space.
@@ -214,7 +208,7 @@ enum WindowEnumerator {
 
     private static func annotateAndPrune(
         _ candidates: [WindowInfo],
-        ax: (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, responsive: Set<pid_t>),
+        ax: (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>),
         cid: CGSConnectionID,
         metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>),
         stageManager: Bool,
@@ -228,17 +222,11 @@ enum WindowEnumerator {
                 out.isMinimized = ax.minimized.contains(w.id)
                 // A window with no Space claim counts as current, older macOS drops the assignment once a window is ordered out (#129).
                 out.isCrossSpace = !spaces.isEmpty && !spaces.contains(where: { metadata.currentSpaces.contains($0) })
-                // Hidden Electron apps keep AX-less shell windows; only an app that answered AX and still doesn't list the window marks a shell, a timed-out query is no evidence (#126).
-                if ax.responsive.contains(w.pid) {
-                    let backed = ax.axBacked.contains(w.id) || AXWindowCache.element(for: w.id) != nil
-                    // Same real-window signature as the cross-Space prune below: uncached hidden Chromium windows on another Space answer to neither AX nor the cache.
-                    let offSpaceReal = out.isCrossSpace && (!titlesReliable || !w.title.isEmpty)
-                    if backed || offSpaceReal {
-                        clearGhostStrike(w.id)
-                    } else if ghostStrikeConfirmed(w.id) {
-                        return nil
-                    }
-                }
+                // A window AX ever backed is real; the cache outlives per-sweep AX gaps (timeouts, Chromium's off-Space omissions), so a never-backed CG entry is an Electron shell (#126).
+                let everBacked = ax.axBacked.contains(w.id) || AXWindowCache.element(for: w.id) != nil
+                // Same real-window signature as the cross-Space prune below, for windows hidden before Switch ever saw them.
+                let offSpaceReal = out.isCrossSpace && (!titlesReliable || !w.title.isEmpty)
+                guard everBacked || offSpaceReal else { return nil }
                 if let sid = spaces.first {
                     let info = metadata.labels[sid]
                     out.spaceID = sid
