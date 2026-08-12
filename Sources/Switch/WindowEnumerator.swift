@@ -219,10 +219,14 @@ enum WindowEnumerator {
             let arr = [NSNumber(value: w.id)] as CFArray
             let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
             if out.isHidden || ax.minimized.contains(w.id) {
-                // Real hidden/minimized windows are AX-backed; hidden Electron shells aren't and showed as duplicates (#126).
-                guard ax.axBacked.contains(w.id) else { return nil }
+                // AX-less hidden shells (Electron) drop after two strikes; a single AX timeout spares real windows (#126).
+                if !ax.axBacked.contains(w.id) {
+                    if ghostStrikeConfirmed(w.id) { return nil }
+                } else {
+                    clearGhostStrike(w.id)
+                }
                 out.isMinimized = ax.minimized.contains(w.id)
-                // Keep the Space claim so the cross-Space toggle applies (#129); no claim counts as current.
+                // No Space claim counts as current, older macOS drops assignments on orderOut (#129).
                 out.isCrossSpace = !spaces.isEmpty && !spaces.contains(where: { metadata.currentSpaces.contains($0) })
                 if let sid = spaces.first {
                     let info = metadata.labels[sid]
