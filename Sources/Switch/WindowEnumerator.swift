@@ -171,14 +171,16 @@ enum WindowEnumerator {
     }
 
     // AX-backed and minimized window IDs for the given processes; an orderedOut leftover appears in neither.
-    private static func axWindowState(for pids: Set<pid_t>) -> (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>) {
+    private static func axWindowState(for pids: Set<pid_t>) -> (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, responsive: Set<pid_t>) {
         var axBacked: Set<CGWindowID> = []
         var minimized: Set<CGWindowID> = []
+        var responsive: Set<pid_t> = []
         for pid in pids {
             let appAX = appElement(for: pid)
             var ref: CFTypeRef?
             guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success,
                   let axWindows = ref as? [AXUIElement] else { continue }
+            responsive.insert(pid)
             for ax in axWindows {
                 var id: CGWindowID = 0
                 if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
@@ -192,7 +194,7 @@ enum WindowEnumerator {
                 }
             }
         }
-        return (axBacked, minimized)
+        return (axBacked, minimized, responsive)
     }
 
     // Drop orphaned on-screen entries: no live AX window and no Space. Real windows always have a Space.
@@ -208,7 +210,7 @@ enum WindowEnumerator {
 
     private static func annotateAndPrune(
         _ candidates: [WindowInfo],
-        ax: (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>),
+        ax: (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, responsive: Set<pid_t>),
         cid: CGSConnectionID,
         metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>),
         stageManager: Bool,
@@ -219,11 +221,14 @@ enum WindowEnumerator {
             let arr = [NSNumber(value: w.id)] as CFArray
             let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
             if out.isHidden || ax.minimized.contains(w.id) {
-                // Hidden Electron apps keep shell windows with no AX backing; two strikes before dropping so one slow AX sweep doesn't eat real windows (#126).
-                if !ax.axBacked.contains(w.id) {
-                    if ghostStrikeConfirmed(w.id) { return nil }
-                } else {
-                    clearGhostStrike(w.id)
+                // Hidden Electron apps keep AX-less shell windows; only an app that answered AX and still doesn't list the window marks a shell, a timed-out query is no evidence (#126).
+                if ax.responsive.contains(w.pid) {
+                    let backed = ax.axBacked.contains(w.id) || AXWindowCache.element(for: w.id) != nil
+                    if backed {
+                        clearGhostStrike(w.id)
+                    } else if ghostStrikeConfirmed(w.id) {
+                        return nil
+                    }
                 }
                 out.isMinimized = ax.minimized.contains(w.id)
                 // A window with no Space claim counts as current, older macOS drops the assignment once a window is ordered out (#129).
