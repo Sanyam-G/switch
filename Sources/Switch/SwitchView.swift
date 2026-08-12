@@ -506,7 +506,7 @@ private struct SelectionChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(
-                // A row-level clip would hide the matched-geometry fill while it travels between rows (#133).
+                // Clipping at the row level hides the matched-geometry fill while it slides between rows, so the rounding lives on the fills themselves (#133).
                 ZStack {
                     if hovered && !selected {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
