@@ -130,11 +130,13 @@ enum WindowEnumerator {
         }
         let annotatedAll = annotateAndPrune(marked, ax: ax, cid: cid, metadata: metadata, stageManager: stageManager, titlesReliable: titlesReliable)
         let onScreenIDs = Set(onScreen.map(\.id))
+        let allEnumeratedIDs = onScreenIDs.union(everything.map(\.id))
         housekeepGhostState(
             onScreen: onScreenIDs,
-            enumerated: onScreenIDs.union(everything.map(\.id)),
+            enumerated: allEnumeratedIDs,
             axBacked: ax.axBacked
         )
+        purgeAXEverSeen(keeping: allEnumeratedIDs)
         let cross = annotatedAll.filter { !activeIDs.contains($0.id) }
         let reps = spaceRepresentatives(from: annotatedAll, cid: cid, metadata: metadata)
         return FullSnapshot(activeSpace: active, crossSpace: cross, spaceRepresentatives: reps)
@@ -192,7 +194,31 @@ enum WindowEnumerator {
                 }
             }
         }
+        rememberAXBacked(axBacked)
         return (axBacked, minimized)
+    }
+
+    // Stage Manager suspends AX for off-stage apps, so a real off-stage window
+    // looks just like a closed one. Remember windows ever confirmed AX-backed,
+    // no TTL (enumeration is too infrequent for one to make sense).
+    private static let axEverSeenLock = NSLock()
+    private static var axEverSeen: Set<CGWindowID> = []
+
+    private static func rememberAXBacked(_ ids: Set<CGWindowID>) {
+        axEverSeenLock.lock(); defer { axEverSeenLock.unlock() }
+        axEverSeen.formUnion(ids)
+    }
+
+    private static func wasEverAXBacked(_ id: CGWindowID) -> Bool {
+        axEverSeenLock.lock(); defer { axEverSeenLock.unlock() }
+        return axEverSeen.contains(id)
+    }
+
+    // A window id that's gone from every CGWindowList sweep is fully closed, not
+    // just off-stage — forget it so the cache doesn't grow unbounded.
+    private static func purgeAXEverSeen(keeping ids: Set<CGWindowID>) {
+        axEverSeenLock.lock(); defer { axEverSeenLock.unlock() }
+        axEverSeen.formIntersection(ids)
     }
 
     // Drop orphaned on-screen entries: no live AX window and no Space. Real windows always have a Space.
@@ -236,12 +262,11 @@ enum WindowEnumerator {
                 return out
             }
             if spaces.isEmpty {
-                // Empty Space list + no AX window = orderOut'd ghost, drop it.
-                // Empty Space list + live AX window = a real window the window
-                // server has ordered out (Stage Manager off-stage). With Stage
-                // Manager off that signature is a closed Settings/Preferences
-                // leftover, so it only survives while Stage Manager is on.
-                guard ax.axBacked.contains(w.id), stageManager else { return nil }
+                // No Space, never AX-backed = ghost. AX-backed now or before = real
+                // window Stage Manager parked off-stage. (axWindowState already
+                // folds the current axBacked set into the ever-seen cache, so
+                // checking wasEverAXBacked alone covers both cases.)
+                guard stageManager, wasEverAXBacked(w.id) else { return nil }
                 out.isCrossSpace = false
                 return out
             }
@@ -348,6 +373,7 @@ enum WindowEnumerator {
                 }
             }
         }
+        let stageManager = stageManagerEnabled
         var out: [WindowInfo] = []
         var seenIDs: Set<CGWindowID> = []
         let titlesReliable = CGPreflightScreenCaptureAccess()
@@ -371,7 +397,11 @@ enum WindowEnumerator {
                 width: boundsDict["Width"] ?? 0,
                 height: boundsDict["Height"] ?? 0
             )
-            if bounds.width < 100 || bounds.height < 80 { continue }
+            // Stage Manager reports garbage bounds for real off-stage windows,
+            // so skip the size check for titled ones (untitled junk still caught).
+            if bounds.width < 100 || bounds.height < 80 {
+                if title.isEmpty || !stageManager { continue }
+            }
             if title.isEmpty && titlesReliable
                 && (bounds.width < 400 || bounds.height < 300) { continue }
             // Dedupe by CGWindowID only; it's already unique per window.
