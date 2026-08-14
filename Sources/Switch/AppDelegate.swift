@@ -291,8 +291,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updaterController.checkForUpdates(nil)
         #else
         let alert = NSAlert()
-        alert.messageText = "Updates not configured"
-        alert.informativeText = "This build doesn't include Sparkle. Visit switch-dev.sanyamgarg.com to download the latest."
+        alert.messageText = String(localized: "Updates not configured", comment: "Alert when Sparkle is missing")
+        alert.informativeText = String(localized: "This build doesn't include Sparkle. Visit switch-dev.sanyamgarg.com to download the latest.", comment: "Alert body when Sparkle is missing")
         alert.runModal()
         #endif
     }
@@ -307,7 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 backing: .buffered,
                 defer: false
             )
-            win.title = "Switch"
+            win.title = String(localized: "Switch", comment: "Brand name; do not translate")
             win.contentViewController = host
             win.center()
             win.isReleasedWhenClosed = false

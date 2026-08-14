@@ -107,13 +107,13 @@ final class SettingsModel: ObservableObject {
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case general, picker, permissions, appearance, about
     var id: String { rawValue }
-    var label: String {
+    var label: LocalizedStringResource {
         switch self {
-        case .general: return "General"
-        case .picker: return "Picker"
-        case .permissions: return "Permissions"
-        case .appearance: return "Appearance"
-        case .about: return "About"
+        case .general: "General"
+        case .picker: "Picker"
+        case .permissions: "Permissions"
+        case .appearance: "Appearance"
+        case .about: "About"
         }
     }
 }
@@ -174,6 +174,14 @@ struct SettingsView: View {
     private var generalTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
+                section("Language") {
+                    row(title: "Language",
+                        detail: "Follows System Settings. Restart Switch after changing.") {
+                        Button("Open System Settings") { openLanguageSettings() }
+                            .controlSize(.small)
+                    }
+                }
+
                 section("Startup") {
                     row(title: "Launch Switch at login",
                         detail: "Run automatically when you sign in to your Mac.") {
@@ -209,7 +217,7 @@ struct SettingsView: View {
                                 .foregroundStyle(.red)
                         }
                         HStack {
-                            Text("Sticky: ⌘W/Q/H · Hold: ⇧⌘W/Q/H · ⇧ reverse")
+                            Text("Sticky: ⌘W/Q/H · Hold: ⇧⌘W/Q/H · ⇧ reverse", comment: "Hotkey help; keep glyphs")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                             Spacer()
@@ -521,7 +529,7 @@ struct SettingsView: View {
                 initialBinding: model.stickyToggle ?? HotkeyBinding(keyCode: 0, modifiersRaw: 0),
                 onCapture: { b in applyHotkey(b, replacing: model.stickyToggle) { model.updateStickyToggle($0) } },
                 accent: prefs.accent.color,
-                placeholder: "Not set"
+                placeholder: String(localized: "Not set", comment: "Empty hotkey placeholder")
             )
             .frame(width: 180, height: 28)
             if model.stickyToggle != nil {
@@ -535,11 +543,11 @@ struct SettingsView: View {
     private var appOrderList: some View {
         let apps = orderedPickerApps()
         return VStack(alignment: .leading, spacing: 6) {
-            Text("Drag to reorder. Unranked apps fall to the bottom alphabetically.")
+            Text("Drag to reorder. Unranked apps fall to the bottom alphabetically.", comment: "Static order hint")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             if apps.isEmpty {
-                Text("No windows open right now.")
+                Text("No windows open right now.", comment: "Empty static-order list")
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             } else {
@@ -601,11 +609,11 @@ struct SettingsView: View {
     private var blacklistSection: some View {
         section("Excluded apps") {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Windows from these apps won't appear in the picker.")
+                Text("Windows from these apps won't appear in the picker.", comment: "Excluded apps hint")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 if prefs.blacklist.isEmpty {
-                    Text("Nothing excluded.")
+                    Text("Nothing excluded.", comment: "Empty blacklist")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                         .padding(.vertical, 4)
@@ -630,7 +638,7 @@ struct SettingsView: View {
                         }
                     }
                 } label: {
-                    Text("+ Add app")
+                    Text("+ Add app", comment: "Add excluded app")
                         .font(.system(size: 11, weight: .medium))
                 }
                 .menuStyle(.borderlessButton)
@@ -709,7 +717,7 @@ struct SettingsView: View {
                         Text(prefs.accent.label)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
-                        Text("Accent shows up in the selection highlight and across this Settings window.")
+                        Text("Accent shows up in the selection highlight and across this Settings window.", comment: "Accent help")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -727,7 +735,7 @@ struct SettingsView: View {
                         .pickerStyle(.segmented)
                         .labelsHidden()
                         blurPreview
-                        Text("How much the desktop blurs through the picker background.")
+                        Text("How much the desktop blurs through the picker background.", comment: "Blur help")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -755,22 +763,29 @@ struct SettingsView: View {
             )
     }
 
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func openLanguageSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings")!
+        if NSWorkspace.shared.open(url) { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
+    }
+
+    private func section<Content: View>(_ title: LocalizedStringResource, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Circle()
                     .fill(prefs.accent.color)
                     .frame(width: 5, height: 5)
-                Text(title.uppercased())
+                Text(title)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .tracking(1.4)
                     .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
             }
             content()
         }
     }
 
-    private func row<Trailing: View>(title: String, detail: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+    private func row<Trailing: View>(title: LocalizedStringResource, detail: LocalizedStringResource, @ViewBuilder trailing: () -> Trailing) -> some View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 13, weight: .medium))
@@ -786,7 +801,7 @@ struct SettingsView: View {
         .background(rowBackground)
     }
 
-    private func hotkeyRow(label: String, binding: HotkeyBinding?, alternate: HotkeyBinding?, detail: String? = nil,
+    private func hotkeyRow(label: LocalizedStringResource, binding: HotkeyBinding?, alternate: HotkeyBinding?, detail: LocalizedStringResource? = nil,
                            onCapture: @escaping (HotkeyBinding?) -> Void,
                            onAlternateCapture: @escaping (HotkeyBinding?) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -795,8 +810,8 @@ struct SettingsView: View {
                     .font(.system(size: 13, weight: .medium))
                     .frame(width: 100, alignment: .leading)
                 VStack(alignment: .leading, spacing: 6) {
-                    hotkeyBindingRow(label: "Primary", binding: binding, onCapture: onCapture)
-                    hotkeyBindingRow(label: "Alternate", binding: alternate, onCapture: onAlternateCapture)
+                    hotkeyBindingRow(label: "Primary", binding: binding, clearHelp: "Clear primary shortcut", onCapture: onCapture)
+                    hotkeyBindingRow(label: "Alternate", binding: alternate, clearHelp: "Clear alternate shortcut", onCapture: onAlternateCapture)
                 }
                 Spacer()
             }
@@ -809,7 +824,7 @@ struct SettingsView: View {
         }
     }
 
-    private func hotkeyBindingRow(label: String, binding: HotkeyBinding?, onCapture: @escaping (HotkeyBinding?) -> Void) -> some View {
+    private func hotkeyBindingRow(label: LocalizedStringResource, binding: HotkeyBinding?, clearHelp: LocalizedStringResource, onCapture: @escaping (HotkeyBinding?) -> Void) -> some View {
         HStack(spacing: 8) {
             Text(label)
                 .font(.system(size: 11))
@@ -819,7 +834,7 @@ struct SettingsView: View {
                 initialBinding: binding ?? HotkeyBinding(keyCode: 0, modifiersRaw: 0),
                 onCapture: { onCapture($0) },
                 accent: prefs.accent.color,
-                placeholder: "Not set"
+                placeholder: String(localized: "Not set", comment: "Empty hotkey placeholder")
             )
             .frame(width: 150, height: 28)
             if binding != nil {
@@ -828,7 +843,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Clear \(label.lowercased()) shortcut")
+                .help(clearHelp)
             }
         }
         .frame(height: 28)
@@ -862,7 +877,7 @@ struct SettingsView: View {
         if let msg = HotkeyValidator.reject(keyCode: b.keyCode, flags: b.cgFlags) {
             rejectMessage = msg
         } else if configuredHotkeys.contains(where: { $0 != old && $0.conflicts(with: b) }) {
-            rejectMessage = "That shortcut is already assigned."
+            rejectMessage = String(localized: "That shortcut is already assigned.", comment: "Hotkey already in use")
         } else {
             rejectMessage = nil
             save(b)
@@ -885,7 +900,7 @@ struct PermissionsTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Switch needs Accessibility for the ⌘-Tab hotkey. Screen Recording is only needed when thumbnails are enabled.")
+                Text("Switch needs Accessibility for the ⌘-Tab hotkey. Screen Recording is only needed when thumbnails are enabled.", comment: "Permissions intro")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
 
@@ -897,7 +912,9 @@ struct PermissionsTabView: View {
                 )
                 permRow(
                     title: "Screen Recording",
-                    detail: SwitchPreferences.shared.showThumbnails ? "Capture live thumbnails of every window." : "Optional while thumbnails are disabled.",
+                    detail: SwitchPreferences.shared.showThumbnails
+                        ? LocalizedStringResource("Capture live thumbnails of every window.", comment: "Settings Screen Recording detail")
+                        : LocalizedStringResource("Optional while thumbnails are disabled.", comment: "Settings Screen Recording detail when optional"),
                     granted: perms.screenCapture,
                     action: { perms.openScreenCapture() }
                 )
@@ -908,7 +925,7 @@ struct PermissionsTabView: View {
         .onDisappear { perms.stopPolling() }
     }
 
-    private func permRow(title: String, detail: String, granted: Bool, action: @escaping () -> Void) -> some View {
+    private func permRow(title: LocalizedStringResource, detail: LocalizedStringResource, granted: Bool, action: @escaping () -> Void) -> some View {
         HStack(spacing: 14) {
             Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                 .font(.system(size: 18))
@@ -1089,7 +1106,7 @@ final class KeyRecorderNSView: NSView {
 
     private func redraw() {
         if recording {
-            label.stringValue = "Press a key…"
+            label.stringValue = String(localized: "Press a key…", comment: "Hotkey recorder prompt")
             label.textColor = .secondaryLabelColor
             layer?.borderColor = accentNSColor.cgColor
             layer?.backgroundColor = accentNSColor.withAlphaComponent(0.10).cgColor

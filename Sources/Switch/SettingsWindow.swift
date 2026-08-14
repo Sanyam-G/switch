@@ -32,7 +32,7 @@ final class SettingsWindow {
             backing: .buffered,
             defer: false
         )
-        win.title = "Switch Settings"
+        win.title = String(localized: "Switch Settings", comment: "Settings window title")
         win.contentViewController = host
         win.center()
         win.isReleasedWhenClosed = false

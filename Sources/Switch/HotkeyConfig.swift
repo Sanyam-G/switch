@@ -200,10 +200,10 @@ enum HotkeyValidator {
         let mask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
         let cleaned = flags.intersection(mask)
         if cleaned.intersection([.maskCommand, .maskAlternate, .maskControl]).rawValue == 0 {
-            return "Needs at least one modifier (⌘, ⌥, or ⌃)."
+            return String(localized: "Needs at least one modifier (⌘, ⌥, or ⌃).", comment: "Hotkey rejected: no modifier")
         }
         for (rk, rf) in reserved where rk == keyCode && rf == cleaned {
-            return "That combo is reserved by macOS or common apps."
+            return String(localized: "That combo is reserved by macOS or common apps.", comment: "Hotkey rejected: reserved combo")
         }
         return nil
     }
@@ -215,18 +215,18 @@ enum KeyName {
         if let s = special[code] { return s }
         // Fall back to NSEvent.charactersByApplyingModifiers for printable keys.
         if let cs = chars(for: code) { return cs.uppercased() }
-        return "Key \(code)"
+        return String(localized: "Key \(Int(code))", comment: "Unknown key code fallback")
     }
 
     private static let special: [UInt16: String] = [
-        48: "Tab",
-        49: "Space",
+        48: String(localized: "Tab", comment: "Key name"),
+        49: String(localized: "Space", comment: "Key name"),
         50: "`",
-        53: "Esc",
-        36: "Return",
-        76: "Enter",
-        51: "Delete",
-        117: "Fwd Del",
+        53: String(localized: "Esc", comment: "Key name"),
+        36: String(localized: "Return", comment: "Key name"),
+        76: String(localized: "Enter", comment: "Key name"),
+        51: String(localized: "Delete", comment: "Key name"),
+        117: String(localized: "Fwd Del", comment: "Forward delete key name"),
         123: "←", 124: "→", 125: "↓", 126: "↑",
         122: "F1", 120: "F2", 99: "F3", 118: "F4",
         96: "F5", 97: "F6", 98: "F7", 100: "F8",

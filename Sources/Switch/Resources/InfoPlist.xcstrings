@@ -1,0 +1,136 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSAppleEventsUsageDescription": {
+      "comment": "Info.plist Accessibility usage",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch uses Accessibility to focus, close, and move windows."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch 使用辅助功能来聚焦、关闭和移动窗口。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch 使用輔助使用來聚焦、關閉和移動視窗。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch はアクセシビリティを使ってウインドウのフォーカス、閉じる、移動を行います。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch는 손쉬운 사용을 통해 윈도우를 활성화하고 닫고 옮깁니다."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch nutzt Bedienungshilfen, um Fenster zu fokussieren, zu schließen und zu verschieben."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch utilise l’Accessibilité pour activer, fermer et déplacer les fenêtres."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch usa Accesibilidad para enfocar, cerrar y mover ventanas."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Switch usa Acessibilidade para focar, fechar e mover janelas."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch использует Универсальный доступ, чтобы фокусировать, закрывать и перемещать окна."
+          }
+        }
+      }
+    },
+    "NSScreenCaptureUsageDescription": {
+      "comment": "Info.plist Screen Recording usage",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch captures window thumbnails so you can see what you're switching to."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch 会捕获窗口缩略图，方便你看清要切换到的窗口。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch 會擷取視窗縮圖，方便你看清要切換到的視窗。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch はウインドウのサムネイルを取得し、切り替え先を確認できるようにします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch는 전환할 대상을 볼 수 있도록 윈도우 축소판을 캡처합니다."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch nimmt Fensterminiaturen auf, damit du siehst, wohin du wechselst."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch capture des miniatures de fenêtres pour voir vers quoi vous basculez."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch captura miniaturas de ventanas para que veas a cuál cambias."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Switch captura miniaturas das janelas para você ver para onde está indo."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch снимает миниатюры окон, чтобы было видно, куда вы переключаетесь."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

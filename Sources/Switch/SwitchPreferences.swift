@@ -14,15 +14,15 @@ final class SwitchPreferences: ObservableObject {
     enum AccentChoice: String, CaseIterable, Identifiable {
         case system, rose, blue, mint, peach, lavender, monochrome
         var id: String { rawValue }
-        var label: String {
+        var label: LocalizedStringResource {
             switch self {
-            case .system: return "System"
-            case .rose: return "Rose"
-            case .blue: return "Blue"
-            case .mint: return "Mint"
-            case .peach: return "Peach"
-            case .lavender: return "Lavender"
-            case .monochrome: return "Mono"
+            case .system: "System"
+            case .rose: "Rose"
+            case .blue: "Blue"
+            case .mint: "Mint"
+            case .peach: "Peach"
+            case .lavender: "Lavender"
+            case .monochrome: "Mono"
             }
         }
         var color: Color {
@@ -41,11 +41,11 @@ final class SwitchPreferences: ObservableObject {
     enum BackgroundBlur: String, CaseIterable, Identifiable {
         case light, medium, heavy
         var id: String { rawValue }
-        var label: String {
+        var label: LocalizedStringResource {
             switch self {
-            case .light: return "Light"
-            case .medium: return "Medium"
-            case .heavy: return "Heavy"
+            case .light: "Light"
+            case .medium: "Medium"
+            case .heavy: "Heavy"
             }
         }
         var material: Material {

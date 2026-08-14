@@ -78,10 +78,10 @@ struct SwitchView: View {
     }
 
     private func windowBadgeText(for window: WindowInfo) -> String {
-        if window.isMinimized { return "MINIMIZED" }
-        if window.isHidden { return "HIDDEN" }
-        if window.isWindowless { return "NO WINDOWS" }
-        return window.spaceLabel?.uppercased() ?? "OTHER SPACE"
+        if window.isMinimized { return String(localized: "MINIMIZED", comment: "Picker badge") }
+        if window.isHidden { return String(localized: "HIDDEN", comment: "Picker badge") }
+        if window.isWindowless { return String(localized: "NO WINDOWS", comment: "Picker badge") }
+        return window.spaceLabel ?? String(localized: "OTHER SPACE", comment: "Picker badge")
     }
 
     private var showHeader: Bool {
@@ -152,10 +152,16 @@ struct SwitchView: View {
             }
             Spacer()
             if !model.filteredWindows.isEmpty {
-                Text(isSpaceMode ? "\(model.filteredWindows.count) spaces" : "\(model.filteredWindows.count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
+                Group {
+                    if isSpaceMode {
+                        Text("\(model.filteredWindows.count) spaces", comment: "Picker header Space count")
+                    } else {
+                        Text(verbatim: "\(model.filteredWindows.count)")
+                    }
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
             }
         }
         .padding(.horizontal, 22)
@@ -216,9 +222,15 @@ struct SwitchView: View {
             Image(systemName: model.filterText.isEmpty ? "rectangle.stack" : "magnifyingglass")
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(.tertiary)
-            Text(model.filterText.isEmpty ? "No windows" : "No matches")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+            if model.filterText.isEmpty {
+                Text("No windows", comment: "Empty picker")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("No matches", comment: "Empty picker after filter")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
         }
         .transition(.scale(scale: 0.98).combined(with: .opacity))
     }
@@ -296,9 +308,9 @@ struct SwitchView: View {
         .buttonStyle(.plain)
     }
 
-    private func hint(_ key: String, _ label: String) -> some View {
+    private func hint(_ key: String, _ label: LocalizedStringResource) -> some View {
         HStack(spacing: 5) {
-            Text(key)
+            Text(verbatim: key)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(1)
                 .foregroundStyle(.primary.opacity(0.85))
@@ -449,7 +461,7 @@ struct SwitchView: View {
             }
             if isSpaceMode {
                 if window.spaceLabel == "Current" {
-                    capsuleBadge("CURRENT")
+                    capsuleBadge(String(localized: "CURRENT", comment: "Picker badge for the active Space"))
                 }
             } else {
                 windowBadge(for: window)
