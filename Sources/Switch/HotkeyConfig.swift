@@ -200,10 +200,10 @@ enum HotkeyValidator {
         let mask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
         let cleaned = flags.intersection(mask)
         if cleaned.intersection([.maskCommand, .maskAlternate, .maskControl]).rawValue == 0 {
-            return "Needs at least one modifier (⌘, ⌥, or ⌃)."
+            return L10n.string("Needs at least one modifier (⌘, ⌥, or ⌃).")
         }
         for (rk, rf) in reserved where rk == keyCode && rf == cleaned {
-            return "That combo is reserved by macOS or common apps."
+            return L10n.string("That combo is reserved by macOS or common apps.")
         }
         return nil
     }
@@ -212,10 +212,10 @@ enum HotkeyValidator {
 enum KeyName {
     /// Human-readable key name (single char where possible, "Tab" / "F1" etc otherwise).
     static func string(for code: UInt16) -> String {
-        if let s = special[code] { return s }
+        if let s = special[code] { return L10n.string(s) }
         // Fall back to NSEvent.charactersByApplyingModifiers for printable keys.
         if let cs = chars(for: code) { return cs.uppercased() }
-        return "Key \(code)"
+        return L10n.format("Key %d", code)
     }
 
     private static let special: [UInt16: String] = [

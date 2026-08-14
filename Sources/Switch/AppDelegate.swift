@@ -291,8 +291,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updaterController.checkForUpdates(nil)
         #else
         let alert = NSAlert()
-        alert.messageText = "Updates not configured"
-        alert.informativeText = "This build doesn't include Sparkle. Visit switch-dev.sanyamgarg.com to download the latest."
+        alert.messageText = L10n.string("Updates not configured")
+        alert.informativeText = L10n.string("This build doesn't include Sparkle. Visit switch-dev.sanyamgarg.com to download the latest.")
         alert.runModal()
         #endif
     }

@@ -14,7 +14,7 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Switch")
                         .font(.system(size: 16, weight: .semibold))
-                    Text(model.requiresScreenCapture ? "Two permissions before you can switch windows." : "One permission before you can switch windows.")
+                    Text(L10n.string(model.requiresScreenCapture ? "Two permissions before you can switch windows." : "One permission before you can switch windows."))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -69,11 +69,11 @@ struct OnboardingView: View {
                 .font(.system(size: 18))
                 .foregroundStyle(granted ? Color.green : Color.secondary)
             VStack(alignment: .leading, spacing: 1) {
-                Text(name).font(.system(size: 13, weight: .medium))
-                Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L10n.string(name)).font(.system(size: 13, weight: .medium))
+                Text(L10n.string(detail)).font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
-            Button(granted ? "Granted" : "Open Settings", action: open)
+            Button(L10n.string(granted ? "Granted" : "Open Settings"), action: open)
                 .disabled(granted)
         }
         .padding(.horizontal, 12)

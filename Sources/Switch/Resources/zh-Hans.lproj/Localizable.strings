@@ -1,0 +1,182 @@
+/* Onboarding */
+"Two permissions before you can switch windows." = "还需授予两项权限才能切换窗口。";
+"One permission before you can switch windows." = "还需授予一项权限才能切换窗口。";
+"Accessibility" = "辅助功能";
+"Lets Switch intercept ⌘-Tab and ⌥-`." = "允许 Switch 接管 ⌘-Tab 和 ⌥-` 快捷键。";
+"Screen Recording" = "屏幕录制";
+"Captures live thumbnails of your windows." = "用于获取窗口的实时缩略图。";
+"Optional while thumbnails are disabled." = "关闭缩略图时无需授予。";
+"Ready. Hold ⌘-Tab to switch windows." = "准备就绪。按住 ⌘-Tab 即可切换窗口。";
+"Click Open Settings, then toggle Switch on. This window updates automatically." = "点按“打开设置”，然后启用 Switch。此窗口会自动更新状态。";
+"Continue without thumbnails" = "不使用缩略图并继续";
+"Granted" = "已授权";
+"Open Settings" = "打开设置";
+
+/* Settings tabs and sections */
+"General" = "常规";
+"Picker" = "切换面板";
+"Permissions" = "权限";
+"Appearance" = "外观";
+"About" = "关于";
+"Startup" = "启动";
+"Hotkeys" = "快捷键";
+"Updates" = "更新";
+"Behavior" = "行为";
+"Vertical mode" = "垂直模式";
+"Sizing" = "尺寸";
+"Advanced" = "高级";
+"Cross-Space" = "跨空间";
+"Excluded apps" = "排除的应用";
+"Accent" = "强调色";
+"Background" = "背景";
+
+/* General settings */
+"Launch Switch at login" = "登录时启动 Switch";
+"Run automatically when you sign in to your Mac." = "登录 Mac 时自动运行。";
+"All windows" = "所有窗口";
+"Current app" = "当前应用";
+"Spaces" = "桌面空间";
+"Cycle Spaces. Conflicts with browser tab switching if set to ⌃Tab." = "循环切换桌面空间。若设为 ⌃Tab，会与浏览器标签页切换冲突。";
+"Primary" = "主要";
+"Alternate" = "备用";
+"Not set" = "未设置";
+"Sticky toggle" = "保持模式开关";
+"Clear" = "清除";
+"Clear %@ shortcut" = "清除%@快捷键";
+"Sticky: ⌘W/Q/H · Hold: ⇧⌘W/Q/H · ⇧ reverse" = "保持模式：⌘W/Q/H · 按住：⇧⌘W/Q/H · ⇧ 反向";
+"Reset" = "重置";
+"Check for updates automatically" = "自动检查更新";
+"Look for new versions in the background and offer to install them. Turn off if you update through Homebrew." = "在后台检查新版本并提示安装；若通过 Homebrew 更新，可关闭此项。";
+"Quit Switch" = "退出 Switch";
+"Relaunch any time from Spotlight or your Applications folder." = "可随时通过聚焦搜索或“应用程序”文件夹重新启动。";
+"Quit" = "退出";
+
+/* Picker behavior */
+"Sticky picker" = "保持面板打开";
+"Release ⌘ to leave the picker open. Return to switch, Esc to cancel." = "松开 ⌘ 后面板仍保持打开；按回车切换，按 Esc 取消。";
+"Keyboard only" = "仅使用键盘";
+"Ignore mouse hover and click while the picker is open." = "切换面板打开时忽略鼠标悬停和点击。";
+"Reduce motion" = "减少动态效果";
+"Turn off picker fade, selection movement, and other switcher animations." = "关闭面板淡入淡出、选中项移动等动画效果。";
+"Hide menu bar icon" = "隐藏菜单栏图标";
+"Keep Switch off the menu bar. Open Settings by pressing comma while the picker is open." = "不在菜单栏显示 Switch；面板打开时按逗号键可进入设置。";
+"Type to filter" = "输入文字筛选";
+"Filter windows by typing while the picker is open. When disabled, ⌘W/⌘Q/⌘H work directly." = "面板打开时输入文字即可筛选窗口。关闭后，⌘W/⌘Q/⌘H 可直接使用。";
+"Static order" = "固定排序";
+"Keep windows in the same spot every time instead of sorting by recent use." = "保持窗口位置不变，不再按最近使用时间排序。";
+"Hide minimized and hidden windows" = "隐藏已最小化和已隐藏的窗口";
+"Leave out windows that are minimized to the Dock or belong to hidden apps." = "不显示已最小化到程序坞的窗口，以及已隐藏应用的窗口。";
+"Show number key hints" = "显示数字键提示";
+"Label the first nine windows with the 1-9 key that picks them." = "为前九个窗口标注可直接选择它们的 1–9 数字键。";
+"Include apps with no windows" = "包括没有窗口的应用";
+"Show running Dock apps that don't currently have any windows. Picking one activates the app." = "显示当前没有窗口的运行中程序坞应用；选择后会激活该应用。";
+"Show thumbnails" = "显示缩略图";
+"Capture window previews. Turn off to run without Screen Recording." = "获取窗口预览；关闭后可在没有屏幕录制权限的情况下运行。";
+"Show stoplights on thumbnails" = "在缩略图上显示窗口按钮";
+"Red/yellow/green buttons to close, minimize, or zoom each window. ⌘W closes the selected window either way." = "使用红、黄、绿按钮关闭、最小化或缩放窗口；无论是否开启，⌘W 都可关闭选中窗口。";
+"Show hint strip" = "显示快捷键提示栏";
+"Keyboard shortcut hints at the bottom of the picker." = "在切换面板底部显示快捷键提示。";
+"Show window title first" = "优先显示窗口标题";
+"Put the window title ahead of the app name in each tile and row." = "在每个卡片和列表行中，将窗口标题显示在应用名称之前。";
+
+/* Vertical mode and sizing */
+"Vertical list" = "垂直列表";
+"One window per row instead of a grid." = "每行显示一个窗口，而不是使用网格布局。";
+"Show top header" = "显示顶部栏";
+"Filter text and window count at the top of the picker." = "在切换面板顶部显示筛选文字和窗口数量。";
+"Show preview" = "显示预览";
+"Window thumbnail at the trailing edge of each row." = "在每一行的末尾显示窗口缩略图。";
+"Show stoplights" = "显示窗口按钮";
+"Close/minimize/zoom buttons inside each row." = "在每一行中显示关闭、最小化和缩放按钮。";
+"Columns" = "列数";
+"Number of columns in the grid view. %d" = "网格视图的列数：%d";
+"Thumbnail size" = "缩略图大小";
+"Overall picker size. %dpt" = "切换面板的整体大小：%d 点";
+"App icon size" = "应用图标大小";
+"Size of the app icon on each tile and list row. %dpt" = "每个卡片和列表行中的应用图标大小：%d 点";
+"Reset sizing" = "重置尺寸";
+"Restore columns, thumbnail size, and app icon size." = "恢复默认列数、缩略图大小和应用图标大小。";
+"Picker activation delay" = "面板显示延迟";
+"Hold the hotkey this long before the picker appears. A quick tap switches to your previous window without showing it. %dms" = "按住快捷键达到此时长后才显示面板；快速点按会直接切换到上一个窗口：%d 毫秒";
+"Reverse with Shift tap" = "点按 Shift 反向切换";
+"While holding the hotkey, tap Shift to step backward. ⇧-Tab still works too." = "按住切换快捷键时点按 Shift 可向后切换，⇧-Tab 仍然有效。";
+
+/* Cross-Space and app lists */
+"Show cross-Space windows" = "显示其他空间的窗口";
+"Include windows on other Spaces. Picking one moves it to your current Space." = "包括其他桌面空间中的窗口；选择后会将其移动到当前空间。";
+"Mix by recent use" = "按最近使用混合排序";
+"Sort all windows together by recency instead of grouping by Space." = "将所有窗口按最近使用时间统一排序，不再按桌面空间分组。";
+"Drag to reorder. Unranked apps fall to the bottom alphabetically." = "拖动即可重新排序；未排序的应用会按字母顺序排列在末尾。";
+"No windows open right now." = "当前没有打开的窗口。";
+"Windows from these apps won't appear in the picker." = "这些应用的窗口不会出现在切换面板中。";
+"Nothing excluded." = "尚未排除任何应用。";
+"+ Add app" = "+ 添加应用";
+
+/* Appearance */
+"System" = "系统";
+"Rose" = "玫瑰";
+"Blue" = "蓝色";
+"Mint" = "薄荷";
+"Peach" = "蜜桃";
+"Lavender" = "薰衣草";
+"Mono" = "单色";
+"Light" = "轻度";
+"Medium" = "中度";
+"Heavy" = "重度";
+"Accent shows up in the selection highlight and across this Settings window." = "强调色会用于选中高亮和整个设置窗口。";
+"How much the desktop blurs through the picker background." = "调整桌面透过切换面板背景时的模糊程度。";
+
+/* Permissions */
+"Switch needs Accessibility for the ⌘-Tab hotkey. Screen Recording is only needed when thumbnails are enabled." = "Switch 需要辅助功能权限才能使用 ⌘-Tab 快捷键；仅在启用缩略图时需要屏幕录制权限。";
+"Intercept ⌘-Tab and ⌥-` system-wide." = "在整个系统中接管 ⌘-Tab 和 ⌥-`。";
+"Capture live thumbnails of every window." = "获取每个窗口的实时缩略图。";
+"Open in System Settings" = "在系统设置中打开";
+
+/* Hotkey recorder */
+"Press a key…" = "请按下快捷键…";
+"Needs at least one modifier (⌘, ⌥, or ⌃)." = "至少需要一个修饰键（⌘、⌥ 或 ⌃）。";
+"That combo is reserved by macOS or common apps." = "该组合键已被 macOS 或常用应用保留。";
+"That shortcut is already assigned." = "该快捷键已被分配。";
+"Space" = "空格";
+"Return" = "回车";
+"Delete" = "删除";
+"Fwd Del" = "向前删除";
+"Key %d" = "按键 %d";
+
+/* Picker */
+"MINIMIZED" = "已最小化";
+"HIDDEN" = "已隐藏";
+"NO WINDOWS" = "无窗口";
+"OTHER SPACE" = "其他空间";
+"CURRENT" = "当前";
+"Current" = "当前";
+"No windows" = "没有窗口";
+"No matches" = "没有匹配项";
+"%d spaces" = "%d 个空间";
+"switch space" = "切换空间";
+"switch" = "切换";
+"navigate" = "导航";
+"reverse" = "反向";
+"close" = "关闭";
+"type" = "输入";
+"filter" = "筛选";
+"cancel" = "取消";
+"1 window" = "1 个窗口";
+"%d windows" = "%d 个窗口";
+"%@ · %@" = "%@ · %@";
+"Desktop" = "桌面";
+"Desktop %d" = "桌面 %d";
+"Fullscreen" = "全屏";
+
+/* About, menu, and updates */
+"About Switch" = "关于 Switch";
+"Switch Settings" = "Switch 设置";
+"Settings…" = "设置…";
+"Version %@" = "版本 %@";
+"Keyboard-driven window switcher for macOS." = "为 macOS 打造的键盘驱动窗口切换器。";
+"Website" = "网站";
+"Source" = "源代码";
+"☕ Coffee" = "☕ 请作者喝咖啡";
+"Check for Updates" = "检查更新";
+"Updates not configured" = "未配置更新";
+"This build doesn't include Sparkle. Visit switch-dev.sanyamgarg.com to download the latest." = "此构建未包含 Sparkle。请访问 switch-dev.sanyamgarg.com 下载最新版本。";

@@ -287,13 +287,13 @@ enum WindowEnumerator {
             let sorted = WindowMRU.sorted(windows, frontmost: nil)
             guard let target = sorted.first else { return nil }
             let apps = Array(NSOrderedSet(array: sorted.map(\.appName)).compactMap { $0 as? String }).prefix(3)
-            let suffix = sorted.count == 1 ? "1 window" : "\(sorted.count) windows"
-            let detail = apps.isEmpty ? suffix : "\(suffix) · \(apps.joined(separator: ", "))"
+            let suffix = sorted.count == 1 ? L10n.string("1 window") : L10n.format("%d windows", sorted.count)
+            let detail = apps.isEmpty ? suffix : L10n.format("%@ · %@", suffix, apps.joined(separator: ", "))
             let info = metadata.labels[sid]
             return WindowInfo(
                 id: target.id,
                 pid: target.pid,
-                appName: info?.label ?? "Desktop",
+                appName: info?.label ?? L10n.string("Desktop"),
                 title: detail,
                 bounds: target.bounds,
                 spaceID: sid,
@@ -326,9 +326,9 @@ enum WindowEnumerator {
                 let type = space["type"] as? Int ?? 0
                 if type == 0 {
                     desktop += 1
-                    labels[id] = ("Desktop \(desktop)", false)
+                    labels[id] = (L10n.format("Desktop %d", desktop), false)
                 } else {
-                    labels[id] = ("Fullscreen", true)
+                    labels[id] = (L10n.string("Fullscreen"), true)
                 }
             }
         }

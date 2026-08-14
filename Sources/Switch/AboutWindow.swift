@@ -22,7 +22,7 @@ final class AboutWindow {
             backing: .buffered,
             defer: false
         )
-        win.title = "About Switch"
+        win.title = L10n.string("About Switch")
         win.contentMinSize = NSSize(width: 380, height: 360)
         win.contentViewController = host
         win.center()
@@ -68,7 +68,7 @@ struct AboutView: View {
             VStack(spacing: 4) {
                 Text("Switch")
                     .font(.system(size: 22, weight: .semibold))
-                Text("Version \(BuildInfo.versionLine)")
+                Text(L10n.format("Version %@", BuildInfo.versionLine))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 if let stamp = BuildInfo.stamp {
@@ -119,7 +119,7 @@ private struct AboutPill: View {
     let title: String
     let url: String
     var body: some View {
-        Link(title, destination: URL(string: url)!)
+        Link(L10n.string(title), destination: URL(string: url)!)
             .font(.system(size: 11, weight: .medium))
             .padding(.horizontal, 11)
             .padding(.vertical, 5)

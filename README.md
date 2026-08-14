@@ -1,5 +1,7 @@
 # Switch
 
+[简体中文](README.zh-CN.md)
+
 A keyboard-driven window switcher for macOS. Like it? [Buy me a coffee →](https://www.paypal.com/paypalme/sanyamg0)
 
 → [switch-dev.sanyamgarg.com](https://switch-dev.sanyamgarg.com)
