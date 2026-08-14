@@ -78,10 +78,11 @@ struct SwitchView: View {
     }
 
     private func windowBadgeText(for window: WindowInfo) -> String {
-        if window.isMinimized { return "MINIMIZED" }
-        if window.isHidden { return "HIDDEN" }
-        if window.isWindowless { return "NO WINDOWS" }
-        return window.spaceLabel?.uppercased() ?? "OTHER SPACE"
+        if window.isMinimized { return L10n.string("MINIMIZED") }
+        if window.isHidden { return L10n.string("HIDDEN") }
+        if window.isWindowless { return L10n.string("NO WINDOWS") }
+        if let label = window.spaceLabel { return L10n.string(label).uppercased() }
+        return L10n.string("OTHER SPACE")
     }
 
     private var showHeader: Bool {
@@ -152,7 +153,7 @@ struct SwitchView: View {
             }
             Spacer()
             if !model.filteredWindows.isEmpty {
-                Text(isSpaceMode ? "\(model.filteredWindows.count) spaces" : "\(model.filteredWindows.count)")
+                Text(isSpaceMode ? L10n.format("%d spaces", model.filteredWindows.count) : "\(model.filteredWindows.count)")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.tertiary)
                     .monospacedDigit()
@@ -216,7 +217,7 @@ struct SwitchView: View {
             Image(systemName: model.filterText.isEmpty ? "rectangle.stack" : "magnifyingglass")
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(.tertiary)
-            Text(model.filterText.isEmpty ? "No windows" : "No matches")
+            Text(L10n.string(model.filterText.isEmpty ? "No windows" : "No matches"))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
         }
@@ -298,7 +299,7 @@ struct SwitchView: View {
 
     private func hint(_ key: String, _ label: String) -> some View {
         HStack(spacing: 5) {
-            Text(key)
+            Text(L10n.string(key))
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(1)
                 .foregroundStyle(.primary.opacity(0.85))
@@ -308,12 +309,12 @@ struct SwitchView: View {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(Color.white.opacity(0.10))
                 )
-            Text(label)
+            Text(L10n.string(label))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
         .fixedSize()
-        .help(label)
+        .help(L10n.string(label))
     }
 
     private var gridColumns: [GridItem] {
@@ -449,7 +450,7 @@ struct SwitchView: View {
             }
             if isSpaceMode {
                 if window.spaceLabel == "Current" {
-                    capsuleBadge("CURRENT")
+                    capsuleBadge(L10n.string("CURRENT"))
                 }
             } else {
                 windowBadge(for: window)

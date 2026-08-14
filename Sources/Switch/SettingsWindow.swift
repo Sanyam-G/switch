@@ -32,7 +32,7 @@ final class SettingsWindow {
             backing: .buffered,
             defer: false
         )
-        win.title = "Switch Settings"
+        win.title = L10n.string("Switch Settings")
         win.contentViewController = host
         win.center()
         win.isReleasedWhenClosed = false

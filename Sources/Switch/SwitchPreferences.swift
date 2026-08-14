@@ -16,13 +16,13 @@ final class SwitchPreferences: ObservableObject {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .system: return "System"
-            case .rose: return "Rose"
-            case .blue: return "Blue"
-            case .mint: return "Mint"
-            case .peach: return "Peach"
-            case .lavender: return "Lavender"
-            case .monochrome: return "Mono"
+            case .system: return L10n.string("System")
+            case .rose: return L10n.string("Rose")
+            case .blue: return L10n.string("Blue")
+            case .mint: return L10n.string("Mint")
+            case .peach: return L10n.string("Peach")
+            case .lavender: return L10n.string("Lavender")
+            case .monochrome: return L10n.string("Mono")
             }
         }
         var color: Color {
@@ -43,9 +43,9 @@ final class SwitchPreferences: ObservableObject {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .light: return "Light"
-            case .medium: return "Medium"
-            case .heavy: return "Heavy"
+            case .light: return L10n.string("Light")
+            case .medium: return L10n.string("Medium")
+            case .heavy: return L10n.string("Heavy")
             }
         }
         var material: Material {
