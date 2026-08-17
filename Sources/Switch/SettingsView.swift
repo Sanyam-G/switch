@@ -283,11 +283,21 @@ struct SettingsView: View {
                                 .tint(prefs.accent.color)
                         }
                         Divider().opacity(0.4)
+                        row(title: "Vim navigation",
+                            detail: "Use H J K L to move the selection, same as the arrow keys. Turns off type to filter.") {
+                            Toggle("", isOn: $prefs.vimNavigation)
+                                .labelsHidden().toggleStyle(.switch)
+                                .tint(prefs.accent.color)
+                        }
+                        Divider().opacity(0.4)
                         row(title: "Type to filter",
-                            detail: "Filter windows by typing while the picker is open. When disabled, ⌘W/⌘Q/⌘H work directly.") {
+                            detail: prefs.vimNavigation
+                                ? "Unavailable while Vim navigation is on. H J K L move the selection instead of typing a filter."
+                                : "Filter windows by typing while the picker is open. When disabled, ⌘W/⌘Q/⌘H work directly.") {
                             Toggle("", isOn: $prefs.typeToFilter)
                                 .labelsHidden().toggleStyle(.switch)
                                 .tint(prefs.accent.color)
+                                .disabled(prefs.vimNavigation)
                         }
                         Divider().opacity(0.4)
                         row(title: "Static order",

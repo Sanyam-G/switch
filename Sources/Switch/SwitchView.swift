@@ -239,7 +239,10 @@ struct SwitchView: View {
     }
 
     private var navKey: String {
-        (prefs.verticalList || isSpaceMode) ? "↑↓ / jk" : "←↑↓→ / hjkl"
+        if prefs.verticalList || isSpaceMode {
+            return prefs.vimNavigation ? "↑↓ / jk" : "↑↓"
+        }
+        return prefs.vimNavigation ? "←↑↓→ / hjkl" : "←↑↓→"
     }
 
     private var closeKey: String {
