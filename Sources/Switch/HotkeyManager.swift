@@ -52,6 +52,9 @@ final class HotkeyManager {
     private static let kcW: CGKeyCode = 13
     private static let kcQ: CGKeyCode = 12
     private static let kcH: CGKeyCode = 4
+    private static let kcJ: CGKeyCode = 38
+    private static let kcK: CGKeyCode = 40
+    private static let kcL: CGKeyCode = 37
     private static let kcComma: CGKeyCode = 43
     private static let kcDigits: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
     private static let kcKeypadDigits: [CGKeyCode] = [83, 84, 85, 86, 87, 88, 89, 91, 92]
@@ -469,11 +472,11 @@ final class HotkeyManager {
 
     private func arrowDirection(for kc: CGKeyCode) -> Direction? {
         switch kc {
-        case Self.kcLeftArrow:  return .left
-        case Self.kcRightArrow: return .right
-        case Self.kcDownArrow:  return .down
-        case Self.kcUpArrow:    return .up
-        default:                return nil
+        case Self.kcLeftArrow, Self.kcH:  return .left
+        case Self.kcRightArrow, Self.kcL: return .right
+        case Self.kcDownArrow, Self.kcJ:  return .down
+        case Self.kcUpArrow, Self.kcK:    return .up
+        default:                          return nil
         }
     }
 

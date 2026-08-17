@@ -239,7 +239,7 @@ struct SwitchView: View {
     }
 
     private var navKey: String {
-        (prefs.verticalList || isSpaceMode) ? "↑↓" : "←↑↓→"
+        (prefs.verticalList || isSpaceMode) ? "↑↓ / jk" : "←↑↓→ / hjkl"
     }
 
     private var closeKey: String {
