@@ -32,6 +32,7 @@ Or quit Switch and drag `Switch.app` from `/Applications` to the Trash.
 - ⌘-Tab cycles all windows
 - ⌥-` cycles within the current app
 - type to filter inline
+- ←↑↓→ navigate; H J K L via Settings → Vim navigation (turns off type to filter)
 - 1-9 (or numpad) picks a tile
 - ⌘W close window, ⌘Q quit app, ⌘H hide app
 - ↵ commits, Esc cancels

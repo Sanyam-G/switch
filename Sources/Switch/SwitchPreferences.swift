@@ -145,7 +145,17 @@ final class SwitchPreferences: ObservableObject {
     }
 
     @Published var typeToFilter: Bool {
-        didSet { UserDefaults.standard.set(typeToFilter, forKey: SwitchPreferences.typeToFilterKey) }
+        didSet {
+            UserDefaults.standard.set(typeToFilter, forKey: SwitchPreferences.typeToFilterKey)
+            if typeToFilter && vimNavigation { vimNavigation = false }
+        }
+    }
+
+    @Published var vimNavigation: Bool {
+        didSet {
+            UserDefaults.standard.set(vimNavigation, forKey: SwitchPreferences.vimNavigationKey)
+            if vimNavigation && typeToFilter { typeToFilter = false }
+        }
     }
 
     @Published var thumbnailHeight: Double {
@@ -201,6 +211,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let verticalShowHeaderKey = "switch.verticalShowHeader"
     nonisolated static let showHintStripKey = "switch.showHintStrip"
     nonisolated static let typeToFilterKey = "switch.typeToFilter"
+    nonisolated static let vimNavigationKey = "switch.vimNavigation"
     nonisolated static let thumbnailHeightKey = "switch.thumbnailHeight"
     nonisolated static let appIconSizeKey = "switch.appIconSize"
     nonisolated static let gridColumnsKey = "switch.gridColumns"
@@ -232,6 +243,11 @@ final class SwitchPreferences: ObservableObject {
         verticalShowHeader = (UserDefaults.standard.object(forKey: SwitchPreferences.verticalShowHeaderKey) as? Bool) ?? true
         showHintStrip = (UserDefaults.standard.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
         typeToFilter = (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
+        vimNavigation = UserDefaults.standard.bool(forKey: SwitchPreferences.vimNavigationKey)
+        if vimNavigation {
+            typeToFilter = false
+            UserDefaults.standard.set(false, forKey: SwitchPreferences.typeToFilterKey)
+        }
         thumbnailHeight = (UserDefaults.standard.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double) ?? Self.defaultThumbnailHeight
         appIconSize = (UserDefaults.standard.object(forKey: SwitchPreferences.appIconSizeKey) as? Double) ?? Self.defaultAppIconSize
         gridColumns = (UserDefaults.standard.object(forKey: SwitchPreferences.gridColumnsKey) as? Int) ?? Self.defaultGridColumns

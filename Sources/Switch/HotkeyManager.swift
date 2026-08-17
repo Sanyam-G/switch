@@ -52,6 +52,9 @@ final class HotkeyManager {
     private static let kcW: CGKeyCode = 13
     private static let kcQ: CGKeyCode = 12
     private static let kcH: CGKeyCode = 4
+    private static let kcJ: CGKeyCode = 38
+    private static let kcK: CGKeyCode = 40
+    private static let kcL: CGKeyCode = 37
     private static let kcComma: CGKeyCode = 43
     private static let kcDigits: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
     private static let kcKeypadDigits: [CGKeyCode] = [83, 84, 85, 86, 87, 88, 89, 91, 92]
@@ -260,7 +263,9 @@ final class HotkeyManager {
 
             if armedMode != nil {
                 let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
-                let typeToFilter = (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
+                let vimNavigation = UserDefaults.standard.bool(forKey: SwitchPreferences.vimNavigationKey)
+                var typeToFilter = (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
+                if vimNavigation { typeToFilter = false }
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
                 if kc == Self.kcEscape {
                     clearArmed()
@@ -315,7 +320,7 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                if let direction = arrowDirection(for: kc) {
+                if let direction = arrowDirection(for: kc, vim: vimNavigation) {
                     DispatchQueue.main.async { [weak self] in
                         self?.onNavigate?(direction)
                     }
@@ -467,13 +472,17 @@ final class HotkeyManager {
         return nil
     }
 
-    private func arrowDirection(for kc: CGKeyCode) -> Direction? {
+    private func arrowDirection(for kc: CGKeyCode, vim: Bool) -> Direction? {
         switch kc {
-        case Self.kcLeftArrow:  return .left
-        case Self.kcRightArrow: return .right
-        case Self.kcDownArrow:  return .down
-        case Self.kcUpArrow:    return .up
-        default:                return nil
+        case Self.kcLeftArrow:            return .left
+        case Self.kcRightArrow:           return .right
+        case Self.kcDownArrow:            return .down
+        case Self.kcUpArrow:              return .up
+        case Self.kcH where vim:          return .left
+        case Self.kcL where vim:          return .right
+        case Self.kcJ where vim:          return .down
+        case Self.kcK where vim:          return .up
+        default:                          return nil
         }
     }
 
