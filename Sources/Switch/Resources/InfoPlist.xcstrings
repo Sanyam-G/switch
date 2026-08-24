@@ -1,0 +1,40 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSAppleEventsUsageDescription": {
+      "comment": "Info.plist Accessibility usage",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch uses Accessibility to focus, close, and move windows."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch 使用辅助功能来聚焦、关闭和移动窗口。"
+          }
+        }
+      }
+    },
+    "NSScreenCaptureUsageDescription": {
+      "comment": "Info.plist Screen Recording usage",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch captures window thumbnails so you can see what you're switching to."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch 会捕获窗口缩略图，方便你看清要切换到的窗口。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

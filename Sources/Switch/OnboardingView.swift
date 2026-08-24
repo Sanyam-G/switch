@@ -12,9 +12,11 @@ struct OnboardingView: View {
                         .frame(width: 56, height: 56)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Switch")
+                    Text(verbatim: "Switch")
                         .font(.system(size: 16, weight: .semibold))
-                    Text(model.requiresScreenCapture ? "Two permissions before you can switch windows." : "One permission before you can switch windows.")
+                    Text(model.requiresScreenCapture
+                         ? LocalizedStringResource("Two permissions before you can switch windows.", comment: "Onboarding subtitle when thumbnails need Screen Recording")
+                         : LocalizedStringResource("One permission before you can switch windows.", comment: "Onboarding subtitle when only Accessibility is required"))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -30,7 +32,9 @@ struct OnboardingView: View {
                 )
                 row(
                     name: "Screen Recording",
-                    detail: model.requiresScreenCapture ? "Captures live thumbnails of your windows." : "Optional while thumbnails are disabled.",
+                    detail: model.requiresScreenCapture
+                        ? LocalizedStringResource("Captures live thumbnails of your windows.", comment: "Onboarding Screen Recording detail")
+                        : LocalizedStringResource("Optional while thumbnails are disabled.", comment: "Onboarding Screen Recording detail when optional"),
                     granted: model.screenCapture,
                     open: model.openScreenCapture
                 )
@@ -43,7 +47,7 @@ struct OnboardingView: View {
                         .foregroundStyle(.green)
                         .font(.system(size: 12, weight: .medium))
                 } else {
-                    Text("Click Open Settings, then toggle Switch on. This window updates automatically.")
+                    Text("Click Open Settings, then toggle Switch on. This window updates automatically.", comment: "Onboarding waiting hint")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
@@ -63,7 +67,7 @@ struct OnboardingView: View {
         .onDisappear { model.stopPolling() }
     }
 
-    private func row(name: String, detail: String, granted: Bool, open: @escaping () -> Void) -> some View {
+    private func row(name: LocalizedStringResource, detail: LocalizedStringResource, granted: Bool, open: @escaping () -> Void) -> some View {
         HStack(spacing: 12) {
             Image(systemName: granted ? "checkmark.circle.fill" : "circle.dashed")
                 .font(.system(size: 18))
@@ -73,8 +77,12 @@ struct OnboardingView: View {
                 Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
-            Button(granted ? "Granted" : "Open Settings", action: open)
-                .disabled(granted)
+            if granted {
+                Button("Granted", action: open)
+                    .disabled(true)
+            } else {
+                Button("Open Settings", action: open)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

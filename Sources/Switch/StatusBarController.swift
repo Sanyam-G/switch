@@ -12,30 +12,30 @@ final class StatusBarController {
 
     private func configure(_ item: NSStatusItem) {
         if let button = item.button {
-            let img = NSImage(systemSymbolName: "square.on.square", accessibilityDescription: "Switch")
+            let img = NSImage(systemSymbolName: "square.on.square", accessibilityDescription: String(localized: "Switch", comment: "Brand name; do not translate"))
             img?.isTemplate = true
             button.image = img
         }
 
         let menu = NSMenu()
 
-        let header = NSMenuItem(title: "Switch", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: String(localized: "Switch", comment: "Brand name; do not translate"), action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
 
         menu.addItem(.separator())
 
-        let about = NSMenuItem(title: "About Switch", action: #selector(openAbout), keyEquivalent: "")
+        let about = NSMenuItem(title: String(localized: "About Switch", comment: "Status menu item"), action: #selector(openAbout), keyEquivalent: "")
         about.target = self
         menu.addItem(about)
 
-        let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        let settings = NSMenuItem(title: String(localized: "Settings…", comment: "Status menu item"), action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
 
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: "Quit Switch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = NSMenuItem(title: String(localized: "Quit Switch", comment: "Status menu item"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
         menu.addItem(quit)
 

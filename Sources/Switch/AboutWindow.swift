@@ -22,7 +22,7 @@ final class AboutWindow {
             backing: .buffered,
             defer: false
         )
-        win.title = "About Switch"
+        win.title = String(localized: "About Switch", comment: "About window title")
         win.contentMinSize = NSSize(width: 380, height: 360)
         win.contentViewController = host
         win.center()
@@ -66,9 +66,9 @@ struct AboutView: View {
                     .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
             }
             VStack(spacing: 4) {
-                Text("Switch")
+                Text(verbatim: "Switch")
                     .font(.system(size: 22, weight: .semibold))
-                Text("Version \(BuildInfo.versionLine)")
+                Text("Version \(BuildInfo.versionLine)", comment: "About window version line")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 if let stamp = BuildInfo.stamp {
@@ -78,7 +78,7 @@ struct AboutView: View {
                         .textSelection(.enabled)
                 }
             }
-            Text("Keyboard-driven window switcher for macOS.")
+            Text("Keyboard-driven window switcher for macOS.", comment: "About window tagline")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -94,7 +94,7 @@ struct AboutView: View {
                 AboutWindow.shared.dropLevelForDialog()
                 NotificationCenter.default.post(name: .switchCheckForUpdates, object: nil)
             } label: {
-                Text("Check for Updates")
+                Text("Check for Updates", comment: "About window update button")
                     .font(.system(size: 11, weight: .medium))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
@@ -105,7 +105,7 @@ struct AboutView: View {
             .buttonStyle(.plain)
 
             Spacer(minLength: 0)
-            Text("© 2026 Sanyam Garg")
+            Text("© 2026 Sanyam Garg", comment: "About window copyright")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 12)
@@ -116,11 +116,13 @@ struct AboutView: View {
 }
 
 private struct AboutPill: View {
-    let title: String
+    let title: LocalizedStringResource
     let url: String
     var body: some View {
-        Link(title, destination: URL(string: url)!)
-            .font(.system(size: 11, weight: .medium))
+        Link(destination: URL(string: url)!) {
+            Text(title)
+        }
+        .font(.system(size: 11, weight: .medium))
             .padding(.horizontal, 11)
             .padding(.vertical, 5)
             .background(Color.primary.opacity(0.06))

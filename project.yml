@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.sanyamgarg
   deploymentTarget:
     macOS: "14.0"
+  developmentLanguage: en
   createIntermediateGroups: true
 settings:
   base:
@@ -37,6 +38,8 @@ targets:
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_OBJC_BRIDGING_HEADER: Sources/Switch/Switch-Bridging-Header.h
+        SWIFT_EMIT_LOC_STRINGS: YES
+        STRING_CATALOG_GENERATE_SYMBOLS: YES
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.sanyamgarg.switch.debug
