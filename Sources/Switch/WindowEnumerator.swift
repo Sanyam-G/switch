@@ -6,8 +6,8 @@ struct WindowInfo: Identifiable, Hashable {
     let id: CGWindowID
     let pid: pid_t
     let appName: String
-    let title: String
     let bounds: CGRect
+    var title: String
     var spaceID: Int?
     var isCrossSpace: Bool = false
     var isMinimized: Bool = false
@@ -129,15 +129,29 @@ enum WindowEnumerator {
             return out
         }
         let annotatedAll = annotateAndPrune(marked, ax: ax, cid: cid, metadata: metadata, stageManager: stageManager, titlesReliable: titlesReliable)
+        let titledActive = active.map { w -> WindowInfo in
+            var out = w
+            if out.title.isEmpty, let title = ax.titles[out.id], !title.isEmpty {
+                out.title = title
+            }
+            return out
+        }
+        let titledAll = annotatedAll.map { w -> WindowInfo in
+            var out = w
+            if out.title.isEmpty, let title = ax.titles[out.id], !title.isEmpty {
+                out.title = title
+            }
+            return out
+        }
         let onScreenIDs = Set(onScreen.map(\.id))
         housekeepGhostState(
             onScreen: onScreenIDs,
             enumerated: onScreenIDs.union(everything.map(\.id)),
             axBacked: ax.axBacked
         )
-        let cross = annotatedAll.filter { !activeIDs.contains($0.id) }
-        let reps = spaceRepresentatives(from: annotatedAll, cid: cid, metadata: metadata)
-        return FullSnapshot(activeSpace: active, crossSpace: cross, spaceRepresentatives: reps)
+        let cross = titledAll.filter { !activeIDs.contains($0.id) }
+        let reps = spaceRepresentatives(from: titledAll, cid: cid, metadata: metadata)
+        return FullSnapshot(activeSpace: titledActive, crossSpace: cross, spaceRepresentatives: reps)
     }
 
     static func currentWindows(scope: HotkeyManager.Mode, frontmostPID: pid_t?) -> [WindowInfo] {
@@ -170,10 +184,11 @@ enum WindowEnumerator {
         return el
     }
 
-    // AX-backed and minimized window IDs for the given processes; an orderedOut leftover appears in neither.
-    private static func axWindowState(for pids: Set<pid_t>) -> (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>) {
+    // AX-backed windows, minimized window IDs, and AX titles for the given processes; an orderedOut leftover appears in neither.
+    private static func axWindowState(for pids: Set<pid_t>) -> (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, titles: [CGWindowID: String]) {
         var axBacked: Set<CGWindowID> = []
         var minimized: Set<CGWindowID> = []
+        var titles: [CGWindowID: String] = [:]
         for pid in pids {
             let appAX = appElement(for: pid)
             var ref: CFTypeRef?
@@ -184,6 +199,10 @@ enum WindowEnumerator {
                 if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
                     axBacked.insert(id)
                     AXWindowCache.store(ax, for: id)
+                    let title = AXHelpers.title(of: ax)
+                    if !title.isEmpty {
+                        titles[id] = title
+                    }
                     var minRef: CFTypeRef?
                     if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
                        let isMin = minRef as? Bool, isMin {
@@ -192,7 +211,7 @@ enum WindowEnumerator {
                 }
             }
         }
-        return (axBacked, minimized)
+        return (axBacked, minimized, titles)
     }
 
     // Drop orphaned on-screen entries: no live AX window and no Space. Real windows always have a Space.
@@ -208,7 +227,7 @@ enum WindowEnumerator {
 
     private static func annotateAndPrune(
         _ candidates: [WindowInfo],
-        ax: (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>),
+        ax: (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, titles: [CGWindowID: String]),
         cid: CGSConnectionID,
         metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>),
         stageManager: Bool,
@@ -294,8 +313,8 @@ enum WindowEnumerator {
                 id: target.id,
                 pid: target.pid,
                 appName: info?.label ?? "Desktop",
-                title: detail,
                 bounds: target.bounds,
+                title: detail,
                 spaceID: sid,
                 isCrossSpace: sid != active,
                 isMinimized: false,
@@ -383,8 +402,8 @@ enum WindowEnumerator {
                 id: id,
                 pid: pid,
                 appName: appName,
-                title: title,
                 bounds: bounds,
+                title: title,
                 isHidden: app?.isHidden == true,
                 bundleID: app?.bundleIdentifier
             ))
