@@ -243,7 +243,7 @@ struct SwitchView: View {
     }
 
     private var closeKey: String {
-        (prefs.stickyMode || !prefs.typeToFilter) ? "⌘W" : "⇧⌘W"
+        (model.stickySession || !prefs.typeToFilter) ? "⌘W" : "⇧⌘W"
     }
 
     private func stoplights(for window: WindowInfo) -> some View {

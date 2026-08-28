@@ -6,7 +6,28 @@ final class HotkeyManager {
     enum Mode { case allWindows, currentApp, spaces }
     enum Direction { case left, right, up, down }
 
-    var onArm: ((Mode) -> Void)?
+    /// How a binding arms the picker: base mode plus per-binding overrides (#131, #130).
+    struct ArmStyle {
+        let mode: Mode
+        var sticky = false
+        var currentSpaceOnly = false
+        /// Shift held at arm: start from the least-recent window, like native ⌘⇧Tab (#144).
+        var reverse = false
+    }
+
+    private static let armSlots: [(slot: HotkeyConfig.Slot, style: ArmStyle)] = [
+        (.allWindows, ArmStyle(mode: .allWindows)),
+        (.allWindowsAlternate, ArmStyle(mode: .allWindows)),
+        (.spaces, ArmStyle(mode: .spaces)),
+        (.spacesAlternate, ArmStyle(mode: .spaces)),
+        (.currentApp, ArmStyle(mode: .currentApp)),
+        (.currentAppAlternate, ArmStyle(mode: .currentApp)),
+        (.allWindowsSticky, ArmStyle(mode: .allWindows, sticky: true)),
+        (.currentAppSticky, ArmStyle(mode: .currentApp, sticky: true)),
+        (.currentSpace, ArmStyle(mode: .allWindows, currentSpaceOnly: true))
+    ]
+
+    var onArm: ((ArmStyle) -> Void)?
     var onAdvance: ((Bool) -> Void)?
     var onCommit: (() -> Void)?
     var onCancel: (() -> Void)?
@@ -26,9 +47,11 @@ final class HotkeyManager {
     private var source: CFRunLoopSource?
     private var armed: Mode?
     private var armedBinding: HotkeyBinding?
+    private var armedSticky = false
     private var armedAt: Date?
     private var advanced = false
     private var lastShift = false
+    private var shiftTapPending = false
     private var suspended = false
     private var stopRequested = false
 
@@ -225,14 +248,12 @@ final class HotkeyManager {
         let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
 
         if type == .keyDown {
-            let allBinding = [HotkeyConfig.shared.allWindows, HotkeyConfig.shared.allWindowsAlternate]
-                .compactMap { $0 }.first { $0.matchesTrigger(keyCode: kc, flags: flags) }
-            let appBinding = [HotkeyConfig.shared.currentApp, HotkeyConfig.shared.currentAppAlternate]
-                .compactMap { $0 }.first { $0.matchesTrigger(keyCode: kc, flags: flags) }
-            let spacesBinding = [HotkeyConfig.shared.spaces, HotkeyConfig.shared.spacesAlternate]
-                .compactMap { $0 }.first { $0.matchesTrigger(keyCode: kc, flags: flags) }
+            stateLock.lock()
+            // Any key while Shift is down makes it a chord (⇧⌘W), not a reverse tap (#143).
+            shiftTapPending = false
+            stateLock.unlock()
 
-            if let stickyBinding = HotkeyConfig.shared.stickyToggle,
+            if let stickyBinding = HotkeyConfig.shared[.stickyToggle],
                stickyBinding.matchesTrigger(keyCode: kc, flags: flags) {
                 DispatchQueue.main.async { [weak self] in
                     self?.onStickyToggle?()
@@ -240,26 +261,20 @@ final class HotkeyManager {
                 return nil
             }
 
-            if let allBinding {
-                armOrAdvance(.allWindows, binding: allBinding, shift: shift)
-                return nil
-            }
-            if let spacesBinding {
-                armOrAdvance(.spaces, binding: spacesBinding, shift: shift)
-                return nil
-            }
-            if let appBinding {
-                armOrAdvance(.currentApp, binding: appBinding, shift: shift)
+            for (slot, style) in Self.armSlots {
+                guard let binding = HotkeyConfig.shared[slot],
+                      binding.matchesTrigger(keyCode: kc, flags: flags) else { continue }
+                armOrAdvance(style, binding: binding, shift: shift)
                 return nil
             }
 
             stateLock.lock()
             let armedMode = armed
             let activeBinding = armedBinding
+            let sticky = armedSticky
             stateLock.unlock()
 
             if armedMode != nil {
-                let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
                 let typeToFilter = (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
                 if kc == Self.kcEscape {
@@ -341,6 +356,7 @@ final class HotkeyManager {
         if type == .flagsChanged {
             stateLock.lock()
             let shiftRising = shift && !lastShift
+            let shiftFalling = !shift && lastShift
             lastShift = shift
             guard armed != nil else {
                 stateLock.unlock()
@@ -348,20 +364,24 @@ final class HotkeyManager {
             }
             let armingHeld = armedBinding?.modifiersHeld(flags) ?? false
 
-            if shiftRising && armingHeld
-                && UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey) {
-                advanced = true
-                stateLock.unlock()
-                DispatchQueue.main.async { [weak self] in
-                    self?.onAdvance?(true)
+            // Release-fired so ⇧⌘W closes without stepping first; a pre-arm Shift never sets pending (#143).
+            if armingHeld && UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey) {
+                if shiftRising {
+                    shiftTapPending = true
+                } else if shiftFalling && shiftTapPending {
+                    shiftTapPending = false
+                    advanced = true
+                    stateLock.unlock()
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onAdvance?(true)
+                    }
+                    return nil
                 }
-                return nil
             }
 
             if !armingHeld {
-                let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
                 let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < Self.stickyQuickTapMS } ?? false) && !advanced
-                if !sticky || quickTap {
+                if !armedSticky || quickTap {
                     clearArmedLocked()
                     stateLock.unlock()
                     DispatchQueue.main.async { [weak self] in
@@ -377,12 +397,16 @@ final class HotkeyManager {
         return Unmanaged.passUnretained(event)
     }
 
-    private func armOrAdvance(_ mode: Mode, binding: HotkeyBinding, shift: Bool) {
+    private func armOrAdvance(_ style: ArmStyle, binding: HotkeyBinding, shift: Bool) {
+        var effective = style
+        effective.sticky = style.sticky || UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
+        effective.reverse = shift
         stateLock.lock()
         let isFirst = armed == nil
         if isFirst {
-            armed = mode
+            armed = style.mode
             armedBinding = binding
+            armedSticky = effective.sticky
             armedAt = Date()
             advanced = false
         } else {
@@ -390,7 +414,7 @@ final class HotkeyManager {
         }
         stateLock.unlock()
         DispatchQueue.main.async { [weak self] in
-            if isFirst { self?.onArm?(mode) } else { self?.onAdvance?(shift) }
+            if isFirst { self?.onArm?(effective) } else { self?.onAdvance?(shift) }
         }
     }
 
@@ -403,8 +427,10 @@ final class HotkeyManager {
     private func clearArmedLocked() {
         armed = nil
         armedBinding = nil
+        armedSticky = false
         armedAt = nil
         advanced = false
+        shiftTapPending = false
     }
 
     func clearArmed() {
@@ -427,8 +453,8 @@ final class HotkeyManager {
             stateLock.unlock()
             return
         }
+        let sticky = armedSticky
         stateLock.unlock()
-        let sticky = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
         guard !sticky, !binding.modifiersHeld(hardware) else { return }
         stateLock.lock()
         guard armed == mode, armedBinding == binding, armedAt == at else {

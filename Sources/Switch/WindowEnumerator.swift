@@ -129,20 +129,9 @@ enum WindowEnumerator {
             return out
         }
         let annotatedAll = annotateAndPrune(marked, ax: ax, cid: cid, metadata: metadata, stageManager: stageManager, titlesReliable: titlesReliable)
-        let titledActive = active.map { w -> WindowInfo in
-            var out = w
-            if out.title.isEmpty, let title = ax.titles[out.id], !title.isEmpty {
-                out.title = title
-            }
-            return out
-        }
-        let titledAll = annotatedAll.map { w -> WindowInfo in
-            var out = w
-            if out.title.isEmpty, let title = ax.titles[out.id], !title.isEmpty {
-                out.title = title
-            }
-            return out
-        }
+        // After annotateAndPrune on purpose: ghost detection keys on the CG title (#111).
+        let titledActive = backfillTitles(active, from: ax.titles)
+        let titledAll = backfillTitles(annotatedAll, from: ax.titles)
         let onScreenIDs = Set(onScreen.map(\.id))
         housekeepGhostState(
             onScreen: onScreenIDs,
@@ -154,11 +143,6 @@ enum WindowEnumerator {
         return FullSnapshot(activeSpace: titledActive, crossSpace: cross, spaceRepresentatives: reps)
     }
 
-    static func currentWindows(scope: HotkeyManager.Mode, frontmostPID: pid_t?) -> [WindowInfo] {
-        let e = enumerate(scope: scope, frontmostPID: frontmostPID)
-        return e.activeSpace + e.crossSpace
-    }
-
     static func enumerate(scope: HotkeyManager.Mode, frontmostPID: pid_t?) -> Enumeration {
         let full = fullSnapshot()
         var active = full.activeSpace
@@ -167,7 +151,7 @@ enum WindowEnumerator {
             active = active.filter { $0.pid == f }
             cross = cross.filter { $0.pid == f }
         }
-        let showCross = (UserDefaults.standard.object(forKey: "switch.showCrossSpace") as? Bool) ?? true
+        let showCross = (UserDefaults.standard.object(forKey: SwitchPreferences.crossSpaceKey) as? Bool) ?? true
         if !showCross {
             cross = cross.filter { !$0.isCrossSpace }
         }
@@ -190,28 +174,31 @@ enum WindowEnumerator {
         var minimized: Set<CGWindowID> = []
         var titles: [CGWindowID: String] = [:]
         for pid in pids {
-            let appAX = appElement(for: pid)
-            var ref: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success,
-                  let axWindows = ref as? [AXUIElement] else { continue }
-            for ax in axWindows {
-                var id: CGWindowID = 0
-                if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
-                    axBacked.insert(id)
-                    AXWindowCache.store(ax, for: id)
-                    let title = AXHelpers.title(of: ax)
-                    if !title.isEmpty {
-                        titles[id] = title
-                    }
-                    var minRef: CFTypeRef?
-                    if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
-                       let isMin = minRef as? Bool, isMin {
-                        minimized.insert(id)
-                    }
+            for ax in AXHelpers.windowList(of: appElement(for: pid)) {
+                guard let id = AXHelpers.windowID(of: ax) else { continue }
+                axBacked.insert(id)
+                AXWindowCache.store(ax, for: id)
+                let title = AXHelpers.title(of: ax)
+                if !title.isEmpty {
+                    titles[id] = title
+                }
+                var minRef: CFTypeRef?
+                if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
+                   let isMin = minRef as? Bool, isMin {
+                    minimized.insert(id)
                 }
             }
         }
         return (axBacked, minimized, titles)
+    }
+
+    private static func backfillTitles(_ windows: [WindowInfo], from titles: [CGWindowID: String]) -> [WindowInfo] {
+        windows.map { w in
+            guard w.title.isEmpty, let title = titles[w.id] else { return w }
+            var out = w
+            out.title = title
+            return out
+        }
     }
 
     // Drop orphaned on-screen entries: no live AX window and no Space. Real windows always have a Space.

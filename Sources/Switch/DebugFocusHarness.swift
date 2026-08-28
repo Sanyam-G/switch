@@ -50,7 +50,8 @@ final class DebugFocusHarness {
 
     private static func runFocus(wid: CGWindowID, strategy: String) {
         let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let all = WindowEnumerator.currentWindows(scope: .allWindows, frontmostPID: frontmost)
+        let e = WindowEnumerator.enumerate(scope: .allWindows, frontmostPID: frontmost)
+        let all = e.activeSpace + e.crossSpace
         guard let window = all.first(where: { $0.id == wid }) else {
             try? "{\"error\": \"wid \(wid) not found\"}".write(toFile: "/tmp/switch_debug_result.json", atomically: true, encoding: .utf8)
             return

@@ -21,11 +21,6 @@ struct HotkeyBinding: Codable, Equatable {
         modifiersRaw: CGEventFlags.maskAlternate.rawValue
     )
 
-    static let defaultSpaces = HotkeyBinding(
-        keyCode: 48, // Tab
-        modifiersRaw: CGEventFlags.maskControl.rawValue
-    )
-
     /// Whether `flags` contain exactly the required modifiers (ignoring shift, which is used for reverse).
     func modifiersHeld(_ flags: CGEventFlags) -> Bool {
         let needed = cgFlags
@@ -61,122 +56,87 @@ struct HotkeyBinding: Codable, Equatable {
     }
 }
 
-/// Persistent config for the arming hotkeys.
+/// Persistent config for the arming hotkeys, one optional binding per slot.
 final class HotkeyConfig {
+    enum Slot: String, CaseIterable {
+        case allWindows = "switch.hotkey.allWindows"
+        case allWindowsAlternate = "switch.hotkey.allWindows.alternate"
+        case currentApp = "switch.hotkey.currentApp"
+        case currentAppAlternate = "switch.hotkey.currentApp.alternate"
+        case spaces = "switch.hotkey.spaces"
+        case spacesAlternate = "switch.hotkey.spaces.alternate"
+        case stickyToggle = "switch.hotkey.stickyToggle"
+        case allWindowsSticky = "switch.hotkey.allWindows.sticky"
+        case currentAppSticky = "switch.hotkey.currentApp.sticky"
+        case currentSpace = "switch.hotkey.currentSpace"
+
+        var seededDefault: HotkeyBinding? {
+            switch self {
+            case .allWindows: return .defaultAllWindows
+            case .currentApp: return .defaultCurrentApp
+            // Spaces ships unbound; ⌃Tab would swallow browser tab switching (#91). Opt in via Settings.
+            default: return nil
+            }
+        }
+    }
+
     static let shared = HotkeyConfig()
 
     private let defaults = UserDefaults.standard
-    private let allKey = "switch.hotkey.allWindows"
-    private let allAlternateKey = "switch.hotkey.allWindows.alternate"
-    private let appKey = "switch.hotkey.currentApp"
-    private let appAlternateKey = "switch.hotkey.currentApp.alternate"
-    private let spacesKey = "switch.hotkey.spaces"
-    private let spacesAlternateKey = "switch.hotkey.spaces.alternate"
-    private let stickyKey = "switch.hotkey.stickyToggle"
     private let seededKey = "switch.hotkey.seeded"
-
     private let lock = NSLock()
-    private var cachedAll: HotkeyBinding?
-    private var cachedAllAlternate: HotkeyBinding?
-    private var cachedApp: HotkeyBinding?
-    private var cachedAppAlternate: HotkeyBinding?
-    private var cachedSpaces: HotkeyBinding?
-    private var cachedSpacesAlternate: HotkeyBinding?
-    private var cachedSticky: HotkeyBinding?
+    private var cache: [Slot: HotkeyBinding] = [:]
 
     static let didChangeNotification = Notification.Name("com.sanyamgarg.switch.hotkeyConfigDidChange")
 
-    // Seed the three arming hotkeys once so a fresh install gets defaults; after that nil means disabled.
+    // Seed the default arming hotkeys once so a fresh install gets them; after that nil means disabled.
     private init() {
         if !defaults.bool(forKey: seededKey) {
-            if load(allKey) == nil { write(.defaultAllWindows, key: allKey) }
-            if load(appKey) == nil { write(.defaultCurrentApp, key: appKey) }
-            // Spaces ships unbound; ⌃Tab would swallow browser tab switching (#91). Opt in via Settings.
+            for slot in Slot.allCases {
+                if let seed = slot.seededDefault, load(slot) == nil { write(seed, slot: slot) }
+            }
             defaults.set(true, forKey: seededKey)
         }
-        cachedAll = load(allKey)
-        cachedAllAlternate = load(allAlternateKey)
-        cachedApp = load(appKey)
-        cachedAppAlternate = load(appAlternateKey)
-        cachedSpaces = load(spacesKey)
-        cachedSpacesAlternate = load(spacesAlternateKey)
-        cachedSticky = load(stickyKey)
+        for slot in Slot.allCases { cache[slot] = load(slot) }
     }
 
-    var allWindows: HotkeyBinding? {
-        get { lock.lock(); defer { lock.unlock() }; return cachedAll }
-        set { store(newValue, key: allKey) { self.cachedAll = newValue } }
-    }
-
-    var allWindowsAlternate: HotkeyBinding? {
-        get { lock.lock(); defer { lock.unlock() }; return cachedAllAlternate }
-        set { store(newValue, key: allAlternateKey) { self.cachedAllAlternate = newValue } }
-    }
-
-    var currentApp: HotkeyBinding? {
-        get { lock.lock(); defer { lock.unlock() }; return cachedApp }
-        set { store(newValue, key: appKey) { self.cachedApp = newValue } }
-    }
-
-    var currentAppAlternate: HotkeyBinding? {
-        get { lock.lock(); defer { lock.unlock() }; return cachedAppAlternate }
-        set { store(newValue, key: appAlternateKey) { self.cachedAppAlternate = newValue } }
-    }
-
-    var spaces: HotkeyBinding? {
-        get { lock.lock(); defer { lock.unlock() }; return cachedSpaces }
-        set { store(newValue, key: spacesKey) { self.cachedSpaces = newValue } }
-    }
-
-    var spacesAlternate: HotkeyBinding? {
-        get { lock.lock(); defer { lock.unlock() }; return cachedSpacesAlternate }
-        set { store(newValue, key: spacesAlternateKey) { self.cachedSpacesAlternate = newValue } }
-    }
-
-    var stickyToggle: HotkeyBinding? {
-        get { lock.lock(); defer { lock.unlock() }; return cachedSticky }
-        set { store(newValue, key: stickyKey) { self.cachedSticky = newValue } }
+    subscript(slot: Slot) -> HotkeyBinding? {
+        get {
+            lock.lock(); defer { lock.unlock() }
+            return cache[slot]
+        }
+        set {
+            if let newValue { write(newValue, slot: slot) }
+            else { defaults.removeObject(forKey: slot.rawValue) }
+            lock.lock()
+            cache[slot] = newValue
+            lock.unlock()
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+        }
     }
 
     func resetToDefaults() {
-        write(.defaultAllWindows, key: allKey)
-        write(.defaultCurrentApp, key: appKey)
-        defaults.removeObject(forKey: allAlternateKey)
-        defaults.removeObject(forKey: appAlternateKey)
-        defaults.removeObject(forKey: spacesKey)
-        defaults.removeObject(forKey: spacesAlternateKey)
-        defaults.removeObject(forKey: stickyKey)
         lock.lock()
-        cachedAll = .defaultAllWindows
-        cachedAllAlternate = nil
-        cachedApp = .defaultCurrentApp
-        cachedAppAlternate = nil
-        cachedSpaces = nil
-        cachedSpacesAlternate = nil
-        cachedSticky = nil
+        for slot in Slot.allCases {
+            if let seed = slot.seededDefault {
+                write(seed, slot: slot)
+                cache[slot] = seed
+            } else {
+                defaults.removeObject(forKey: slot.rawValue)
+                cache[slot] = nil
+            }
+        }
         lock.unlock()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
-    private func load(_ key: String) -> HotkeyBinding? {
-        guard let data = defaults.data(forKey: key) else { return nil }
+    private func load(_ slot: Slot) -> HotkeyBinding? {
+        guard let data = defaults.data(forKey: slot.rawValue) else { return nil }
         return try? JSONDecoder().decode(HotkeyBinding.self, from: data)
     }
 
-    private func store(_ b: HotkeyBinding?, key: String, updateCache: () -> Void) {
-        if let b, let data = try? JSONEncoder().encode(b) {
-            defaults.set(data, forKey: key)
-        } else {
-            defaults.removeObject(forKey: key)
-        }
-        lock.lock()
-        updateCache()
-        lock.unlock()
-        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
-    }
-
-    private func write(_ b: HotkeyBinding, key: String) {
-        if let data = try? JSONEncoder().encode(b) { defaults.set(data, forKey: key) }
+    private func write(_ b: HotkeyBinding, slot: Slot) {
+        if let data = try? JSONEncoder().encode(b) { defaults.set(data, forKey: slot.rawValue) }
     }
 }
 

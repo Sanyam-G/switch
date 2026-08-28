@@ -10,6 +10,10 @@ final class SwitchModel: ObservableObject {
     @Published var thumbnails: [CGWindowID: NSImage] = [:]
     @Published var filterText: String = ""
     @Published var panelSize = CGSize(width: 880, height: 560)
+    /// Effective sticky for this invocation: global pref or a dedicated sticky binding (#131).
+    @Published var stickySession = false
+    private var currentSpaceOnly = false
+    private var armReverse = false
 
     /// Set by AppDelegate so the view can request a commit + window dismiss from a mouse click.
     var commitAndDismiss: (() -> Void)?
@@ -56,10 +60,13 @@ final class SwitchModel: ObservableObject {
         return patIdx == pat.count ? score : nil
     }
 
-    func arm(_ mode: HotkeyManager.Mode) {
+    func arm(_ style: HotkeyManager.ArmStyle) {
         armGeneration &+= 1
         let gen = armGeneration
-        self.mode = mode
+        self.mode = style.mode
+        stickySession = style.sticky
+        currentSpaceOnly = style.currentSpaceOnly
+        armReverse = style.reverse
         quitPIDs.removeAll()
         filterText = ""
         pointerWindowID = nil
@@ -115,7 +122,10 @@ final class SwitchModel: ObservableObject {
                 // onboarding); the picker panel can't become key, so keyWindow != nil rules out the stale
                 // "still frontmost after closing a window" state behind #90.
                 let selfFront = armFrontmostPID == ProcessInfo.processInfo.processIdentifier && armSelfHadKeyWindow
-                selected = (SwitchPreferences.shared.stickyMode || selfFront) ? 0 : (filteredWindows.count > 1 ? 1 : 0)
+                let n = filteredWindows.count
+                selected = (stickySession || selfFront) ? 0
+                    : armReverse ? max(n - 1, 0)
+                    : (n > 1 ? 1 : 0)
             }
         } else if changed {
             let list = filteredWindows
@@ -138,7 +148,7 @@ final class SwitchModel: ObservableObject {
         } else {
             let liveIDs = Set(thumbTargets.map { $0.id })
             let task = Task {
-                if SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) {
+                if SwitchPreferences.shared.showThumbnails {
                     // Don't full-purge; pre-warmed thumbs are valid as long as the window still exists.
                     await WindowSnapshotter.shared.purge(keeping: liveIDs)
                 }
@@ -168,7 +178,7 @@ final class SwitchModel: ObservableObject {
             active = active.filter { $0.pid == f }
             cross = cross.filter { $0.pid == f }
         }
-        if !SwitchPreferences.shared.showCrossSpace {
+        if !SwitchPreferences.shared.showCrossSpace || currentSpaceOnly {
             cross = cross.filter { !$0.isCrossSpace }
         }
         let activeFront = WindowMRU.mostRecent(in: active) ?? active.first
@@ -299,7 +309,7 @@ final class SwitchModel: ObservableObject {
             Task.detached(priority: .utility) {
                 AXWindowCache.purgeDead()
             }
-            guard SwitchPreferences.shared.showThumbnails, #available(macOS 14.0, *) else { return }
+            guard SwitchPreferences.shared.showThumbnails else { return }
             Task {
                 await WindowSnapshotter.shared.purge(keeping: liveIDs)
                 await withTaskGroup(of: Void.self) { group in
@@ -413,26 +423,24 @@ final class SwitchModel: ObservableObject {
             thumbnails = [:]
             return
         }
-        if #available(macOS 14.0, *) {
-            var collected: [CGWindowID: NSImage] = [:]
-            await withTaskGroup(of: (CGWindowID, NSImage?).self) { group in
-                for w in windows {
-                    group.addTask {
-                        let img = await WindowSnapshotter.shared.snapshot(for: w.id, force: force)
-                        return (w.id, img)
-                    }
-                }
-                for await (id, img) in group {
-                    guard !Task.isCancelled else { return }
-                    if let img {
-                        if batch { collected[id] = img }
-                        else if visible { thumbnails[id] = img }
-                    }
+        var collected: [CGWindowID: NSImage] = [:]
+        await withTaskGroup(of: (CGWindowID, NSImage?).self) { group in
+            for w in windows {
+                group.addTask {
+                    let img = await WindowSnapshotter.shared.snapshot(for: w.id, force: force)
+                    return (w.id, img)
                 }
             }
-            if batch, !collected.isEmpty, visible, !Task.isCancelled {
-                thumbnails.merge(collected) { _, new in new }
+            for await (id, img) in group {
+                guard !Task.isCancelled else { return }
+                if let img {
+                    if batch { collected[id] = img }
+                    else if visible { thumbnails[id] = img }
+                }
             }
+        }
+        if batch, !collected.isEmpty, visible, !Task.isCancelled {
+            thumbnails.merge(collected) { _, new in new }
         }
     }
 }

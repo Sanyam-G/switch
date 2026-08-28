@@ -38,6 +38,18 @@ final class SwitchPreferences: ObservableObject {
         }
     }
 
+    enum PickerDisplay: String, CaseIterable, Identifiable {
+        case mouse, active, primary
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .mouse: return "Mouse"
+            case .active: return "Active"
+            case .primary: return "Primary"
+            }
+        }
+    }
+
     enum BackgroundBlur: String, CaseIterable, Identifiable {
         case light, medium, heavy
         var id: String { rawValue }
@@ -77,7 +89,7 @@ final class SwitchPreferences: ObservableObject {
     }
 
     @Published var showCrossSpace: Bool {
-        didSet { UserDefaults.standard.set(showCrossSpace, forKey: crossSpaceKey) }
+        didSet { UserDefaults.standard.set(showCrossSpace, forKey: SwitchPreferences.crossSpaceKey) }
     }
 
     @Published var stickyMode: Bool {
@@ -180,10 +192,14 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(showNumberKeyHints, forKey: SwitchPreferences.showNumberKeyHintsKey) }
     }
 
+    @Published var pickerDisplay: PickerDisplay {
+        didSet { UserDefaults.standard.set(pickerDisplay.rawValue, forKey: SwitchPreferences.pickerDisplayKey) }
+    }
+
     private let accentKey = "switch.accent"
     private let backgroundBlurKey = "switch.backgroundBlur"
     private let showTitleFirstKey = "switch.showTitleFirst"
-    private let crossSpaceKey = "switch.showCrossSpace"
+    nonisolated static let crossSpaceKey = "switch.showCrossSpace"
     nonisolated static let stickyModeKey = "switch.stickyMode"
     nonisolated static let disableMouseKey = "switch.disableMouse"
     private let disableAnimationsKey = "switch.disableAnimations"
@@ -209,18 +225,19 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let shiftTapReversesKey = "switch.shiftTapReverses"
     nonisolated static let hideMinimizedWindowsKey = "switch.hideMinimizedWindows"
     nonisolated static let showNumberKeyHintsKey = "switch.showNumberKeyHints"
+    nonisolated static let pickerDisplayKey = "switch.pickerDisplay"
 
     private init() {
         accent = AccentChoice(rawValue: UserDefaults.standard.string(forKey: accentKey) ?? "") ?? .system
         backgroundBlur = BackgroundBlur(rawValue: UserDefaults.standard.string(forKey: backgroundBlurKey) ?? "") ?? .light
         showTitleFirst = UserDefaults.standard.bool(forKey: showTitleFirstKey)
-        showCrossSpace = (UserDefaults.standard.object(forKey: crossSpaceKey) as? Bool) ?? true
+        showCrossSpace = (UserDefaults.standard.object(forKey: SwitchPreferences.crossSpaceKey) as? Bool) ?? true
         stickyMode = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
         disableMouse = UserDefaults.standard.bool(forKey: SwitchPreferences.disableMouseKey)
         disableAnimations = UserDefaults.standard.bool(forKey: disableAnimationsKey)
         verticalList = UserDefaults.standard.bool(forKey: SwitchPreferences.verticalListKey)
         blacklist = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.blacklistKey) ?? [])
-        mruMixSpaces = (UserDefaults.standard.object(forKey: "switch.mruMixSpaces") as? Bool) ?? true
+        mruMixSpaces = (UserDefaults.standard.object(forKey: mruMixSpacesKey) as? Bool) ?? true
         staticOrder = UserDefaults.standard.bool(forKey: SwitchPreferences.staticOrderKey)
         appOrder = UserDefaults.standard.stringArray(forKey: SwitchPreferences.appOrderKey) ?? []
         includeWindowlessApps = UserDefaults.standard.bool(forKey: SwitchPreferences.includeWindowlessKey)
@@ -240,5 +257,6 @@ final class SwitchPreferences: ObservableObject {
         shiftTapReverses = UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey)
         hideMinimizedWindows = UserDefaults.standard.bool(forKey: SwitchPreferences.hideMinimizedWindowsKey)
         showNumberKeyHints = UserDefaults.standard.bool(forKey: SwitchPreferences.showNumberKeyHintsKey)
+        pickerDisplay = PickerDisplay(rawValue: UserDefaults.standard.string(forKey: SwitchPreferences.pickerDisplayKey) ?? "") ?? .mouse
     }
 }

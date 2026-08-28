@@ -28,11 +28,7 @@ final class OnboardingModel: ObservableObject {
 
     func refresh() {
         accessibility = AXIsProcessTrusted()
-        if #available(macOS 11.0, *) {
-            screenCapture = CGPreflightScreenCaptureAccess()
-        } else {
-            screenCapture = true
-        }
+        screenCapture = CGPreflightScreenCaptureAccess()
     }
 
     func openAccessibility() {
@@ -43,9 +39,7 @@ final class OnboardingModel: ObservableObject {
     }
 
     func openScreenCapture() {
-        if #available(macOS 11.0, *) {
-            _ = CGRequestScreenCaptureAccess()
-        }
+        _ = CGRequestScreenCaptureAccess()
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
     }
 }

@@ -1,12 +1,6 @@
 import AppKit
 import ApplicationServices
 
-private func axWindowID(_ element: AXUIElement) -> CGWindowID? {
-    var id: CGWindowID = 0
-    let err = _AXUIElementGetWindow(element, &id)
-    return err == .success ? id : nil
-}
-
 enum WindowFocuser {
     static func focus(_ window: WindowInfo) {
         if window.isWindowless {
@@ -44,15 +38,10 @@ enum WindowFocuser {
         // (Godot, #117) start coming forward before the raise calls below. The
         // late activate still runs; cross-Space skips this because the
         // focused-window write must steer activation first.
-        if !window.isCrossSpace {
-            if let app, NSApp.isActive { NSApp.yieldActivation(to: app) }
-            app?.activate(options: [])
-        }
+        if !window.isCrossSpace { cooperativeActivate(app) }
 
         let appAX = AXUIElementCreateApplication(window.pid)
-        var ref: CFTypeRef?
-        let axWindows = (AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success
-            ? ref as? [AXUIElement] : nil) ?? []
+        let axWindows = AXHelpers.windowList(of: appAX)
         var raised = false
         if let target = bestMatch(for: window, in: axWindows) {
             AXUIElementSetAttributeValue(target, kAXMainAttribute as CFString, kCFBooleanTrue)
@@ -67,13 +56,15 @@ enum WindowFocuser {
             focusViaWindowMenu(window)
         }
 
-        // When Switch itself is the active app (owns a key Settings/About window while
-        // staying .accessory), macOS 26 cooperative activation can ignore an activate()
-        // from the active app; yield first so the target actually comes forward.
-        if let app, NSApp.isActive { NSApp.yieldActivation(to: app) }
-        app?.activate(options: [])
+        cooperativeActivate(app)
 
         WindowMRU.touch(window.id)
+    }
+
+    // macOS 26 cooperative activation ignores activate() from the active app; yield first (#90).
+    private static func cooperativeActivate(_ app: NSRunningApplication?) {
+        if let app, NSApp.isActive { NSApp.yieldActivation(to: app) }
+        app?.activate(options: [])
     }
 
     /// Last-resort cross-Space focus: press the app's Window-menu item whose
@@ -131,7 +122,7 @@ enum WindowFocuser {
     /// title matching remain as last resorts; never `first`; raising an
     /// arbitrary sibling sends focus to the wrong window.
     private static func bestMatch(for window: WindowInfo, in axWindows: [AXUIElement]) -> AXUIElement? {
-        if let exact = axWindows.first(where: { axWindowID($0) == window.id }) {
+        if let exact = axWindows.first(where: { AXHelpers.windowID(of: $0) == window.id }) {
             return exact
         }
         if let cached = AXWindowCache.element(for: window.id) {
@@ -167,16 +158,7 @@ enum WindowCloser {
     /// false without acting when nothing resolves, so callers can decline to fall back.
     @discardableResult
     static func closeExact(_ window: WindowInfo) -> Bool {
-        let appAX = AXUIElementCreateApplication(window.pid)
-        var ref: CFTypeRef?
-        let axWindows = (AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success
-            ? ref as? [AXUIElement] : nil) ?? []
-        guard let target = axWindows.first(where: { axWindowID($0) == window.id })
-            ?? AXWindowCache.element(for: window.id) else { return false }
-        var btnRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(target, kAXCloseButtonAttribute as CFString, &btnRef) == .success,
-              let btn = btnRef else { return false }
-        return AXUIElementPerformAction(btn as! AXUIElement, kAXPressAction as CFString) == .success
+        pressButton(window, attribute: kAXCloseButtonAttribute, exactOnly: true)
     }
 }
 
@@ -188,21 +170,21 @@ enum WindowZoomer {
     static func zoom(_ window: WindowInfo) { pressButton(window, attribute: kAXZoomButtonAttribute) }
 }
 
-/// Press one of the stoplight buttons on the AX window matching `window`. Best-effort.
-private func pressButton(_ window: WindowInfo, attribute: String) {
-    let appAX = AXUIElementCreateApplication(window.pid)
-    var ref: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success,
-          let axWindows = ref as? [AXUIElement] else { return }
-    let exact = axWindows.first(where: { axWindowID($0) == window.id })
-    let target = exact
-        ?? axWindows.first(where: { AXHelpers.title(of: $0) == window.title })
-        ?? axWindows.first
-    guard let target else { return }
+/// Press a stoplight button; `exactOnly` never falls back to a sibling window.
+@discardableResult
+private func pressButton(_ window: WindowInfo, attribute: String, exactOnly: Bool = false) -> Bool {
+    let axWindows = AXHelpers.windowList(of: AXUIElementCreateApplication(window.pid))
+    let exact = axWindows.first(where: { AXHelpers.windowID(of: $0) == window.id })
+    let target = exactOnly
+        ? exact ?? AXWindowCache.element(for: window.id)
+        : exact
+            ?? axWindows.first(where: { AXHelpers.title(of: $0) == window.title })
+            ?? axWindows.first
+    guard let target else { return false }
     var btnRef: CFTypeRef?
     guard AXUIElementCopyAttributeValue(target, attribute as CFString, &btnRef) == .success,
-          let btnObj = btnRef else { return }
-    AXUIElementPerformAction(btnObj as! AXUIElement, kAXPressAction as CFString)
+          let btnObj = btnRef else { return false }
+    return AXUIElementPerformAction(btnObj as! AXUIElement, kAXPressAction as CFString) == .success
 }
 
 enum AXHelpers {
@@ -210,6 +192,17 @@ enum AXHelpers {
         var ref: CFTypeRef?
         AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &ref)
         return ref as? String ?? ""
+    }
+
+    static func windowID(of element: AXUIElement) -> CGWindowID? {
+        var id: CGWindowID = 0
+        return _AXUIElementGetWindow(element, &id) == .success && id != 0 ? id : nil
+    }
+
+    static func windowList(of appAX: AXUIElement) -> [AXUIElement] {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success else { return [] }
+        return ref as? [AXUIElement] ?? []
     }
 
     /// AX position + size as a CGRect, or nil if either attribute is missing.

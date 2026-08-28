@@ -55,12 +55,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = SwitcherWindow(model: model)
         let hotkey = HotkeyManager()
 
-        hotkey.onArm = { [weak self] mode in
-            model.arm(mode)
+        // Most tap callbacks force a pending picker onto screen before acting.
+        let present: () -> Void = { [weak self] in self?.presentNowIfPending(window: window) }
+
+        hotkey.onArm = { [weak self] style in
+            model.arm(style)
             self?.schedulePresent(window: window)
         }
-        hotkey.onAdvance = { [weak self] reverse in
-            self?.presentNowIfPending(window: window)
+        hotkey.onAdvance = { reverse in
+            present()
             model.advance(reverse: reverse)
         }
         // Tap-originated commits already cleared armed on the tap thread; clearing again here races a fresh arm.
@@ -87,38 +90,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window?.dismiss()
         }
         model.cancelAndDismiss = cancelAndDismiss
-        hotkey.onCloseSelected = { [weak self] in
-            self?.presentNowIfPending(window: window)
-            model.closeSelected()
-        }
-        hotkey.onCloseSelectedApp = { [weak self] in
-            self?.presentNowIfPending(window: window)
-            model.closeSelectedApp()
-        }
-        hotkey.onHideSelected = { [weak self] in
-            self?.presentNowIfPending(window: window)
-            model.hideSelected()
-        }
-        hotkey.onNavigate = { [weak self] direction in
-            self?.presentNowIfPending(window: window)
-            model.navigate(direction: direction)
-        }
-        hotkey.onPickIndex = { [weak self] index in
-            self?.presentNowIfPending(window: window)
-            model.pickIndex(index)
-        }
-        hotkey.onPickSelectOnly = { [weak self] index in
-            self?.presentNowIfPending(window: window)
-            model.selectIndex(index)
-        }
-        hotkey.onFilterAppend = { [weak self] c in
-            self?.presentNowIfPending(window: window)
-            model.appendFilter(c)
-        }
-        hotkey.onFilterBackspace = { [weak self] in
-            self?.presentNowIfPending(window: window)
-            model.backspaceFilter()
-        }
+        hotkey.onCloseSelected = { present(); model.closeSelected() }
+        hotkey.onCloseSelectedApp = { present(); model.closeSelectedApp() }
+        hotkey.onHideSelected = { present(); model.hideSelected() }
+        hotkey.onNavigate = { present(); model.navigate(direction: $0) }
+        hotkey.onPickIndex = { present(); model.pickIndex($0) }
+        hotkey.onPickSelectOnly = { present(); model.selectIndex($0) }
+        hotkey.onFilterAppend = { present(); model.appendFilter($0) }
+        hotkey.onFilterBackspace = { present(); model.backspaceFilter() }
         hotkey.onStickyToggle = {
             SwitchPreferences.shared.stickyMode.toggle()
         }
@@ -403,9 +382,18 @@ final class SwitcherWindow: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         animationBehavior = SwitchPreferences.shared.disableAnimations ? .none : .default
 
-        let cursor = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first(where: { NSMouseInRect(cursor, $0.frame, false) })
-            ?? NSScreen.main
+        let screen: NSScreen?
+        switch SwitchPreferences.shared.pickerDisplay {
+        case .mouse:
+            let cursor = NSEvent.mouseLocation
+            screen = NSScreen.screens.first(where: { NSMouseInRect(cursor, $0.frame, false) })
+                ?? NSScreen.main
+        case .active:
+            // NSScreen.main is the screen holding the key window, not the primary display.
+            screen = NSScreen.main
+        case .primary:
+            screen = NSScreen.screens.first
+        }
         applyContentSize(for: screen)
         if let screen {
             let visible = screen.visibleFrame
@@ -429,19 +417,10 @@ private enum SwitcherPanelSize {
         let thumb = CGFloat((defaults.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double) ?? SwitchPreferences.defaultThumbnailHeight)
         let scale = thumb / CGFloat(SwitchPreferences.defaultThumbnailHeight)
         let count = max(itemCount, 1)
-        let size: NSSize
-        switch (mode, isList) {
-        case (.spaces, _):
-            size = listSize(defaults: defaults, count: count, scale: scale)
-        case (.allWindows, true):
-            size = NSSize(width: 520 * scale, height: 560 * scale)
-        case (.allWindows, false):
-            size = NSSize(width: 880 * scale, height: 560 * scale)
-        case (.currentApp, true):
-            size = listSize(defaults: defaults, count: count, scale: scale)
-        case (.currentApp, false):
-            size = gridSize(defaults: defaults, count: count, thumb: thumb, scale: scale)
-        }
+        // Every mode sizes to the window count; a fixed panel leaves rows of empty backdrop (#134).
+        let size = (mode == .spaces || isList)
+            ? listSize(defaults: defaults, count: count, scale: scale)
+            : gridSize(defaults: defaults, count: count, thumb: thumb, scale: scale)
         return fit(size, on: screen)
     }
 

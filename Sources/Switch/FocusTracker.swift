@@ -68,17 +68,14 @@ final class FocusTracker {
         var ref: CFTypeRef?
         guard AXUIElementCopyAttributeValue(appAX, kAXFocusedWindowAttribute as CFString, &ref) == .success,
               let element = ref else { return }
-        let ax = element as! AXUIElement
-        var id: CGWindowID = 0
-        if _AXUIElementGetWindow(ax, &id) == .success, id != 0 {
+        if let id = AXHelpers.windowID(of: element as! AXUIElement) {
             WindowMRU.touch(id)
         }
     }
 }
 
 private let focusObserverCallback: AXObserverCallback = { _, element, _, _ in
-    var id: CGWindowID = 0
-    if _AXUIElementGetWindow(element, &id) == .success, id != 0 {
+    if let id = AXHelpers.windowID(of: element) {
         WindowMRU.touch(id)
     }
 }

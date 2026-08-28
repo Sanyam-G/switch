@@ -1,7 +1,6 @@
 import AppKit
 import ScreenCaptureKit
 
-@available(macOS 14.0, *)
 actor WindowSnapshotter {
     static let shared = WindowSnapshotter()
 
