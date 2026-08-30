@@ -28,6 +28,8 @@ final class SwitchModel: ObservableObject {
     @Published var panelSize = CGSize(width: 880, height: 560)
     /// Effective sticky for this invocation: global pref or a dedicated sticky binding (#131).
     @Published var stickySession = false
+    /// Type-to-filter turned on by ⌘F for this invocation, when the pref has it off.
+    @Published var filterSession = false
     private var currentSpaceOnly = false
     private var armReverse = false
 
@@ -93,6 +95,7 @@ final class SwitchModel: ObservableObject {
         let gen = armGeneration
         self.mode = style.mode
         stickySession = style.sticky
+        filterSession = false
         currentSpaceOnly = style.currentSpaceOnly
         armReverse = style.reverse
         quitPIDs.removeAll()

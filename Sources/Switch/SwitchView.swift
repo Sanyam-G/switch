@@ -239,7 +239,7 @@ struct SwitchView: View {
             hint(navKey, "navigate")
             if prefs.shiftTapReverses { hint("⇧", "reverse") }
             if !isSpaceMode { hint(closeKey, "close") }
-            if prefs.typeToFilter { hint("type", "filter") }
+            if filteringEnabled { hint("type", "filter") } else if !isSpaceMode { hint("⌘F", "filter") }
             hint("esc", "cancel")
             Spacer(minLength: 0)
         }
@@ -254,7 +254,12 @@ struct SwitchView: View {
     }
 
     private var closeKey: String {
-        (model.stickySession || !prefs.typeToFilter) ? "⌘W" : "⇧⌘W"
+        (model.stickySession || !filteringEnabled) ? "⌘W" : "⇧⌘W"
+    }
+
+    /// Filtering is on for this invocation, whether by preference or by ⌘F.
+    private var filteringEnabled: Bool {
+        prefs.typeToFilter || model.filterSession
     }
 
     private func stoplights(for window: WindowInfo) -> some View {

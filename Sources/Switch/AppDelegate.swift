@@ -99,6 +99,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkey.onPickSelectOnly = { present(); model.selectIndex($0) }
         hotkey.onFilterAppend = { present(); model.appendFilter($0) }
         hotkey.onFilterBackspace = { present(); model.backspaceFilter() }
+        hotkey.onFilterEnabled = {
+            model.filterSession = true
+            model.stickySession = true
+        }
         hotkey.onStickyToggle = {
             SwitchPreferences.shared.stickyMode.toggle()
         }
