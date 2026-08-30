@@ -165,6 +165,10 @@ struct SwitchView: View {
         }
         .padding(.horizontal, 22)
         .frame(height: 26)
+        // The band centers its own text, but the scroll content adds 10pt below it,
+        // so without this the header reads as pinned to the panel's top edge. This
+        // shifts the rows down with the text, so it takes the full 10pt to balance.
+        .padding(.top, 10)
         .measureHeight(into: \.headerHeight)
     }
 
