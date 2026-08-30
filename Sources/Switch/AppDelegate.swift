@@ -99,9 +99,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkey.onPickSelectOnly = { present(); model.selectIndex($0) }
         hotkey.onFilterAppend = { present(); model.appendFilter($0) }
         hotkey.onFilterBackspace = { present(); model.backspaceFilter() }
-        hotkey.onFilterEnabled = {
-            model.filterSession = true
-            model.stickySession = true
+        hotkey.onFilterSessionChanged = { enabled in
+            model.filterSession = enabled
+            // Stays sticky on the way out: the modifier is long released by now, and
+            // dropping sticky would arm the next release to commit.
+            if enabled { model.stickySession = true } else { model.clearFilter() }
         }
         hotkey.onStickyToggle = {
             SwitchPreferences.shared.stickyMode.toggle()

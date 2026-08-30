@@ -416,6 +416,12 @@ final class SwitchModel: ObservableObject {
         selected = 0
     }
 
+    func clearFilter() {
+        guard !filterText.isEmpty else { return }
+        filterText = ""
+        selected = 0
+    }
+
     func backspaceFilter() {
         guard !filterText.isEmpty else { return }
         filterText.removeLast()
