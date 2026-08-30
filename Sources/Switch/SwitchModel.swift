@@ -1,6 +1,22 @@
 import AppKit
 import SwiftUI
 
+/// Heights measured from the laid-out switcher, so the panel can be sized from what
+/// SwiftUI actually rendered instead of constants that mirror the view by hand.
+struct PanelMetrics: Equatable {
+    var rowHeight: CGFloat = 0
+    var tileHeight: CGFloat = 0
+    var hintHeight: CGFloat = 0
+    var headerHeight: CGFloat = 0
+
+    mutating func merge(_ other: PanelMetrics) {
+        rowHeight = max(rowHeight, other.rowHeight)
+        tileHeight = max(tileHeight, other.tileHeight)
+        hintHeight = max(hintHeight, other.hintHeight)
+        headerHeight = max(headerHeight, other.headerHeight)
+    }
+}
+
 @MainActor
 final class SwitchModel: ObservableObject {
     @Published var windows: [WindowInfo] = []
@@ -14,6 +30,18 @@ final class SwitchModel: ObservableObject {
     @Published var stickySession = false
     private var currentSpaceOnly = false
     private var armReverse = false
+
+    /// Deliberately not @Published: the view reports these during layout, and republishing
+    /// them from there would feed the next layout pass its own output.
+    private(set) var metrics = PanelMetrics()
+    /// Set by AppDelegate so a fresh measurement can resize the panel.
+    var onMetricsChange: (() -> Void)?
+
+    func updateMetrics(_ new: PanelMetrics) {
+        guard new != metrics else { return }
+        metrics = new
+        onMetricsChange?()
+    }
 
     /// Set by AppDelegate so the view can request a commit + window dismiss from a mouse click.
     var commitAndDismiss: (() -> Void)?
