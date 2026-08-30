@@ -8,6 +8,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let defaultThumbnailHeight = 130.0
     nonisolated static let defaultAppIconSize = 32.0
     nonisolated static let defaultGridColumns = 4
+    nonisolated static let defaultMaxListRows = 8
     nonisolated static let defaultPickerActivationDelay = 130.0
     nonisolated static let compactThumbnailHeight = 72.0
 
@@ -168,6 +169,11 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(appIconSize, forKey: SwitchPreferences.appIconSizeKey) }
     }
 
+    /// Most rows shown at once in list view; the screen can still allow fewer.
+    @Published var maxListRows: Int {
+        didSet { UserDefaults.standard.set(maxListRows, forKey: SwitchPreferences.maxListRowsKey) }
+    }
+
     @Published var gridColumns: Int {
         didSet { UserDefaults.standard.set(gridColumns, forKey: SwitchPreferences.gridColumnsKey) }
     }
@@ -220,6 +226,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let thumbnailHeightKey = "switch.thumbnailHeight"
     nonisolated static let appIconSizeKey = "switch.appIconSize"
     nonisolated static let gridColumnsKey = "switch.gridColumns"
+    nonisolated static let maxListRowsKey = "switch.maxListRows"
     nonisolated static let pinnedBundleIDsKey = "switch.pinnedBundleIDs"
     nonisolated static let pickerActivationDelayKey = "switch.pickerActivationDelay"
     nonisolated static let shiftTapReversesKey = "switch.shiftTapReverses"
@@ -252,6 +259,7 @@ final class SwitchPreferences: ObservableObject {
         thumbnailHeight = (UserDefaults.standard.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double) ?? Self.defaultThumbnailHeight
         appIconSize = (UserDefaults.standard.object(forKey: SwitchPreferences.appIconSizeKey) as? Double) ?? Self.defaultAppIconSize
         gridColumns = (UserDefaults.standard.object(forKey: SwitchPreferences.gridColumnsKey) as? Int) ?? Self.defaultGridColumns
+        maxListRows = (UserDefaults.standard.object(forKey: SwitchPreferences.maxListRowsKey) as? Int) ?? Self.defaultMaxListRows
         pinnedBundleIDs = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.pinnedBundleIDsKey) ?? [])
         pickerActivationDelay = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? Self.defaultPickerActivationDelay
         shiftTapReverses = UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey)

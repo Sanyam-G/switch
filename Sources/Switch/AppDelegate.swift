@@ -119,6 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .dropFirst()
             .sink { [weak window] _ in window?.applyContentSize() }
             .store(in: &cancellables)
+        SwitchPreferences.shared.$maxListRows
+            .dropFirst()
+            .sink { [weak window] _ in window?.applyContentSize() }
+            .store(in: &cancellables)
         SwitchPreferences.shared.$showThumbnails
             .dropFirst()
             .sink { [weak self, weak window] enabled in
@@ -468,8 +472,6 @@ private enum SwitcherPanelSize {
         value > 0 ? value : fallback
     }
 
-    /// Upper bound on rows on screen at once; the screen can lower it further.
-    private static let maxListRows = 8
     private static let listRowSpacing: CGFloat = 4
 
     private static func listSize(defaults: UserDefaults, count: Int, scale: CGFloat, showsHeader: Bool,
@@ -494,7 +496,9 @@ private enum SwitcherPanelSize {
         // showing as a clipped row, which is what a fixed pixel cap used to produce.
         let ceiling = (screen?.visibleFrame.height ?? .greatestFiniteMagnitude) * screenFraction
         let fitting = Int(floor((ceiling - chrome + listRowSpacing) / (rowHeight + listRowSpacing)))
-        let visibleRows = max(1, min(count, maxListRows, fitting))
+        let maxRows = (defaults.object(forKey: SwitchPreferences.maxListRowsKey) as? Int)
+            ?? SwitchPreferences.defaultMaxListRows
+        let visibleRows = max(1, min(count, maxRows, fitting))
         let rowGaps = CGFloat(max(visibleRows - 1, 0)) * listRowSpacing
         let height = chrome + CGFloat(visibleRows) * rowHeight + rowGaps
         return NSSize(width: 520 * scale, height: max(260, height))
