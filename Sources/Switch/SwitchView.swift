@@ -147,10 +147,14 @@ struct SwitchView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            if !model.filterText.isEmpty {
+            // Shown the moment ⌘F arms filtering, so the picker acknowledges the key
+            // before there is any text to show for it.
+            if model.filterSession || !model.filterText.isEmpty {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
+            }
+            if !model.filterText.isEmpty {
                 Text(model.filterText)
                     .font(.system(size: 14, weight: .medium, design: .monospaced))
                     .foregroundStyle(.primary)
