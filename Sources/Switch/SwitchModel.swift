@@ -15,6 +15,16 @@ struct PanelMetrics: Equatable {
         hintHeight = max(hintHeight, other.hintHeight)
         headerHeight = max(headerHeight, other.headerHeight)
     }
+
+    /// Zero means "not in the view right now", not "zero tall": the empty state removes
+    /// the rows, and the header only appears in some configurations. Keeping the last
+    /// real height stops those transitions from looking like a change in size.
+    mutating func mergeKnown(_ other: PanelMetrics) {
+        if other.rowHeight > 0 { rowHeight = other.rowHeight }
+        if other.tileHeight > 0 { tileHeight = other.tileHeight }
+        if other.hintHeight > 0 { hintHeight = other.hintHeight }
+        if other.headerHeight > 0 { headerHeight = other.headerHeight }
+    }
 }
 
 @MainActor
@@ -40,8 +50,10 @@ final class SwitchModel: ObservableObject {
     var onMetricsChange: (() -> Void)?
 
     func updateMetrics(_ new: PanelMetrics) {
-        guard new != metrics else { return }
-        metrics = new
+        var merged = metrics
+        merged.mergeKnown(new)
+        guard merged != metrics else { return }
+        metrics = merged
         onMetricsChange?()
     }
 

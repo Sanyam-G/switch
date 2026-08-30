@@ -342,6 +342,8 @@ extension AppDelegate: SPUStandardUserDriverDelegate {
 
 final class SwitcherWindow: NSPanel {
     private let model: SwitchModel
+    /// Window count as of the last unfiltered layout, so a filter cannot resize the panel.
+    private var unfilteredCount = 0
 
     init(model: SwitchModel) {
         self.model = model
@@ -384,10 +386,13 @@ final class SwitcherWindow: NSPanel {
     }
 
     func applyContentSize(for screen: NSScreen? = nil) {
+        // Filtering must not resize the panel, so hold the count from before the filter
+        // was typed; a resize on every keystroke is more disruptive than empty backdrop.
+        if model.filterText.isEmpty { unfilteredCount = model.filteredWindows.count }
         // Row count is capped by the screen, so fall back to the one we are on.
         let fitted = SwitcherPanelSize.current(
             mode: model.mode,
-            itemCount: model.filteredWindows.count,
+            itemCount: unfilteredCount,
             metrics: model.metrics,
             screen: screen ?? self.screen ?? NSScreen.main
         )
