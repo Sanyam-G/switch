@@ -374,11 +374,12 @@ final class SwitcherWindow: NSPanel {
     }
 
     func applyContentSize(for screen: NSScreen? = nil) {
+        // Row count is capped by the screen, so fall back to the one we are on.
         let fitted = SwitcherPanelSize.current(
             mode: model.mode,
             itemCount: model.filteredWindows.count,
             metrics: model.metrics,
-            screen: screen
+            screen: screen ?? self.screen ?? NSScreen.main
         )
         model.panelSize = CGSize(width: fitted.width, height: fitted.height)
         setContentSize(fitted)
@@ -430,7 +431,8 @@ private enum SwitcherPanelSize {
             || ((defaults.object(forKey: SwitchPreferences.verticalShowHeaderKey) as? Bool) ?? true)
         // Every mode sizes to the window count; a fixed panel leaves rows of empty backdrop (#134).
         let size = (mode == .spaces || isList)
-            ? listSize(defaults: defaults, count: count, scale: scale, showsHeader: showsHeader, metrics: metrics)
+            ? listSize(defaults: defaults, count: count, scale: scale, showsHeader: showsHeader,
+                       metrics: metrics, screen: screen)
             : gridSize(defaults: defaults, count: count, thumb: thumb, scale: scale, metrics: metrics)
         return fit(size, on: screen)
     }
@@ -466,7 +468,12 @@ private enum SwitcherPanelSize {
         value > 0 ? value : fallback
     }
 
-    private static func listSize(defaults: UserDefaults, count: Int, scale: CGFloat, showsHeader: Bool, metrics: PanelMetrics) -> NSSize {
+    /// Upper bound on rows on screen at once; the screen can lower it further.
+    private static let maxListRows = 8
+    private static let listRowSpacing: CGFloat = 4
+
+    private static func listSize(defaults: UserDefaults, count: Int, scale: CGFloat, showsHeader: Bool,
+                                 metrics: PanelMetrics, screen: NSScreen?) -> NSSize {
         let showHints = (defaults.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
         let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
         let showPreview = ((defaults.object(forKey: SwitchPreferences.verticalShowPreviewKey) as? Bool) ?? true) && showThumbs
@@ -476,16 +483,21 @@ private enum SwitcherPanelSize {
             metrics.rowHeight,
             fallback: listRowHeight(iconSize: iconSize, showPreview: showPreview)
         )
-        let visibleRows = min(count, 8)
-        let rowGaps = CGFloat(max(visibleRows - 1, 0)) * 4
         let headerHeight: CGFloat = showsHeader ? measured(metrics.headerHeight, fallback: 26) : 0
         let topPadding: CGFloat = showsHeader ? 10 : 14
         // The top padding is inside the scroll content; the bottom one sits outside it,
         // so both are always on screen and neither can be filled by a clipped row.
         let bottomPadding: CGFloat = 10
-        let height = headerHeight + topPadding + CGFloat(visibleRows) * rowHeight
-            + rowGaps + bottomPadding + hintHeight
-        return NSSize(width: 520 * scale, height: min(560 * scale, max(260, height)))
+        let chrome = headerHeight + topPadding + bottomPadding + hintHeight
+
+        // Whole rows only: a height the rows do not divide into leaves the remainder
+        // showing as a clipped row, which is what a fixed pixel cap used to produce.
+        let ceiling = (screen?.visibleFrame.height ?? .greatestFiniteMagnitude) * screenFraction
+        let fitting = Int(floor((ceiling - chrome + listRowSpacing) / (rowHeight + listRowSpacing)))
+        let visibleRows = max(1, min(count, maxListRows, fitting))
+        let rowGaps = CGFloat(max(visibleRows - 1, 0)) * listRowSpacing
+        let height = chrome + CGFloat(visibleRows) * rowHeight + rowGaps
+        return NSSize(width: 520 * scale, height: max(260, height))
     }
 
     private static func gridSize(defaults: UserDefaults, count: Int, thumb: CGFloat, scale: CGFloat, metrics: PanelMetrics) -> NSSize {
@@ -509,12 +521,14 @@ private enum SwitcherPanelSize {
         return NSSize(width: max(560, width), height: min(560 * scale, max(320, height)))
     }
 
+    private static let screenFraction: CGFloat = 0.92
+
     private static func fit(_ size: NSSize, on screen: NSScreen?) -> NSSize {
         guard let screen else { return size }
         let visible = screen.visibleFrame
         return NSSize(
-            width: min(size.width, visible.width * 0.92),
-            height: min(size.height, visible.height * 0.92)
+            width: min(size.width, visible.width * screenFraction),
+            height: min(size.height, visible.height * screenFraction)
         )
     }
 }
