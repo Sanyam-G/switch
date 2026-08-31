@@ -85,7 +85,7 @@ struct SwitchView: View {
     }
 
     private var showHeader: Bool {
-        isSpaceMode || !prefs.verticalList || prefs.verticalShowHeader || !model.filterText.isEmpty
+        isSpaceMode || !prefs.verticalList || prefs.verticalShowHeader || model.filterHeaderVisible
     }
 
     private var isSpaceMode: Bool { model.mode == .spaces }

@@ -101,9 +101,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkey.onFilterBackspace = { present(); model.backspaceFilter() }
         hotkey.onFilterSessionChanged = { enabled in
             model.filterSession = enabled
+            if enabled { model.revealFilterHeader() }
             // Stays sticky on the way out: the modifier is long released by now, and
             // dropping sticky would arm the next release to commit.
-            if enabled { model.stickySession = true } else { model.clearFilter() }
+            if enabled {
+                model.stickySession = true
+            } else {
+                model.clearFilter()
+                model.hideFilterHeader()
+            }
         }
         hotkey.onStickyToggle = {
             SwitchPreferences.shared.stickyMode.toggle()
@@ -123,6 +129,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // List rows are sized from the icon, so the panel has to be remeasured with it.
         SwitchPreferences.shared.$appIconSize
             .dropFirst()
+            .sink { [weak window] _ in window?.applyContentSize() }
+            .store(in: &cancellables)
+        // The header appears with find mode even when the preference hides it, and the
+        // panel has to take that height or it comes out of the last row.
+        model.$filterHeaderVisible
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
             .sink { [weak window] _ in window?.applyContentSize() }
             .store(in: &cancellables)
         SwitchPreferences.shared.$maxListRows
@@ -394,6 +408,7 @@ final class SwitcherWindow: NSPanel {
             mode: model.mode,
             itemCount: unfilteredCount,
             metrics: model.metrics,
+            filterHeader: model.filterHeaderVisible,
             screen: screen ?? self.screen ?? NSScreen.main
         )
         model.panelSize = CGSize(width: fitted.width, height: fitted.height)
@@ -434,15 +449,16 @@ final class SwitcherWindow: NSPanel {
 }
 
 private enum SwitcherPanelSize {
-    static func current(mode: HotkeyManager.Mode, itemCount: Int, metrics: PanelMetrics, screen: NSScreen?) -> NSSize {
+    static func current(mode: HotkeyManager.Mode, itemCount: Int, metrics: PanelMetrics,
+                        filterHeader: Bool, screen: NSScreen?) -> NSSize {
         let defaults = UserDefaults.standard
         let isList = defaults.bool(forKey: SwitchPreferences.verticalListKey)
         let thumb = CGFloat((defaults.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double) ?? SwitchPreferences.defaultThumbnailHeight)
         let scale = thumb / CGFloat(SwitchPreferences.defaultThumbnailHeight)
         let count = max(itemCount, 1)
-        // Matches showHeader in SwitchView, minus the filter-text case: a filter both
-        // reveals the header and changes the count, and the panel is remeasured then.
-        let showsHeader = mode == .spaces || !isList
+        // Matches showHeader in SwitchView, filter-revealed header included: leaving it
+        // out cost the last row its space in exactly that configuration.
+        let showsHeader = mode == .spaces || !isList || filterHeader
             || ((defaults.object(forKey: SwitchPreferences.verticalShowHeaderKey) as? Bool) ?? true)
         // Every mode sizes to the window count; a fixed panel leaves rows of empty backdrop (#134).
         let size = (mode == .spaces || isList)

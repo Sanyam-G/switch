@@ -40,6 +40,10 @@ final class SwitchModel: ObservableObject {
     @Published var stickySession = false
     /// Type-to-filter turned on by ⌘F for this invocation, when the pref has it off.
     @Published var filterSession = false
+    /// Set once find mode or a filter has revealed the header, and held for the rest of
+    /// the invocation. A header that comes and goes as the filter empties would resize
+    /// the panel under the user, and disagreeing with the sizing clips a row.
+    @Published private(set) var filterHeaderVisible = false
     private var currentSpaceOnly = false
     private var armReverse = false
 
@@ -108,6 +112,7 @@ final class SwitchModel: ObservableObject {
         self.mode = style.mode
         stickySession = style.sticky
         filterSession = false
+        filterHeaderVisible = false
         currentSpaceOnly = style.currentSpaceOnly
         armReverse = style.reverse
         quitPIDs.removeAll()
@@ -423,8 +428,20 @@ final class SwitchModel: ObservableObject {
         cancelAndDismiss?()
     }
 
+    func revealFilterHeader() {
+        filterHeaderVisible = true
+    }
+
+    /// Leaving find mode is a deliberate change, unlike a filter emptying as it is
+    /// edited, so the header goes away with it. A preference to always show the header
+    /// still wins: the view ORs this flag with it.
+    func hideFilterHeader() {
+        filterHeaderVisible = false
+    }
+
     func appendFilter(_ char: Character) {
         filterText.append(char)
+        filterHeaderVisible = true
         selected = 0
     }
 
