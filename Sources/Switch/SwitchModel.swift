@@ -1,6 +1,32 @@
 import AppKit
 import SwiftUI
 
+/// Heights measured from the laid-out switcher, so the panel can be sized from what
+/// SwiftUI actually rendered instead of constants that mirror the view by hand.
+struct PanelMetrics: Equatable {
+    var rowHeight: CGFloat = 0
+    var tileHeight: CGFloat = 0
+    var hintHeight: CGFloat = 0
+    var headerHeight: CGFloat = 0
+
+    mutating func merge(_ other: PanelMetrics) {
+        rowHeight = max(rowHeight, other.rowHeight)
+        tileHeight = max(tileHeight, other.tileHeight)
+        hintHeight = max(hintHeight, other.hintHeight)
+        headerHeight = max(headerHeight, other.headerHeight)
+    }
+
+    /// Zero means "not in the view right now", not "zero tall": the empty state removes
+    /// the rows, and the header only appears in some configurations. Keeping the last
+    /// real height stops those transitions from looking like a change in size.
+    mutating func mergeKnown(_ other: PanelMetrics) {
+        if other.rowHeight > 0 { rowHeight = other.rowHeight }
+        if other.tileHeight > 0 { tileHeight = other.tileHeight }
+        if other.hintHeight > 0 { hintHeight = other.hintHeight }
+        if other.headerHeight > 0 { headerHeight = other.headerHeight }
+    }
+}
+
 @MainActor
 final class SwitchModel: ObservableObject {
     @Published var windows: [WindowInfo] = []
@@ -12,8 +38,28 @@ final class SwitchModel: ObservableObject {
     @Published var panelSize = CGSize(width: 880, height: 560)
     /// Effective sticky for this invocation: global pref or a dedicated sticky binding (#131).
     @Published var stickySession = false
+    /// Type-to-filter turned on by ⌘F for this invocation, when the pref has it off.
+    @Published var filterSession = false
+    /// Set once find mode or a filter has revealed the header, and held for the rest of
+    /// the invocation. A header that comes and goes as the filter empties would resize
+    /// the panel under the user, and disagreeing with the sizing clips a row.
+    @Published private(set) var filterHeaderVisible = false
     private var currentSpaceOnly = false
     private var armReverse = false
+
+    /// Deliberately not @Published: the view reports these during layout, and republishing
+    /// them from there would feed the next layout pass its own output.
+    private(set) var metrics = PanelMetrics()
+    /// Set by AppDelegate so a fresh measurement can resize the panel.
+    var onMetricsChange: (() -> Void)?
+
+    func updateMetrics(_ new: PanelMetrics) {
+        var merged = metrics
+        merged.mergeKnown(new)
+        guard merged != metrics else { return }
+        metrics = merged
+        onMetricsChange?()
+    }
 
     /// Set by AppDelegate so the view can request a commit + window dismiss from a mouse click.
     var commitAndDismiss: (() -> Void)?
@@ -65,6 +111,8 @@ final class SwitchModel: ObservableObject {
         let gen = armGeneration
         self.mode = style.mode
         stickySession = style.sticky
+        filterSession = false
+        filterHeaderVisible = false
         currentSpaceOnly = style.currentSpaceOnly
         armReverse = style.reverse
         quitPIDs.removeAll()
@@ -380,8 +428,26 @@ final class SwitchModel: ObservableObject {
         cancelAndDismiss?()
     }
 
+    func revealFilterHeader() {
+        filterHeaderVisible = true
+    }
+
+    /// Leaving find mode is a deliberate change, unlike a filter emptying as it is
+    /// edited, so the header goes away with it. A preference to always show the header
+    /// still wins: the view ORs this flag with it.
+    func hideFilterHeader() {
+        filterHeaderVisible = false
+    }
+
     func appendFilter(_ char: Character) {
         filterText.append(char)
+        filterHeaderVisible = true
+        selected = 0
+    }
+
+    func clearFilter() {
+        guard !filterText.isEmpty else { return }
+        filterText = ""
         selected = 0
     }
 

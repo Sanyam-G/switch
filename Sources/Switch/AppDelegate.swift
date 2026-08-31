@@ -90,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window?.dismiss()
         }
         model.cancelAndDismiss = cancelAndDismiss
+        model.onMetricsChange = { [weak window] in window?.applyContentSize() }
         hotkey.onCloseSelected = { present(); model.closeSelected() }
         hotkey.onCloseSelectedApp = { present(); model.closeSelectedApp() }
         hotkey.onHideSelected = { present(); model.hideSelected() }
@@ -98,6 +99,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkey.onPickSelectOnly = { present(); model.selectIndex($0) }
         hotkey.onFilterAppend = { present(); model.appendFilter($0) }
         hotkey.onFilterBackspace = { present(); model.backspaceFilter() }
+        hotkey.onFilterSessionChanged = { enabled in
+            model.filterSession = enabled
+            if enabled { model.revealFilterHeader() }
+            // Stays sticky on the way out: the modifier is long released by now, and
+            // dropping sticky would arm the next release to commit.
+            if enabled {
+                model.stickySession = true
+            } else {
+                model.clearFilter()
+                model.hideFilterHeader()
+            }
+        }
         hotkey.onStickyToggle = {
             SwitchPreferences.shared.stickyMode.toggle()
         }
@@ -110,6 +123,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak window] _ in window?.applyContentSize() }
             .store(in: &cancellables)
         SwitchPreferences.shared.$thumbnailHeight
+            .dropFirst()
+            .sink { [weak window] _ in window?.applyContentSize() }
+            .store(in: &cancellables)
+        // List rows are sized from the icon, so the panel has to be remeasured with it.
+        SwitchPreferences.shared.$appIconSize
+            .dropFirst()
+            .sink { [weak window] _ in window?.applyContentSize() }
+            .store(in: &cancellables)
+        // The header appears with find mode even when the preference hides it, and the
+        // panel has to take that height or it comes out of the last row.
+        model.$filterHeaderVisible
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak window] _ in window?.applyContentSize() }
+            .store(in: &cancellables)
+        SwitchPreferences.shared.$maxListRows
             .dropFirst()
             .sink { [weak window] _ in window?.applyContentSize() }
             .store(in: &cancellables)
@@ -326,6 +356,8 @@ extension AppDelegate: SPUStandardUserDriverDelegate {
 
 final class SwitcherWindow: NSPanel {
     private let model: SwitchModel
+    /// Window count as of the last unfiltered layout, so a filter cannot resize the panel.
+    private var unfilteredCount = 0
 
     init(model: SwitchModel) {
         self.model = model
@@ -368,10 +400,16 @@ final class SwitcherWindow: NSPanel {
     }
 
     func applyContentSize(for screen: NSScreen? = nil) {
+        // Filtering must not resize the panel, so hold the count from before the filter
+        // was typed; a resize on every keystroke is more disruptive than empty backdrop.
+        if model.filterText.isEmpty { unfilteredCount = model.filteredWindows.count }
+        // Row count is capped by the screen, so fall back to the one we are on.
         let fitted = SwitcherPanelSize.current(
             mode: model.mode,
-            itemCount: model.filteredWindows.count,
-            screen: screen
+            itemCount: unfilteredCount,
+            metrics: model.metrics,
+            filterHeader: model.filterHeaderVisible,
+            screen: screen ?? self.screen ?? NSScreen.main
         )
         model.panelSize = CGSize(width: fitted.width, height: fitted.height)
         setContentSize(fitted)
@@ -411,32 +449,89 @@ final class SwitcherWindow: NSPanel {
 }
 
 private enum SwitcherPanelSize {
-    static func current(mode: HotkeyManager.Mode, itemCount: Int, screen: NSScreen?) -> NSSize {
+    static func current(mode: HotkeyManager.Mode, itemCount: Int, metrics: PanelMetrics,
+                        filterHeader: Bool, screen: NSScreen?) -> NSSize {
         let defaults = UserDefaults.standard
         let isList = defaults.bool(forKey: SwitchPreferences.verticalListKey)
         let thumb = CGFloat((defaults.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double) ?? SwitchPreferences.defaultThumbnailHeight)
         let scale = thumb / CGFloat(SwitchPreferences.defaultThumbnailHeight)
         let count = max(itemCount, 1)
+        // Matches showHeader in SwitchView, filter-revealed header included: leaving it
+        // out cost the last row its space in exactly that configuration.
+        let showsHeader = mode == .spaces || !isList || filterHeader
+            || ((defaults.object(forKey: SwitchPreferences.verticalShowHeaderKey) as? Bool) ?? true)
         // Every mode sizes to the window count; a fixed panel leaves rows of empty backdrop (#134).
         let size = (mode == .spaces || isList)
-            ? listSize(defaults: defaults, count: count, scale: scale)
-            : gridSize(defaults: defaults, count: count, thumb: thumb, scale: scale)
+            ? listSize(defaults: defaults, count: count, scale: scale, showsHeader: showsHeader,
+                       metrics: metrics, screen: screen)
+            : gridSize(defaults: defaults, count: count, thumb: thumb, scale: scale, metrics: metrics)
         return fit(size, on: screen)
     }
 
-    private static func listSize(defaults: UserDefaults, count: Int, scale: CGFloat) -> NSSize {
+    private static func lineHeight(_ font: NSFont) -> CGFloat {
+        ceil(font.ascender - font.descender + font.leading)
+    }
+
+    // Mirrors hintStrip in SwitchView: one line of pills plus .padding(.vertical, 8),
+    // where the key pill adds .padding(.vertical, 1) around its monospaced text.
+    private static let hintStripHeight: CGFloat = {
+        let label = lineHeight(.systemFont(ofSize: 11))
+        let key = lineHeight(.monospacedSystemFont(ofSize: 10, weight: .semibold)) + 2
+        return max(label, key) + 16
+    }()
+
+    // Mirrors listRow in SwitchView: the row is as tall as its tallest element plus
+    // .padding(.vertical, 6) on each side. A hardcoded height silently disagreed with
+    // non-default icon sizes and left a partial extra row visible.
+    private static let listRowTextHeight: CGFloat =
+        lineHeight(.systemFont(ofSize: 13, weight: .medium)) + 2 + lineHeight(.systemFont(ofSize: 11))
+    private static let listRowPreviewHeight: CGFloat = 50
+    private static let listRowVerticalPadding: CGFloat = 6
+
+    private static func listRowHeight(iconSize: CGFloat, showPreview: Bool) -> CGFloat {
+        var content = max(iconSize, listRowTextHeight)
+        if showPreview { content = max(content, listRowPreviewHeight) }
+        return content + listRowVerticalPadding * 2
+    }
+
+    /// A measurement of the real thing beats any constant that mirrors the view by hand.
+    private static func measured(_ value: CGFloat, fallback: CGFloat) -> CGFloat {
+        value > 0 ? value : fallback
+    }
+
+    private static let listRowSpacing: CGFloat = 4
+
+    private static func listSize(defaults: UserDefaults, count: Int, scale: CGFloat, showsHeader: Bool,
+                                 metrics: PanelMetrics, screen: NSScreen?) -> NSSize {
         let showHints = (defaults.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
         let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
         let showPreview = ((defaults.object(forKey: SwitchPreferences.verticalShowPreviewKey) as? Bool) ?? true) && showThumbs
-        let hintHeight: CGFloat = showHints ? 38 : 0
-        let rowHeight: CGFloat = showPreview ? 62 : 48
-        let visibleRows = min(count, 8)
-        let rowGaps = CGFloat(max(visibleRows - 1, 0)) * 4
-        let height = 26 + CGFloat(visibleRows) * rowHeight + rowGaps + hintHeight + 20
-        return NSSize(width: 520 * scale, height: min(560 * scale, max(260, height)))
+        let iconSize = CGFloat((defaults.object(forKey: SwitchPreferences.appIconSizeKey) as? Double) ?? SwitchPreferences.defaultAppIconSize)
+        let hintHeight: CGFloat = showHints ? measured(metrics.hintHeight, fallback: hintStripHeight) : 0
+        let rowHeight = measured(
+            metrics.rowHeight,
+            fallback: listRowHeight(iconSize: iconSize, showPreview: showPreview)
+        )
+        let headerHeight: CGFloat = showsHeader ? measured(metrics.headerHeight, fallback: 26) : 0
+        let topPadding: CGFloat = showsHeader ? 10 : 14
+        // The top padding is inside the scroll content; the bottom one sits outside it,
+        // so both are always on screen and neither can be filled by a clipped row.
+        let bottomPadding: CGFloat = 10
+        let chrome = headerHeight + topPadding + bottomPadding + hintHeight
+
+        // Whole rows only: a height the rows do not divide into leaves the remainder
+        // showing as a clipped row, which is what a fixed pixel cap used to produce.
+        let ceiling = (screen?.visibleFrame.height ?? .greatestFiniteMagnitude) * screenFraction
+        let fitting = Int(floor((ceiling - chrome + listRowSpacing) / (rowHeight + listRowSpacing)))
+        let maxRows = (defaults.object(forKey: SwitchPreferences.maxListRowsKey) as? Int)
+            ?? SwitchPreferences.defaultMaxListRows
+        let visibleRows = max(1, min(count, maxRows, fitting))
+        let rowGaps = CGFloat(max(visibleRows - 1, 0)) * listRowSpacing
+        let height = chrome + CGFloat(visibleRows) * rowHeight + rowGaps
+        return NSSize(width: 520 * scale, height: max(260, height))
     }
 
-    private static func gridSize(defaults: UserDefaults, count: Int, thumb: CGFloat, scale: CGFloat) -> NSSize {
+    private static func gridSize(defaults: UserDefaults, count: Int, thumb: CGFloat, scale: CGFloat, metrics: PanelMetrics) -> NSSize {
         let showHints = (defaults.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
         let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
         let tileThumb: CGFloat = showThumbs ? thumb : SwitchPreferences.compactThumbnailHeight
@@ -450,19 +545,21 @@ private enum SwitcherPanelSize {
         let width = horizontalPadding + CGFloat(columns) * columnWidth + CGFloat(max(columns - 1, 0)) * columnSpacing
 
         let rows = Int(ceil(Double(count) / Double(columns)))
-        let tileHeight = tileThumb + 52
+        let tileHeight = measured(metrics.tileHeight, fallback: tileThumb + 52)
         let rowsHeight = CGFloat(rows) * tileHeight + CGFloat(max(rows - 1, 0)) * 14
-        let hintHeight: CGFloat = showHints ? 38 : 0
-        let height = 26 + 16 + rowsHeight + hintHeight
+        let hintHeight: CGFloat = showHints ? measured(metrics.hintHeight, fallback: hintStripHeight) : 0
+        let height = measured(metrics.headerHeight, fallback: 26) + 16 + rowsHeight + hintHeight
         return NSSize(width: max(560, width), height: min(560 * scale, max(320, height)))
     }
+
+    private static let screenFraction: CGFloat = 0.92
 
     private static func fit(_ size: NSSize, on screen: NSScreen?) -> NSSize {
         guard let screen else { return size }
         let visible = screen.visibleFrame
         return NSSize(
-            width: min(size.width, visible.width * 0.92),
-            height: min(size.height, visible.height * 0.92)
+            width: min(size.width, visible.width * screenFraction),
+            height: min(size.height, visible.height * screenFraction)
         )
     }
 }

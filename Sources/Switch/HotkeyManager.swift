@@ -40,6 +40,10 @@ final class HotkeyManager {
     var onFilterAppend: ((Character) -> Void)?
     var onFilterBackspace: (() -> Void)?
     var onStickyToggle: (() -> Void)?
+    /// Fired when ⌘F turns filtering on or off for an invocation that started without it.
+    /// Turning it on also makes the invocation sticky, so typing does not require
+    /// holding the modifier.
+    var onFilterSessionChanged: ((Bool) -> Void)?
     var onOpenSettings: (() -> Void)?
 
     private let stateLock = NSLock()
@@ -48,6 +52,8 @@ final class HotkeyManager {
     private var armed: Mode?
     private var armedBinding: HotkeyBinding?
     private var armedSticky = false
+    /// Type-to-filter switched on by ⌘F for this invocation only.
+    private var armedFilter = false
     private var armedAt: Date?
     private var advanced = false
     private var lastShift = false
@@ -75,6 +81,7 @@ final class HotkeyManager {
     private static let kcW: CGKeyCode = 13
     private static let kcQ: CGKeyCode = 12
     private static let kcH: CGKeyCode = 4
+    private static let kcF: CGKeyCode = 3
     private static let kcComma: CGKeyCode = 43
     private static let kcDigits: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
     private static let kcKeypadDigits: [CGKeyCode] = [83, 84, 85, 86, 87, 88, 89, 91, 92]
@@ -244,6 +251,7 @@ final class HotkeyManager {
 
         let flags = event.flags
         let cmd = flags.contains(.maskCommand)
+        let control = flags.contains(.maskControl)
         let shift = flags.contains(.maskShift)
         let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
 
@@ -272,10 +280,13 @@ final class HotkeyManager {
             let armedMode = armed
             let activeBinding = armedBinding
             let sticky = armedSticky
+            let filterSession = armedFilter
             stateLock.unlock()
 
             if armedMode != nil {
-                let typeToFilter = (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
+                // ⌘F opts an invocation into filtering when the preference is off.
+                let typeToFilter = ((UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true)
+                    || filterSession
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
                 if kc == Self.kcEscape {
                     clearArmed()
@@ -316,6 +327,23 @@ final class HotkeyManager {
                     }
                     return nil
                 }
+                if actionModifierMatches && kc == Self.kcF {
+                    let enabling = !filterSession
+                    stateLock.lock()
+                    armedFilter = enabling
+                    if enabling {
+                        // Typing a filter one-handed means letting go of the modifier, so the
+                        // invocation goes sticky. advanced suppresses the quick-tap commit that
+                        // a release within stickyQuickTapMS of arming would otherwise trigger.
+                        armedSticky = true
+                        advanced = true
+                    }
+                    stateLock.unlock()
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onFilterSessionChanged?(enabling)
+                    }
+                    return nil
+                }
                 if actionModifierMatches && kc == Self.kcH {
                     DispatchQueue.main.async { [weak self] in
                         self?.onHideSelected?()
@@ -344,10 +372,17 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                if typeToFilter, let c = filterChar(from: event) {
+                if typeToFilter, !cmd, !control, let c = filterChar(from: event) {
                     DispatchQueue.main.async { [weak self] in
                         self?.onFilterAppend?(c)
                     }
+                    return nil
+                }
+                // filterChar decodes with the modifiers stripped, so ⌘A would otherwise
+                // read as a plain "a" and be typed. Chords are not filter input; swallow
+                // the ones this picker does not act on rather than leak them to the app
+                // behind it.
+                if typeToFilter, cmd || control {
                     return nil
                 }
             }
@@ -407,6 +442,7 @@ final class HotkeyManager {
             armed = style.mode
             armedBinding = binding
             armedSticky = effective.sticky
+            armedFilter = false
             armedAt = Date()
             advanced = false
         } else {
@@ -428,6 +464,7 @@ final class HotkeyManager {
         armed = nil
         armedBinding = nil
         armedSticky = false
+        armedFilter = false
         armedAt = nil
         advanced = false
         shiftTapPending = false
