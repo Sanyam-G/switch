@@ -72,10 +72,6 @@ final class HotkeyManager {
     private static let kcRightArrow: CGKeyCode = 124
     private static let kcDownArrow: CGKeyCode = 125
     private static let kcUpArrow: CGKeyCode = 126
-    private static let kcW: CGKeyCode = 13
-    private static let kcQ: CGKeyCode = 12
-    private static let kcH: CGKeyCode = 4
-    private static let kcComma: CGKeyCode = 43
     private static let kcDigits: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
     private static let kcKeypadDigits: [CGKeyCode] = [83, 84, 85, 86, 87, 88, 89, 91, 92]
 
@@ -275,6 +271,7 @@ final class HotkeyManager {
             stateLock.unlock()
 
             if armedMode != nil {
+                let key = layoutChar(from: event)
                 let typeToFilter = (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
                 if kc == Self.kcEscape {
@@ -304,25 +301,25 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                if actionModifierMatches && kc == Self.kcW {
+                if actionModifierMatches && key == "w" {
                     DispatchQueue.main.async { [weak self] in
                         self?.onCloseSelected?()
                     }
                     return nil
                 }
-                if actionModifierMatches && kc == Self.kcQ {
+                if actionModifierMatches && key == "q" {
                     DispatchQueue.main.async { [weak self] in
                         self?.onCloseSelectedApp?()
                     }
                     return nil
                 }
-                if actionModifierMatches && kc == Self.kcH {
+                if actionModifierMatches && key == "h" {
                     DispatchQueue.main.async { [weak self] in
                         self?.onHideSelected?()
                     }
                     return nil
                 }
-                if kc == Self.kcComma && (cmd || activeBinding?.modifiersHeld(flags) == true) {
+                if key == "," && (cmd || activeBinding?.modifiersHeld(flags) == true) {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
                         self?.onCancel?()
@@ -481,16 +478,22 @@ final class HotkeyManager {
 
     // NSEvent character APIs hit TSM, which asserts main-queue on macOS 26.2+ and traps this thread.
     private func filterChar(from event: CGEvent) -> Character? {
+        guard let c = layoutChar(from: event, keeping: .maskShift) else { return nil }
+        if c.isLetter || c == " " || c == "-" || c == "." {
+            return c
+        }
+        return nil
+    }
+
+    // The character the key produces on the current layout, so ⌘W is the W key on AZERTY too (#149).
+    private func layoutChar(from event: CGEvent, keeping: CGEventFlags = []) -> Character? {
         guard let copy = event.copy() else { return nil }
-        copy.flags = copy.flags.intersection(.maskShift)
+        copy.flags = copy.flags.intersection(keeping)
         var length = 0
         var buffer = [UniChar](repeating: 0, count: 4)
         copy.keyboardGetUnicodeString(maxStringLength: 4, actualStringLength: &length, unicodeString: &buffer)
         guard length > 0, let c = String(utf16CodeUnits: buffer, count: length).first else { return nil }
-        if c.isLetter || c == " " || c == "-" || c == "." {
-            return Character(c.lowercased())
-        }
-        return nil
+        return Character(c.lowercased())
     }
 
     private func arrowDirection(for kc: CGKeyCode) -> Direction? {
