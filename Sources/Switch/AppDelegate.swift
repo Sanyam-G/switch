@@ -113,6 +113,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .dropFirst()
             .sink { [weak window] _ in window?.applyContentSize() }
             .store(in: &cancellables)
+        SwitchPreferences.shared.$maxListRows
+            .dropFirst()
+            .sink { [weak window] _ in window?.applyContentSize() }
+            .store(in: &cancellables)
         SwitchPreferences.shared.$showThumbnails
             .dropFirst()
             .sink { [weak self, weak window] enabled in
@@ -419,21 +423,25 @@ private enum SwitcherPanelSize {
         let count = max(itemCount, 1)
         // Every mode sizes to the window count; a fixed panel leaves rows of empty backdrop (#134).
         let size = (mode == .spaces || isList)
-            ? listSize(defaults: defaults, count: count, scale: scale)
+            ? listSize(defaults: defaults, count: count, scale: scale, screen: screen)
             : gridSize(defaults: defaults, count: count, thumb: thumb, scale: scale)
         return fit(size, on: screen)
     }
 
-    private static func listSize(defaults: UserDefaults, count: Int, scale: CGFloat) -> NSSize {
+    private static func listSize(defaults: UserDefaults, count: Int, scale: CGFloat, screen: NSScreen?) -> NSSize {
         let showHints = (defaults.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
         let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
         let showPreview = ((defaults.object(forKey: SwitchPreferences.verticalShowPreviewKey) as? Bool) ?? true) && showThumbs
         let hintHeight: CGFloat = showHints ? 38 : 0
         let rowHeight: CGFloat = showPreview ? 62 : 48
-        let visibleRows = min(count, 8)
+        let chrome = 26 + hintHeight + 20
+        let maxRows = (defaults.object(forKey: SwitchPreferences.maxListRowsKey) as? Int) ?? SwitchPreferences.defaultMaxListRows
+        // Whole rows only: a screen-capped height leaves a clipped row at the bottom (#132).
+        let fitting = screen.map { Int(($0.visibleFrame.height * 0.92 - chrome + 4) / (rowHeight + 4)) } ?? maxRows
+        let visibleRows = max(1, min(count, maxRows, fitting))
         let rowGaps = CGFloat(max(visibleRows - 1, 0)) * 4
-        let height = 26 + CGFloat(visibleRows) * rowHeight + rowGaps + hintHeight + 20
-        return NSSize(width: 520 * scale, height: min(560 * scale, max(260, height)))
+        let height = chrome + CGFloat(visibleRows) * rowHeight + rowGaps
+        return NSSize(width: 520 * scale, height: max(260, height))
     }
 
     private static func gridSize(defaults: UserDefaults, count: Int, thumb: CGFloat, scale: CGFloat) -> NSSize {
