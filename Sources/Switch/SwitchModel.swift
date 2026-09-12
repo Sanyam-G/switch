@@ -174,6 +174,15 @@ final class SwitchModel: ObservableObject {
             active.removeAll { $0.isMinimized || $0.isHidden }
             cross.removeAll { $0.isMinimized || $0.isHidden }
         }
+        let exclusions = SwitchPreferences.shared.titleExclusions.map { $0.lowercased() }
+        if !exclusions.isEmpty {
+            let hit: (WindowInfo) -> Bool = { w in
+                let t = w.title.lowercased()
+                return exclusions.contains { t.contains($0) }
+            }
+            active.removeAll(where: hit)
+            cross.removeAll(where: hit)
+        }
         if mode == .currentApp, let f = armFrontmostPID {
             active = active.filter { $0.pid == f }
             cross = cross.filter { $0.pid == f }

@@ -320,6 +320,8 @@ struct SettingsView: View {
                 crossSpaceSection
 
                 blacklistSection
+
+                titleExclusionSection
             }
             .padding(24)
         }
@@ -475,6 +477,54 @@ struct SettingsView: View {
             return app.icon
         }
         return nil
+    }
+
+    @State private var newTitleExclusion = ""
+
+    private var titleExclusionSection: some View {
+        section("Excluded titles") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Windows whose title contains any of these won't appear in the picker.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                if prefs.titleExclusions.isEmpty {
+                    Text("Nothing excluded.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .padding(.vertical, 4)
+                } else {
+                    VStack(spacing: 4) {
+                        ForEach(prefs.titleExclusions, id: \.self) { text in
+                            HStack(spacing: 8) {
+                                Text(text).font(.system(size: 12))
+                                Spacer()
+                                Button {
+                                    prefs.titleExclusions.removeAll { $0 == text }
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 6)
+                        }
+                    }
+                }
+                TextField("Add title text, press Return", text: $newTitleExclusion)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+                    .frame(width: 260)
+                    .onSubmit {
+                        let t = newTitleExclusion.trimmingCharacters(in: .whitespaces)
+                        guard !t.isEmpty, !prefs.titleExclusions.contains(t) else { return }
+                        prefs.titleExclusions.append(t)
+                        newTitleExclusion = ""
+                    }
+            }
+            .padding(14)
+            .background(rowBackground)
+        }
     }
 
     private var blacklistSection: some View {
