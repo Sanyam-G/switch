@@ -282,7 +282,7 @@ struct SettingsView: View {
                         }
                         Divider().opacity(0.4)
                         row(title: "Panel width",
-                            detail: "Width of the picker module, independent of thumbnail size. \(Int((SwitchPreferences.defaultGridPanelWidth * prefs.panelWidthScale).rounded()))pt") {
+                            detail: panelWidthDetail) {
                             Slider(value: $prefs.panelWidthScale,
                                    in: SwitchPreferences.minPanelWidthScale...SwitchPreferences.maxPanelWidthScale,
                                    step: 0.05)
@@ -401,6 +401,15 @@ struct SettingsView: View {
                           $prefs.mruMixSpaces)
             }
         }
+    }
+
+    private var panelWidthDetail: String {
+        let base = prefs.verticalList
+            ? SwitchPreferences.defaultListPanelWidth
+            : SwitchPreferences.defaultGridPanelWidth
+        let points = Int((base * prefs.panelWidthScale).rounded())
+        let layout = prefs.verticalList ? "list" : "grid"
+        return "Width of the picker module, independent of thumbnail size. \(points)pt (\(layout))"
     }
 
     private func resetSizing() {
