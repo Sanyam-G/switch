@@ -45,6 +45,10 @@ Windows on other Spaces show up in the picker, badged OTHER SPACE. Pick one and 
 
 Settings → Behavior → Vertical list. Single-column layout with app icon, name, window title, and thumbnail.
 
+## Pointer display
+
+Settings → Picker → Only windows on the display under the pointer. When on, the picker lists windows on the screen under the mouse, not every display. Off by default. Where the picker itself appears is a separate setting (Show picker on).
+
 ## Excluded apps
 
 Settings → General → Excluded apps. Hide windows from specific apps.

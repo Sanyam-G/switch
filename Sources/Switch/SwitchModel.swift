@@ -14,6 +14,8 @@ final class SwitchModel: ObservableObject {
     @Published var stickySession = false
     private var currentSpaceOnly = false
     private var armReverse = false
+    /// Screen under the pointer at arm, in kCGWindowBounds space. Nil when the filter is off.
+    private var pointerDisplayFrameCG: CGRect?
 
     /// Set by AppDelegate so the view can request a commit + window dismiss from a mouse click.
     var commitAndDismiss: (() -> Void)?
@@ -70,6 +72,9 @@ final class SwitchModel: ObservableObject {
         quitPIDs.removeAll()
         filterText = ""
         pointerWindowID = nil
+        pointerDisplayFrameCG = SwitchPreferences.shared.onlyPointerDisplayWindows
+            ? Self.pointerDisplayFrameInCGWindowSpace()
+            : nil
         armFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         armSelfHadKeyWindow = NSApp.keyWindow != nil
         if let snap = WindowStore.shared.current {
@@ -123,9 +128,18 @@ final class SwitchModel: ObservableObject {
                 // "still frontmost after closing a window" state behind #90.
                 let selfFront = armFrontmostPID == ProcessInfo.processInfo.processIdentifier && armSelfHadKeyWindow
                 let n = filteredWindows.count
+                // Cmd+Tab skips the focused window when it is in the list. If the pointer-display
+                // filter dropped it, index 0 is already the previous window on that screen.
+                let skipFront: Bool
+                if pointerDisplayFrameCG != nil {
+                    let focusedID = WindowMRU.mostRecent(in: snapshot.windows.allWindows)?.id
+                    skipFront = focusedID.map { id in filteredWindows.contains(where: { $0.id == id }) } ?? false
+                } else {
+                    skipFront = n > 1
+                }
                 selected = (stickySession || selfFront) ? 0
                     : armReverse ? max(n - 1, 0)
-                    : (n > 1 ? 1 : 0)
+                    : (skipFront && n > 1 ? 1 : 0)
             }
         } else if changed {
             let list = filteredWindows
@@ -181,6 +195,10 @@ final class SwitchModel: ObservableObject {
         if !SwitchPreferences.shared.showCrossSpace || currentSpaceOnly {
             cross = cross.filter { !$0.isCrossSpace }
         }
+        if let display = pointerDisplayFrameCG {
+            active.removeAll { !$0.bounds.intersects(display) }
+            cross.removeAll { !$0.bounds.intersects(display) }
+        }
         let activeFront = WindowMRU.mostRecent(in: active) ?? active.first
         let ws: [WindowInfo]
         if SwitchPreferences.shared.staticOrder {
@@ -234,7 +252,27 @@ final class SwitchModel: ObservableObject {
                 return aP && !bP
             }
         }
+        if pointerDisplayFrameCG != nil {
+            final.removeAll { $0.isWindowless }
+        }
         return final
+    }
+
+    /// kCGWindowBounds origin is the top-left of the main display; NSScreen is bottom-left.
+    private static func pointerDisplayFrameInCGWindowSpace() -> CGRect? {
+        let cursor = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(cursor, $0.frame, false) })
+                ?? NSScreen.main,
+              let primary = NSScreen.screens.first
+        else { return nil }
+        let f = screen.frame
+        let p = primary.frame
+        return CGRect(
+            x: f.origin.x - p.origin.x,
+            y: p.maxY - f.origin.y - f.height,
+            width: f.width,
+            height: f.height
+        )
     }
 
     func closeSelected() {
@@ -413,6 +451,7 @@ final class SwitchModel: ObservableObject {
         windows = []
         thumbnails = [:]
         filterText = ""
+        pointerDisplayFrameCG = nil
         stopRefreshTimer()
         thumbnailTasks.forEach { $0.cancel() }
         thumbnailTasks = []

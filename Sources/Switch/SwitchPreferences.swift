@@ -196,6 +196,10 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(pickerDisplay.rawValue, forKey: SwitchPreferences.pickerDisplayKey) }
     }
 
+    @Published var onlyPointerDisplayWindows: Bool {
+        didSet { UserDefaults.standard.set(onlyPointerDisplayWindows, forKey: SwitchPreferences.onlyPointerDisplayWindowsKey) }
+    }
+
     private let accentKey = "switch.accent"
     private let backgroundBlurKey = "switch.backgroundBlur"
     private let showTitleFirstKey = "switch.showTitleFirst"
@@ -226,6 +230,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let hideMinimizedWindowsKey = "switch.hideMinimizedWindows"
     nonisolated static let showNumberKeyHintsKey = "switch.showNumberKeyHints"
     nonisolated static let pickerDisplayKey = "switch.pickerDisplay"
+    nonisolated static let onlyPointerDisplayWindowsKey = "switch.onlyPointerDisplayWindows"
 
     private init() {
         accent = AccentChoice(rawValue: UserDefaults.standard.string(forKey: accentKey) ?? "") ?? .system
@@ -258,5 +263,6 @@ final class SwitchPreferences: ObservableObject {
         hideMinimizedWindows = UserDefaults.standard.bool(forKey: SwitchPreferences.hideMinimizedWindowsKey)
         showNumberKeyHints = UserDefaults.standard.bool(forKey: SwitchPreferences.showNumberKeyHintsKey)
         pickerDisplay = PickerDisplay(rawValue: UserDefaults.standard.string(forKey: SwitchPreferences.pickerDisplayKey) ?? "") ?? .mouse
+        onlyPointerDisplayWindows = UserDefaults.standard.bool(forKey: SwitchPreferences.onlyPointerDisplayWindowsKey)
     }
 }

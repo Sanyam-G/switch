@@ -349,6 +349,10 @@ struct SettingsView: View {
                     .labelsHidden()
                     .frame(width: 190)
                 }
+                Divider().opacity(0.4)
+                toggleRow("Only windows on the display under the pointer",
+                          "List windows on the screen under the mouse, not every display. Windows that span displays stay included. Off keeps the full list.",
+                          $prefs.onlyPointerDisplayWindows)
             }
         }
     }
