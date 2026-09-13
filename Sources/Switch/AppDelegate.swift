@@ -113,6 +113,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .dropFirst()
             .sink { [weak window] _ in window?.applyContentSize() }
             .store(in: &cancellables)
+        SwitchPreferences.shared.$panelWidthScale
+            .dropFirst()
+            .sink { [weak window] _ in window?.applyContentSize() }
+            .store(in: &cancellables)
         SwitchPreferences.shared.$showThumbnails
             .dropFirst()
             .sink { [weak self, weak window] enabled in
@@ -416,15 +420,18 @@ private enum SwitcherPanelSize {
         let isList = defaults.bool(forKey: SwitchPreferences.verticalListKey)
         let thumb = CGFloat((defaults.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double) ?? SwitchPreferences.defaultThumbnailHeight)
         let scale = thumb / CGFloat(SwitchPreferences.defaultThumbnailHeight)
+        let widthScale = CGFloat(SwitchPreferences.clampedPanelWidthScale(
+            defaults.object(forKey: SwitchPreferences.panelWidthScaleKey) as? Double
+        ))
         let count = max(itemCount, 1)
         // Every mode sizes to the window count; a fixed panel leaves rows of empty backdrop (#134).
         let size = (mode == .spaces || isList)
-            ? listSize(defaults: defaults, count: count, scale: scale)
-            : gridSize(defaults: defaults, count: count, thumb: thumb, scale: scale)
+            ? listSize(defaults: defaults, count: count, scale: scale, widthScale: widthScale)
+            : gridSize(defaults: defaults, count: count, thumb: thumb, scale: scale, widthScale: widthScale)
         return fit(size, on: screen)
     }
 
-    private static func listSize(defaults: UserDefaults, count: Int, scale: CGFloat) -> NSSize {
+    private static func listSize(defaults: UserDefaults, count: Int, scale: CGFloat, widthScale: CGFloat) -> NSSize {
         let showHints = (defaults.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
         let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
         let showPreview = ((defaults.object(forKey: SwitchPreferences.verticalShowPreviewKey) as? Bool) ?? true) && showThumbs
@@ -433,16 +440,16 @@ private enum SwitcherPanelSize {
         let visibleRows = min(count, 8)
         let rowGaps = CGFloat(max(visibleRows - 1, 0)) * 4
         let height = 26 + CGFloat(visibleRows) * rowHeight + rowGaps + hintHeight + 20
-        return NSSize(width: 520 * scale, height: min(560 * scale, max(260, height)))
+        return NSSize(width: CGFloat(SwitchPreferences.defaultListPanelWidth) * widthScale, height: min(560 * scale, max(260, height)))
     }
 
-    private static func gridSize(defaults: UserDefaults, count: Int, thumb: CGFloat, scale: CGFloat) -> NSSize {
+    private static func gridSize(defaults: UserDefaults, count: Int, thumb: CGFloat, scale: CGFloat, widthScale: CGFloat) -> NSSize {
         let showHints = (defaults.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
         let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
         let tileThumb: CGFloat = showThumbs ? thumb : SwitchPreferences.compactThumbnailHeight
         let configuredColumns = (defaults.object(forKey: SwitchPreferences.gridColumnsKey) as? Int) ?? SwitchPreferences.defaultGridColumns
         let columns = min(max(configuredColumns, 1), max(count, 3))
-        let baseWidth: CGFloat = 880 * scale
+        let baseWidth: CGFloat = CGFloat(SwitchPreferences.defaultGridPanelWidth) * widthScale
         let horizontalPadding: CGFloat = 44
         let columnSpacing: CGFloat = 14
         let usable = baseWidth - horizontalPadding - CGFloat(max(configuredColumns - 1, 0)) * columnSpacing

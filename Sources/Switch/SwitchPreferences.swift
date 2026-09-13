@@ -8,6 +8,11 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let defaultThumbnailHeight = 130.0
     nonisolated static let defaultAppIconSize = 32.0
     nonisolated static let defaultGridColumns = 4
+    nonisolated static let defaultPanelWidthScale = 1.0
+    nonisolated static let minPanelWidthScale = 0.6
+    nonisolated static let maxPanelWidthScale = 2.0
+    nonisolated static let defaultGridPanelWidth = 880.0
+    nonisolated static let defaultListPanelWidth = 520.0
     nonisolated static let defaultPickerActivationDelay = 130.0
     nonisolated static let compactThumbnailHeight = 72.0
 
@@ -172,6 +177,10 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(gridColumns, forKey: SwitchPreferences.gridColumnsKey) }
     }
 
+    @Published var panelWidthScale: Double {
+        didSet { UserDefaults.standard.set(panelWidthScale, forKey: SwitchPreferences.panelWidthScaleKey) }
+    }
+
     @Published var pinnedBundleIDs: Set<String> {
         didSet { UserDefaults.standard.set(Array(pinnedBundleIDs), forKey: SwitchPreferences.pinnedBundleIDsKey) }
     }
@@ -220,6 +229,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let thumbnailHeightKey = "switch.thumbnailHeight"
     nonisolated static let appIconSizeKey = "switch.appIconSize"
     nonisolated static let gridColumnsKey = "switch.gridColumns"
+    nonisolated static let panelWidthScaleKey = "switch.panelWidthScale"
     nonisolated static let pinnedBundleIDsKey = "switch.pinnedBundleIDs"
     nonisolated static let pickerActivationDelayKey = "switch.pickerActivationDelay"
     nonisolated static let shiftTapReversesKey = "switch.shiftTapReverses"
@@ -252,11 +262,18 @@ final class SwitchPreferences: ObservableObject {
         thumbnailHeight = (UserDefaults.standard.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double) ?? Self.defaultThumbnailHeight
         appIconSize = (UserDefaults.standard.object(forKey: SwitchPreferences.appIconSizeKey) as? Double) ?? Self.defaultAppIconSize
         gridColumns = (UserDefaults.standard.object(forKey: SwitchPreferences.gridColumnsKey) as? Int) ?? Self.defaultGridColumns
+        panelWidthScale = Self.clampedPanelWidthScale(
+            UserDefaults.standard.object(forKey: SwitchPreferences.panelWidthScaleKey) as? Double
+        )
         pinnedBundleIDs = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.pinnedBundleIDsKey) ?? [])
         pickerActivationDelay = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? Self.defaultPickerActivationDelay
         shiftTapReverses = UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey)
         hideMinimizedWindows = UserDefaults.standard.bool(forKey: SwitchPreferences.hideMinimizedWindowsKey)
         showNumberKeyHints = UserDefaults.standard.bool(forKey: SwitchPreferences.showNumberKeyHintsKey)
         pickerDisplay = PickerDisplay(rawValue: UserDefaults.standard.string(forKey: SwitchPreferences.pickerDisplayKey) ?? "") ?? .mouse
+    }
+
+    nonisolated static func clampedPanelWidthScale(_ raw: Double?) -> Double {
+        min(maxPanelWidthScale, max(minPanelWidthScale, raw ?? defaultPanelWidthScale))
     }
 }
