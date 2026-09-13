@@ -130,13 +130,9 @@ final class SwitchModel: ObservableObject {
                 let n = filteredWindows.count
                 // Cmd+Tab skips the focused window when it is in the list. If the pointer-display
                 // filter dropped it, index 0 is already the previous window on that screen.
-                let skipFront: Bool
-                if pointerDisplayFrameCG != nil {
-                    let focusedID = WindowMRU.mostRecent(in: snapshot.windows.allWindows)?.id
-                    skipFront = focusedID.map { id in filteredWindows.contains(where: { $0.id == id }) } ?? false
-                } else {
-                    skipFront = n > 1
-                }
+                let skipFront = pointerDisplayFrameCG != nil
+                    ? focusedWindowIsListed(in: filteredWindows, snapshot: snapshot.windows)
+                    : n > 1
                 selected = (stickySession || selfFront) ? 0
                     : armReverse ? max(n - 1, 0)
                     : (skipFront && n > 1 ? 1 : 0)
@@ -256,6 +252,18 @@ final class SwitchModel: ObservableObject {
             final.removeAll { $0.isWindowless }
         }
         return final
+    }
+
+    /// Whether the globally focused window survived the pointer-display filter.
+    /// MRU is empty until a focus event is recorded, so first Cmd-Tab falls back
+    /// to CG on-screen z-order (frontmost app, then overall).
+    private func focusedWindowIsListed(in listed: [WindowInfo], snapshot: WindowEnumerator.FullSnapshot) -> Bool {
+        let all = snapshot.allWindows
+        let focusedID = WindowMRU.mostRecent(in: all)?.id
+            ?? armFrontmostPID.flatMap { pid in snapshot.activeSpace.first(where: { $0.pid == pid }) }?.id
+            ?? snapshot.activeSpace.first?.id
+        guard let focusedID else { return true }
+        return listed.contains(where: { $0.id == focusedID })
     }
 
     /// kCGWindowBounds origin is the top-left of the main display; NSScreen is bottom-left.

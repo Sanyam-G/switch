@@ -18,6 +18,12 @@ final class FocusTracker {
         for app in NSWorkspace.shared.runningApplications {
             attach(app)
         }
+        // Observers only see later AX changes; seed the window that already has focus
+        // so first Cmd-Tab has an MRU stamp.
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            touchFocused(of: front.processIdentifier)
+        }
         let nc = NSWorkspace.shared.notificationCenter
         launchToken = nc.addObserver(
             forName: NSWorkspace.didLaunchApplicationNotification,
