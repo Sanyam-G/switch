@@ -144,6 +144,8 @@ struct SettingsView: View {
                                   detail: "Opens the picker in sticky mode, leaving your main hotkeys quick.")
                         hotkeyRow("Current Space", rows: [("Primary", .currentSpace)],
                                   detail: "All windows on the current Space only, whatever the cross-Space setting.")
+                        hotkeyRow("Current display", rows: [("Primary", .currentDisplay)],
+                                  detail: "All windows on the picker's display only, whatever the display setting.")
                         hotkeyRow("Sticky toggle", rows: [("Primary", .stickyToggle)],
                                   detail: "Turns sticky mode on or off for the main hotkeys.")
                         if let msg = rejectMessage {
@@ -219,6 +221,10 @@ struct SettingsView: View {
                             appOrderList
                         }
                         Divider().opacity(0.4)
+                        toggleRow("Only windows on the picker's display",
+                                  "List windows on the display the picker opens on (see Show picker on), not every display.",
+                                  $prefs.currentDisplayOnly)
+                        Divider().opacity(0.4)
                         toggleRow("Hide minimized and hidden windows",
                                   "Leave out windows that are minimized to the Dock or belong to hidden apps.",
                                   $prefs.hideMinimizedWindows)
@@ -242,6 +248,10 @@ struct SettingsView: View {
                         toggleRow("Show hint strip",
                                   "Keyboard shortcut hints at the bottom of the picker.",
                                   $prefs.showHintStrip)
+                        Divider().opacity(0.4)
+                        toggleRow("Show window count",
+                                  "The number of windows in the top right of the picker.",
+                                  $prefs.showWindowCount)
                         Divider().opacity(0.4)
                         toggleRow("Show window title first",
                                   "Put the window title ahead of the app name in each tile and row.",

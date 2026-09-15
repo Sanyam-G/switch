@@ -67,9 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.advance(reverse: reverse)
         }
         // Tap-originated commits already cleared armed on the tap thread; clearing again here races a fresh arm.
-        hotkey.onCommit = { [weak self, weak model, weak window] in
+        hotkey.onCommit = { [weak self, weak model, weak window] quick in
             self?.cancelPendingPresent()
-            model?.commit()
+            model?.commit(stickyQuickTap: quick)
             window?.dismiss()
         }
         model.commitAndDismiss = { [weak self, weak model, weak window] in
@@ -386,18 +386,7 @@ final class SwitcherWindow: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         animationBehavior = SwitchPreferences.shared.disableAnimations ? .none : .default
 
-        let screen: NSScreen?
-        switch SwitchPreferences.shared.pickerDisplay {
-        case .mouse:
-            let cursor = NSEvent.mouseLocation
-            screen = NSScreen.screens.first(where: { NSMouseInRect(cursor, $0.frame, false) })
-                ?? NSScreen.main
-        case .active:
-            // NSScreen.main is the screen holding the key window, not the primary display.
-            screen = NSScreen.main
-        case .primary:
-            screen = NSScreen.screens.first
-        }
+        let screen = Self.pickerScreen()
         applyContentSize(for: screen)
         if let screen {
             let visible = screen.visibleFrame
@@ -411,6 +400,20 @@ final class SwitcherWindow: NSPanel {
 
     func dismiss() {
         orderOut(nil)
+    }
+
+    static func pickerScreen() -> NSScreen? {
+        switch SwitchPreferences.shared.pickerDisplay {
+        case .mouse:
+            let cursor = NSEvent.mouseLocation
+            return NSScreen.screens.first(where: { NSMouseInRect(cursor, $0.frame, false) })
+                ?? NSScreen.main
+        case .active:
+            // NSScreen.main is the screen holding the key window, not the primary display.
+            return NSScreen.main
+        case .primary:
+            return NSScreen.screens.first
+        }
     }
 }
 

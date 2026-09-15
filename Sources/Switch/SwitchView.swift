@@ -151,7 +151,7 @@ struct SwitchView: View {
                     .foregroundStyle(.primary)
             }
             Spacer()
-            if !model.filteredWindows.isEmpty {
+            if prefs.showWindowCount && !model.filteredWindows.isEmpty {
                 Text(isSpaceMode ? "\(model.filteredWindows.count) spaces" : "\(model.filteredWindows.count)")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.tertiary)

@@ -69,6 +69,7 @@ final class HotkeyConfig {
         case allWindowsSticky = "switch.hotkey.allWindows.sticky"
         case currentAppSticky = "switch.hotkey.currentApp.sticky"
         case currentSpace = "switch.hotkey.currentSpace"
+        case currentDisplay = "switch.hotkey.currentDisplay"
 
         var seededDefault: HotkeyBinding? {
             switch self {

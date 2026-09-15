@@ -13,6 +13,9 @@ final class SwitchModel: ObservableObject {
     /// Effective sticky for this invocation: global pref or a dedicated sticky binding (#131).
     @Published var stickySession = false
     private var currentSpaceOnly = false
+    /// Picker display in CGWindow coordinates, captured at arm. Nil when the display filter is off.
+    private var armDisplayFrame: CGRect?
+    private var armFrontWindowID: CGWindowID?
     private var armReverse = false
 
     /// Set by AppDelegate so the view can request a commit + window dismiss from a mouse click.
@@ -66,6 +69,8 @@ final class SwitchModel: ObservableObject {
         self.mode = style.mode
         stickySession = style.sticky
         currentSpaceOnly = style.currentSpaceOnly
+        armDisplayFrame = (style.currentDisplayOnly || SwitchPreferences.shared.currentDisplayOnly)
+            ? SwitcherWindow.pickerScreen().map(Self.cgFrame) : nil
         armReverse = style.reverse
         quitPIDs.removeAll()
         filterText = ""
@@ -109,6 +114,7 @@ final class SwitchModel: ObservableObject {
         if changed { windows = final }
 
         if initial {
+            armFrontWindowID = WindowMRU.mostRecent(in: snapshot.windows.allWindows)?.id
             if mode == .spaces {
                 let reps = filteredWindows
                 if let current = reps.firstIndex(where: { !$0.isCrossSpace }), reps.count > 1 {
@@ -121,11 +127,10 @@ final class SwitchModel: ObservableObject {
                 // Only treat Switch as frontmost when it genuinely owns a visible key window (Settings/About/
                 // onboarding); the picker panel can't become key, so keyWindow != nil rules out the stale
                 // "still frontmost after closing a window" state behind #90.
-                let selfFront = armFrontmostPID == ProcessInfo.processInfo.processIdentifier && armSelfHadKeyWindow
                 let n = filteredWindows.count
                 selected = (stickySession || selfFront) ? 0
                     : armReverse ? max(n - 1, 0)
-                    : (n > 1 ? 1 : 0)
+                    : (frontListed && n > 1 ? 1 : 0)
             }
         } else if changed {
             let list = filteredWindows
@@ -189,6 +194,10 @@ final class SwitchModel: ObservableObject {
         }
         if !SwitchPreferences.shared.showCrossSpace || currentSpaceOnly {
             cross = cross.filter { !$0.isCrossSpace }
+        }
+        if let display = armDisplayFrame {
+            active.removeAll { !$0.bounds.intersects(display) }
+            cross.removeAll { !$0.bounds.intersects(display) }
         }
         let activeFront = WindowMRU.mostRecent(in: active) ?? active.first
         let ws: [WindowInfo]
@@ -400,8 +409,29 @@ final class SwitchModel: ObservableObject {
         selected = 0
     }
 
-    func commit() {
+    private var selfFront: Bool {
+        armFrontmostPID == ProcessInfo.processInfo.processIdentifier && armSelfHadKeyWindow
+    }
+
+    // False when a filter (display, title, app, hidden) dropped the focused window: index 0 is then already the previous one.
+    private var frontListed: Bool {
+        guard let id = armFrontWindowID else { return true }
+        return filteredWindows.contains { $0.id == id }
+    }
+
+    // kCGWindowBounds has its origin at the top-left of the primary display; NSScreen at the bottom-left.
+    private static func cgFrame(_ screen: NSScreen) -> CGRect {
+        let f = screen.frame
+        let primaryMaxY = NSScreen.screens.first?.frame.maxY ?? f.maxY
+        return CGRect(x: f.minX, y: primaryMaxY - f.maxY, width: f.width, height: f.height)
+    }
+
+    func commit(stickyQuickTap: Bool = false) {
         let list = filteredWindows
+        // Sticky preselects the current window, so a quick tap flips to the previous one instead (#96).
+        if stickyQuickTap && mode != .spaces && selected == 0 && !selfFront && frontListed && list.count > 1 {
+            selected = 1
+        }
         if list.indices.contains(selected) {
             WindowFocuser.focus(list[selected])
             // Warm the cache once the Space transition settles so an immediate

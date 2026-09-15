@@ -11,6 +11,7 @@ final class HotkeyManager {
         let mode: Mode
         var sticky = false
         var currentSpaceOnly = false
+        var currentDisplayOnly = false
         /// Shift held at arm: start from the least-recent window, like native ⌘⇧Tab (#144).
         var reverse = false
     }
@@ -24,12 +25,14 @@ final class HotkeyManager {
         (.currentAppAlternate, ArmStyle(mode: .currentApp)),
         (.allWindowsSticky, ArmStyle(mode: .allWindows, sticky: true)),
         (.currentAppSticky, ArmStyle(mode: .currentApp, sticky: true)),
-        (.currentSpace, ArmStyle(mode: .allWindows, currentSpaceOnly: true))
+        (.currentSpace, ArmStyle(mode: .allWindows, currentSpaceOnly: true)),
+        (.currentDisplay, ArmStyle(mode: .allWindows, currentDisplayOnly: true))
     ]
 
     var onArm: ((ArmStyle) -> Void)?
     var onAdvance: ((Bool) -> Void)?
-    var onCommit: (() -> Void)?
+    /// True for a sticky-mode quick tap: the picker never showed, so commit the previous window (#96).
+    var onCommit: ((Bool) -> Void)?
     var onCancel: (() -> Void)?
     var onCloseSelected: (() -> Void)?
     var onCloseSelectedApp: (() -> Void)?
@@ -284,14 +287,14 @@ final class HotkeyManager {
                 if kc == Self.kcReturn || kc == Self.kcKeypadEnter {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
-                        self?.onCommit?()
+                        self?.onCommit?(false)
                     }
                     return nil
                 }
                 if !sticky && !(activeBinding?.modifiersHeld(flags) ?? false) {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
-                        self?.onCommit?()
+                        self?.onCommit?(false)
                     }
                     return Unmanaged.passUnretained(event)
                 }
@@ -379,10 +382,11 @@ final class HotkeyManager {
             if !armingHeld {
                 let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < Self.stickyQuickTapMS } ?? false) && !advanced
                 if !armedSticky || quickTap {
+                    let stickyQuickTap = armedSticky
                     clearArmedLocked()
                     stateLock.unlock()
                     DispatchQueue.main.async { [weak self] in
-                        self?.onCommit?()
+                        self?.onCommit?(stickyQuickTap)
                     }
                     return Unmanaged.passUnretained(event)
                 }
@@ -461,7 +465,7 @@ final class HotkeyManager {
         clearArmedLocked()
         stateLock.unlock()
         DispatchQueue.main.async { [weak self] in
-            self?.onCommit?()
+            self?.onCommit?(false)
         }
     }
 
