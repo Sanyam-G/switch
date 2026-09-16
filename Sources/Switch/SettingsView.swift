@@ -225,6 +225,10 @@ struct SettingsView: View {
                                   "List windows on the display the picker opens on (see Show picker on), not every display.",
                                   $prefs.currentDisplayOnly)
                         Divider().opacity(0.4)
+                        toggleRow("Move the cursor to the window",
+                                  "Jump the pointer to the chosen window when it sits on another display.",
+                                  $prefs.moveCursorToWindow)
+                        Divider().opacity(0.4)
                         toggleRow("Hide minimized and hidden windows",
                                   "Leave out windows that are minimized to the Dock or belong to hidden apps.",
                                   $prefs.hideMinimizedWindows)
@@ -649,6 +653,23 @@ struct SettingsView: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                         Text("Accent shows up in the selection highlight and across this Settings window.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .background(rowBackground)
+                }
+
+                section("Theme") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Picker("", selection: $prefs.appearance) {
+                            ForEach(SwitchPreferences.Appearance.allCases) { a in
+                                Text(a.label).tag(a)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        Text("Light or dark for the picker and this window, or follow the system.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }

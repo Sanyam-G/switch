@@ -58,7 +58,18 @@ enum WindowFocuser {
 
         cooperativeActivate(app)
 
+        if UserDefaults.standard.bool(forKey: SwitchPreferences.moveCursorToWindowKey) { moveCursor(to: window.bounds) }
         WindowMRU.touch(window.id)
+    }
+
+    // Only when the target sits on a different display than the pointer (#151).
+    private static func moveCursor(to bounds: CGRect) {
+        guard let mouse = CGEvent(source: nil)?.location else { return }
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        var mouseDisplay = CGDirectDisplayID(0), targetDisplay = CGDirectDisplayID(0), n: UInt32 = 0
+        CGGetDisplaysWithPoint(mouse, 1, &mouseDisplay, &n)
+        CGGetDisplaysWithPoint(center, 1, &targetDisplay, &n)
+        if mouseDisplay != targetDisplay { CGWarpMouseCursorPosition(center) }
     }
 
     // macOS 26 cooperative activation ignores activate() from the active app; yield first (#90).

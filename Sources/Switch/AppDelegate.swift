@@ -105,6 +105,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { SettingsWindow.shared.show() }
         }
 
+        SwitchPreferences.shared.$appearance
+            .sink { NSApp.appearance = $0.nsAppearance }
+            .store(in: &cancellables)
         SwitchPreferences.shared.$verticalList
             .dropFirst()
             .sink { [weak window] _ in window?.applyContentSize() }

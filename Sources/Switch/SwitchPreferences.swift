@@ -39,6 +39,25 @@ final class SwitchPreferences: ObservableObject {
         }
     }
 
+    enum Appearance: String, CaseIterable, Identifiable {
+        case system, light, dark
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .system: return "System"
+            case .light: return "Light"
+            case .dark: return "Dark"
+            }
+        }
+        var nsAppearance: NSAppearance? {
+            switch self {
+            case .system: return nil
+            case .light: return NSAppearance(named: .aqua)
+            case .dark: return NSAppearance(named: .darkAqua)
+            }
+        }
+    }
+
     enum PickerDisplay: String, CaseIterable, Identifiable {
         case mouse, active, primary
         var id: String { rawValue }
@@ -83,6 +102,14 @@ final class SwitchPreferences: ObservableObject {
 
     @Published var backgroundBlur: BackgroundBlur {
         didSet { UserDefaults.standard.set(backgroundBlur.rawValue, forKey: backgroundBlurKey) }
+    }
+
+    @Published var appearance: Appearance {
+        didSet { UserDefaults.standard.set(appearance.rawValue, forKey: appearanceKey) }
+    }
+
+    @Published var moveCursorToWindow: Bool {
+        didSet { UserDefaults.standard.set(moveCursorToWindow, forKey: SwitchPreferences.moveCursorToWindowKey) }
     }
 
     @Published var showTitleFirst: Bool {
@@ -215,6 +242,8 @@ final class SwitchPreferences: ObservableObject {
 
     private let accentKey = "switch.accent"
     private let backgroundBlurKey = "switch.backgroundBlur"
+    private let appearanceKey = "switch.appearance"
+    nonisolated static let moveCursorToWindowKey = "switch.moveCursorToWindow"
     private let showTitleFirstKey = "switch.showTitleFirst"
     nonisolated static let crossSpaceKey = "switch.showCrossSpace"
     nonisolated static let stickyModeKey = "switch.stickyMode"
@@ -250,6 +279,8 @@ final class SwitchPreferences: ObservableObject {
 
     private init() {
         accent = AccentChoice(rawValue: UserDefaults.standard.string(forKey: accentKey) ?? "") ?? .system
+        appearance = Appearance(rawValue: UserDefaults.standard.string(forKey: appearanceKey) ?? "") ?? .system
+        moveCursorToWindow = UserDefaults.standard.bool(forKey: SwitchPreferences.moveCursorToWindowKey)
         backgroundBlur = BackgroundBlur(rawValue: UserDefaults.standard.string(forKey: backgroundBlurKey) ?? "") ?? .light
         showTitleFirst = UserDefaults.standard.bool(forKey: showTitleFirstKey)
         showCrossSpace = (UserDefaults.standard.object(forKey: SwitchPreferences.crossSpaceKey) as? Bool) ?? true
