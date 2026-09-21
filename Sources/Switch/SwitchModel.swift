@@ -228,8 +228,14 @@ final class SwitchModel: ObservableObject {
         if SwitchPreferences.shared.includeWindowlessApps && mode == .allWindows {
             let switchablePIDs = full.allPIDs
             let ownBundle = Bundle.main.bundleIdentifier
+            let blacklist = SwitchPreferences.shared.blacklist
             let extras = NSWorkspace.shared.runningApplications
-                .filter { $0.activationPolicy == .regular && !switchablePIDs.contains($0.processIdentifier) && $0.bundleIdentifier != ownBundle }
+                .filter {
+                    $0.activationPolicy == .regular
+                        && !switchablePIDs.contains($0.processIdentifier)
+                        && $0.bundleIdentifier != ownBundle
+                        && $0.bundleIdentifier.map(blacklist.contains) != true
+                }
                 .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
                 .map { app in
                     WindowInfo(
