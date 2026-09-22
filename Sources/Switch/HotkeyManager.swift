@@ -275,7 +275,10 @@ final class HotkeyManager {
 
             if armedMode != nil {
                 let key = layoutChar(from: event)
-                let typeToFilter = (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
+                let vimNavigation = UserDefaults.standard.bool(forKey: SwitchPreferences.vimNavigationKey)
+                let typeToFilter = vimNavigation
+                    ? false
+                    : (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
                 if kc == Self.kcEscape {
                     clearArmed()
@@ -330,7 +333,7 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                if let direction = arrowDirection(for: kc) {
+                if let direction = arrowDirection(for: kc) ?? (vimNavigation ? vimDirection(for: key) : nil) {
                     DispatchQueue.main.async { [weak self] in
                         self?.onNavigate?(direction)
                     }
@@ -507,6 +510,16 @@ final class HotkeyManager {
         case Self.kcDownArrow:  return .down
         case Self.kcUpArrow:    return .up
         default:                return nil
+        }
+    }
+
+    private func vimDirection(for key: Character?) -> Direction? {
+        switch key {
+        case "h": return .left
+        case "j": return .down
+        case "k": return .up
+        case "l": return .right
+        default: return nil
         }
     }
 

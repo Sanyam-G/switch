@@ -209,8 +209,14 @@ struct SettingsView: View {
                                   "Keep Switch off the menu bar. Open Settings by pressing comma while the picker is open.",
                                   $prefs.hideMenuBarIcon)
                         Divider().opacity(0.4)
+                        toggleRow("Vim navigation",
+                                  "Use H J K L to move the selection. Turns off type to filter.",
+                                  $prefs.vimNavigation)
+                        Divider().opacity(0.4)
                         toggleRow("Type to filter",
-                                  "Filter windows by typing while the picker is open. When disabled, ⌘W/⌘Q/⌘H work directly.",
+                                  prefs.vimNavigation
+                                    ? "Turn this on to disable Vim navigation and filter windows by typing."
+                                    : "Filter windows by typing while the picker is open. When disabled, ⌘W/⌘Q/⌘H work directly.",
                                   $prefs.typeToFilter)
                         Divider().opacity(0.4)
                         toggleRow("Static order",
