@@ -127,15 +127,15 @@ extension TrackpadGestureManager {
         // three-finger swipe produces no observable events at all. Recent frames
         // or a gesture in progress still suppress the restart.
         events = []
-        var restartLevels: [Bool] = []
-        manager.livenessRestart = { restartLevels.append($0) }
+        var restartCount = 0
+        manager.livenessRestart = { restartCount += 1 }
         manager.inputIdleSecondsOverride = { 999 }   // no observable input at all
         manager.lastFrameUptime = DispatchTime.now().uptimeNanoseconds - 120 * 1_000_000_000
         manager.performLivenessCheck()
-        precondition(restartLevels == [false], "A stale delivered stream must rebuild even without observable input")
+        precondition(restartCount == 1, "A stale delivered stream must rebuild even without observable input")
         manager.lastFrameUptime = DispatchTime.now().uptimeNanoseconds
         manager.performLivenessCheck()
-        precondition(restartLevels == [false], "A recent frame must suppress the restart")
+        precondition(restartCount == 1, "A recent frame must suppress the restart")
         manager.inputIdleSecondsOverride = { 0 }
         events = []
         manager.regressionFrame([1, 2, 3], x: 0.5)
@@ -144,51 +144,43 @@ extension TrackpadGestureManager {
         precondition(events == ["begin:right", "tracking:true"], "Gesture must be active before the mid-gesture check")
         manager.lastFrameUptime = DispatchTime.now().uptimeNanoseconds - 120 * 1_000_000_000
         manager.performLivenessCheck()
-        precondition(restartLevels == [false], "A gesture in progress must not be restarted")
+        precondition(restartCount == 1, "A gesture in progress must not be restarted")
         manager.regressionFrame([], x: 0.55)
         drainRegressionEvents()
         precondition(events == ["begin:right", "tracking:true", "tracking:false", "finish:true"],
                      "The mid-gesture contacts must still finish normally")
 
-        // Receiving frames again resets the escalation; the next silent window starts
-        // cheap (cached re-register) and persistent silence escalates to rediscovery
-        // with growing spacing.
+        // Receiving frames again resets the escalation; the next silent window
+        // restarts at the base spacing and persistent silence doubles it, capped.
         precondition(manager.consecutiveRestartsForRegression == 0, "Frames must reset restart escalation")
         manager.lastRestartUptime = DispatchTime.now().uptimeNanoseconds - 300 * 1_000_000_000
         manager.lastFrameUptime = DispatchTime.now().uptimeNanoseconds - 120 * 1_000_000_000
         manager.performLivenessCheck()
-        precondition(restartLevels == [false, false], "A fresh silent window restarts at the cheap level")
-        manager.lastRestartUptime = DispatchTime.now().uptimeNanoseconds - 300 * 1_000_000_000
-        manager.lastFrameUptime = DispatchTime.now().uptimeNanoseconds - 120 * 1_000_000_000
-        manager.performLivenessCheck()
-        precondition(restartLevels == [false, false, true],
-                     "A second consecutive failure must escalate to full rediscovery")
+        precondition(restartCount == 2, "A fresh silent window restarts at the base spacing")
         manager.lastRestartUptime = DispatchTime.now().uptimeNanoseconds
         manager.lastFrameUptime = DispatchTime.now().uptimeNanoseconds - 120 * 1_000_000_000
         manager.performLivenessCheck()
-        precondition(restartLevels == [false, false, true],
-                     "The escalated spacing must delay the next restart")
+        precondition(restartCount == 2, "The doubled spacing must delay the next restart")
 
         // A stream can be dead from launch: no frame has ever arrived, so the
         // discovery time anchors the check. Active input must trigger the rebuild;
         // a user who simply never touches the trackpad must not.
         manager.regressionFrame([], x: 0.55)
         drainRegressionEvents()
-        restartLevels = []
         manager.consecutiveRestarts = 0
         manager.lastFrameUptime = 0
         manager.startedAtUptime = DispatchTime.now().uptimeNanoseconds - 120 * 1_000_000_000
         manager.lastRestartUptime = DispatchTime.now().uptimeNanoseconds - 300 * 1_000_000_000
         manager.inputIdleSecondsOverride = { 999 }
         manager.performLivenessCheck()
-        precondition(restartLevels.isEmpty, "No input activity must not rebuild a never-delivered stream")
+        precondition(restartCount == 2, "No input activity must not rebuild a never-delivered stream")
         manager.inputIdleSecondsOverride = { 0 }
         manager.performLivenessCheck()
-        precondition(restartLevels == [false], "A stream dead since launch must rebuild while input is active")
+        precondition(restartCount == 3, "A stream dead since launch must rebuild while input is active")
         manager.lastFrameUptime = 0
         manager.startedAtUptime = 0
         manager.performLivenessCheck()
-        precondition(restartLevels == [false], "No time anchor yet must not rebuild")
+        precondition(restartCount == 3, "No time anchor yet must not rebuild")
         print("PASS: trackpad liveness watchdog and cancelled-gesture recovery")
     }
 }

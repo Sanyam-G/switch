@@ -43,20 +43,28 @@ final class TrackpadGestureManager {
     private typealias RegisterCallback = @convention(c) (UnsafeMutableRawPointer?, ContactCallback) -> Void
     private typealias UnregisterCallback = @convention(c) (UnsafeMutableRawPointer?, ContactCallback) -> Void
     private typealias StartDevice = @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void
+    private typealias StopDevice = @convention(c) (UnsafeMutableRawPointer?) -> Void
 
     private static let horizontalActivationDistance: Float = 0.0225
     private static let horizontalStepDistance: Float = 0.0275
     private static let verticalActivationDistance: Float = 0.045
     private static let verticalStepDistance: Float = 0.055
 
-    /// A registration can go silently stale (input subsystem re-enumeration), after
-    /// which no contact frames are delivered even though the trackpad is in use.
-    /// When this much time passes with system touch-like input but no frames, the
-    /// registration is rebuilt.
+    /// A registration can go silently stale (observed after system gesture
+    /// handling, input re-enumeration, and DarkWake): no contact frames are
+    /// delivered even though the trackpad is in use. When this much time passes
+    /// without frames, the registration is rebuilt on a fresh device discovery.
     private static let livenessThresholdNanos: UInt64 = 30 * 1_000_000_000
-    /// Restart spacing doubles with each consecutive unsuccessful restart, capped here.
+    /// Rebuild spacing doubles with each consecutive unsuccessful rebuild, capped here.
     private static let baseRestartSpacingNanos: UInt64 = 60 * 1_000_000_000
     private static let maxRestartSpacingNanos: UInt64 = 600 * 1_000_000_000
+    /// MTDeviceStop tears down the device thread and crashes inside
+    /// MultitouchSupport when a contact callback is in flight, so a device is
+    /// stopped exactly once, at least this long after its callback is unregistered
+    /// (validated: unregister → 2s silence → stop, five cycles under live frames).
+    /// Skipping the stop entirely is worse: abandoned device threads keep polling
+    /// and eventually starve the kernel's multitouch queue for every client.
+    private static let retirementDelayNanos: UInt64 = 2 * 1_000_000_000
 
     private static let callback: ContactCallback = { device, touches, count, _, _ in
         guard let device else { return 0 }
@@ -76,15 +84,20 @@ final class TrackpadGestureManager {
     // flight on a device thread would crash, and reloading costs nothing.
     private static var libraryHandle: UnsafeMutableRawPointer?
 
+    private struct RetiringDevice {
+        var device: UnsafeMutableRawPointer
+        var unregisteredAtNanos: UInt64
+    }
+
     private let stateLock = NSLock()
     // framework doubles as the enabled flag: while nil, contact frames are ignored.
     private var framework: UnsafeMutableRawPointer?
-    // Devices from the last discovery, kept across stop() so a restart can
-    // re-register them instead of leaking another set of device objects.
     private var devices: [UnsafeMutableRawPointer] = []
+    private var retiringDevices: [RetiringDevice] = []
     private var registerCallback: RegisterCallback?
     private var unregisterCallback: UnregisterCallback?
     private var startDeviceCallback: StartDevice?
+    private var stopDeviceCallback: StopDevice?
     private var trackingDevice: UnsafeMutableRawPointer?
     private var trackedTouchIDs: Set<Int32> = []
     private var needsTouchRebind = false
@@ -102,11 +115,17 @@ final class TrackpadGestureManager {
     private var lastStartFailureLog: String?
     /// Regression hook: when set, replaces the system-wide idle query.
     var inputIdleSecondsOverride: (() -> Double)?
-    /// Regression hook: when set, replaces the stop/start (or rediscovery) rebuild.
-    var livenessRestart: ((Bool) -> Void)?
+    /// Regression hook: when set, replaces the rediscovery rebuild.
+    var livenessRestart: (() -> Void)?
 
     deinit {
         stop()
+    }
+
+    var isRunning: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return framework != nil
     }
 
     /// Discard queued input and wait for the current contacts to lift before recognizing another gesture.
@@ -121,38 +140,14 @@ final class TrackpadGestureManager {
         stateLock.unlock()
     }
 
-    var isRunning: Bool {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        return framework != nil
-    }
-
     @discardableResult
     func start() -> Bool {
         stateLock.lock()
-        let alreadyStarted = framework != nil
-        let cachedDevices = devices
-        let cachedRegister = registerCallback
-        stateLock.unlock()
-        // framework != nil with no devices means a rediscovery was interrupted
-        // before discovery succeeded: fall through and discover again.
-        if alreadyStarted && !cachedDevices.isEmpty { return true }
-
-        if !cachedDevices.isEmpty, let register = cachedRegister {
-            // Re-enable after stop(): the device threads are still running from the
-            // previous registration, so only the callback needs reinstalling.
-            stateLock.lock()
-            framework = Self.loadLibrary()
+        if framework != nil {
             stateLock.unlock()
-            for device in cachedDevices {
-                Self.registryLock.lock()
-                Self.owners[device] = self
-                Self.registryLock.unlock()
-                register(device, Self.callback)
-            }
-            Self.log("monitoring re-enabled on \(cachedDevices.count) cached device(s)")
             return true
         }
+        stateLock.unlock()
 
         guard let library = Self.loadLibrary() else {
             logStartFailure("failed to load MultitouchSupport")
@@ -162,6 +157,7 @@ final class TrackpadGestureManager {
               let register: RegisterCallback = symbol("MTRegisterContactFrameCallback", in: library),
               let unregister: UnregisterCallback = symbol("MTUnregisterContactFrameCallback", in: library),
               let startDevice: StartDevice = symbol("MTDeviceStart", in: library),
+              let stopDevice: StopDevice = symbol("MTDeviceStop", in: library),
               let list = createList()?.takeRetainedValue() else {
             logStartFailure("MultitouchSupport symbols unavailable")
             return false
@@ -183,6 +179,7 @@ final class TrackpadGestureManager {
         registerCallback = register
         unregisterCallback = unregister
         startDeviceCallback = startDevice
+        stopDeviceCallback = stopDevice
         callbackGeneration &+= 1
         startedAtUptime = DispatchTime.now().uptimeNanoseconds
         lastStartFailureLog = nil
@@ -217,10 +214,9 @@ final class TrackpadGestureManager {
         if changed { Self.log(message) }
     }
 
-    /// Suspend recognition: unregister the contact callback but keep the device
-    /// threads running. MTDeviceStop must never be called — its thread-teardown
-    /// path crashes inside MultitouchSupport when frames are in flight, and the
-    /// devices are needed intact for a cheap restart later.
+    /// Suspend recognition: unregister the contact callbacks; the devices move to
+    /// the retirement queue. framework doubling as the enabled flag means frames
+    /// arriving during the unregister→stop window are ignored.
     func stop() {
         stateLock.lock()
         let currentDevices = devices
@@ -228,6 +224,7 @@ final class TrackpadGestureManager {
         let shouldCancel = active
         let wasEnabled = framework != nil
         framework = nil
+        devices = []
         callbackGeneration &+= 1
         resetLocked()
         if shouldCancel {
@@ -235,20 +232,14 @@ final class TrackpadGestureManager {
         }
         stateLock.unlock()
 
-        for device in currentDevices {
-            unregister?(device, Self.callback)
-            Self.registryLock.lock()
-            Self.owners.removeValue(forKey: device)
-            Self.registryLock.unlock()
-        }
+        queueForRetirement(currentDevices, unregister: unregister)
         if wasEnabled {
-            Self.log("callbacks unregistered (\(currentDevices.count) device(s) kept for restart)")
+            Self.log("callbacks unregistered (\(currentDevices.count) device(s) queued for retirement)")
         }
     }
 
-    /// Full re-discovery for a stream that re-registration could not revive. The
-    /// old device objects are abandoned without MTDeviceStop (see stop()); they
-    /// leak deliberately and bounded by the restart spacing.
+    /// Full re-discovery: rebuild the registration on fresh device objects. The
+    /// old ones are unregistered and retired on the delay schedule.
     func rediscoverDevices() {
         stateLock.lock()
         guard framework != nil, trackingDevice == nil, !active else {
@@ -262,22 +253,56 @@ final class TrackpadGestureManager {
         resetLocked()
         stateLock.unlock()
 
-        for device in oldDevices {
+        queueForRetirement(oldDevices, unregister: unregister)
+        Self.log("rediscovering trackpad devices (\(oldDevices.count) retired)")
+        _ = start()
+    }
+
+    private func queueForRetirement(
+        _ devicesToRetire: [UnsafeMutableRawPointer], unregister: UnregisterCallback?
+    ) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        for device in devicesToRetire {
             unregister?(device, Self.callback)
             Self.registryLock.lock()
             Self.owners.removeValue(forKey: device)
             Self.registryLock.unlock()
         }
-        Self.log("rediscovering trackpad devices (\(oldDevices.count) abandoned)")
-        _ = start()
+        stateLock.lock()
+        retiringDevices.append(contentsOf: devicesToRetire.map {
+            RetiringDevice(device: $0, unregisteredAtNanos: now)
+        })
+        stateLock.unlock()
     }
 
-    /// Periodic self-check: if the system is producing touch-like input but no contact
-    /// frame has arrived for a while, the registration has gone stale and is rebuilt.
-    /// The first rebuild reuses the cached devices; persistent silence escalates to a
-    /// full re-discovery with exponentially increasing spacing. Skipped while a
-    /// gesture is in progress.
+    /// Stop queued devices whose callback has long finished. Called every second
+    /// by the availability poll — including while monitoring is disabled, so a
+    /// disable that caught live frames still retires its devices.
+    private func drainRetiringDevices() {
+        stateLock.lock()
+        let now = DispatchTime.now().uptimeNanoseconds
+        let due = retiringDevices.filter { now &- $0.unregisteredAtNanos >= Self.retirementDelayNanos }
+        retiringDevices.removeAll { now &- $0.unregisteredAtNanos >= Self.retirementDelayNanos }
+        let stopDevice = stopDeviceCallback
+        stateLock.unlock()
+
+        for entry in due {
+            stopDevice?(entry.device)
+        }
+        if !due.isEmpty {
+            Self.log("retired \(due.count) stale device object(s)")
+        }
+    }
+
+    /// Periodic self-check: if no contact frame has arrived for a while, the
+    /// registration has gone stale and is rebuilt on fresh devices. A
+    /// three-finger swipe produces no observable events at all — no scrolling,
+    /// no pointer movement, no drag — so once the stream has delivered frames,
+    /// recovery runs on its spacing alone; only a never-delivered stream (dead
+    /// from launch, mouse-only desktops) still requires evidence of input.
     func performLivenessCheck() {
+        drainRetiringDevices()
+
         let now = DispatchTime.now().uptimeNanoseconds
         stateLock.lock()
         guard framework != nil, trackingDevice == nil, !active else {
@@ -305,33 +330,22 @@ final class TrackpadGestureManager {
         )
         guard lastRestartUptime == 0 || now &- lastRestartUptime > spacing else { return }
 
-        // A three-finger swipe produces no observable events at all — no scrolling,
-        // no pointer movement, no drag — so input activity must not gate recovery
-        // once the stream has delivered frames before: the user can be trying the
-        // gesture over and over while the idle query says "no input". Only a stream
-        // that never delivered (mouse-only desktops, launch-time deadness) still
-        // requires evidence of input before spending a restart.
         let inputActive = (inputIdleSecondsOverride?() ?? Self.systemInputIdleSeconds())
             < Double(Self.livenessThresholdNanos) / 1_000_000_000
         guard inputActive || hasDelivered else { return }
 
-        let fullRediscovery = restarts >= 1
         stateLock.lock()
         lastRestartUptime = now
         consecutiveRestarts &+= 1
         stateLock.unlock()
         Self.log(String(
-            format: "contact stream silent for %.0fs while input is active — %@",
-            Double(frameAge) / 1_000_000_000,
-            fullRediscovery ? "rediscovering devices" : "re-registering"
+            format: "contact stream silent for %.0fs — rediscovering devices",
+            Double(frameAge) / 1_000_000_000
         ))
         if let restart = livenessRestart {
-            restart(fullRediscovery)
-        } else if fullRediscovery {
-            rediscoverDevices()
+            restart()
         } else {
-            stop()
-            _ = start()
+            rediscoverDevices()
         }
     }
 
