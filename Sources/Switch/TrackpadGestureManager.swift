@@ -242,7 +242,18 @@ final class TrackpadGestureManager {
     /// old ones are unregistered and retired on the delay schedule.
     func rediscoverDevices() {
         stateLock.lock()
-        guard framework != nil, trackingDevice == nil, !active else {
+        guard framework != nil else {
+            stateLock.unlock()
+            return
+        }
+        // A gesture left mid-flight by a dead stream must not block the rebuild.
+        let now = DispatchTime.now().uptimeNanoseconds
+        let reference = lastFrameUptime != 0 ? lastFrameUptime : startedAtUptime
+        if reference != 0, now >= reference, now &- reference > Self.livenessThresholdNanos,
+           trackingDevice != nil || active {
+            resetLocked()
+        }
+        guard trackingDevice == nil, !active else {
             stateLock.unlock()
             return
         }
@@ -305,7 +316,7 @@ final class TrackpadGestureManager {
 
         let now = DispatchTime.now().uptimeNanoseconds
         stateLock.lock()
-        guard framework != nil, trackingDevice == nil, !active else {
+        guard framework != nil else {
             stateLock.unlock()
             return
         }
@@ -319,6 +330,17 @@ final class TrackpadGestureManager {
             return
         }
         let frameAge = now &- reference
+        // A gesture is only "in progress" while its frames keep flowing. When the
+        // stream dies mid-gesture — which a three-finger swipe tends to do — the
+        // bound tracking state would otherwise block every future check.
+        if frameAge > Self.livenessThresholdNanos, trackingDevice != nil || active {
+            Self.log("abandoning gesture state, stream silent for \(frameAge / 1_000_000_000)s")
+            resetLocked()
+        }
+        guard trackingDevice == nil, !active else {
+            stateLock.unlock()
+            return
+        }
         let hasDelivered = lastFrameUptime != 0
         let restarts = consecutiveRestarts
         stateLock.unlock()
