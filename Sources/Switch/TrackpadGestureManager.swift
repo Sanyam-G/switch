@@ -143,11 +143,13 @@ final class TrackpadGestureManager {
     @discardableResult
     func start() -> Bool {
         stateLock.lock()
-        if framework != nil {
-            stateLock.unlock()
-            return true
-        }
+        let frameworkLoaded = framework != nil
+        let cachedDevices = devices
         stateLock.unlock()
+        // framework != nil with no devices means a rebuild was interrupted before
+        // discovery succeeded (rediscoverDevices empties the list first): fall
+        // through and discover again instead of short-circuiting into nothing.
+        if frameworkLoaded && !cachedDevices.isEmpty { return true }
 
         guard let library = Self.loadLibrary() else {
             logStartFailure("failed to load MultitouchSupport")
