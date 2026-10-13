@@ -58,12 +58,15 @@ final class TrackpadGestureManager {
     /// Rebuild spacing doubles with each consecutive unsuccessful rebuild, capped here.
     private static let baseRestartSpacingNanos: UInt64 = 60 * 1_000_000_000
     private static let maxRestartSpacingNanos: UInt64 = 600 * 1_000_000_000
-    /// MTDeviceStop tears down the device thread and crashes inside
-    /// MultitouchSupport when a contact callback is in flight, so a device is
-    /// stopped exactly once, at least this long after its callback is unregistered
-    /// (validated: unregister → 2s silence → stop, five cycles under live frames).
-    /// Skipping the stop entirely is worse: abandoned device threads keep polling
-    /// and eventually starve the kernel's multitouch queue for every client.
+    /// MTDeviceStop tears down the device thread, and crashes inside
+    /// MultitouchSupport when the teardown releases the last reference to the
+    /// device: the framework then re-stops an already-stopped port. Registration
+    /// therefore holds one strong reference per device for the process lifetime,
+    /// so the thread-exit release never reaches zero (validated: eight live-frame
+    /// cycles of unregister → 2s silence → stop with the extra reference, no
+    /// crash, every subsequent registration received frames). Skipping the stop
+    /// entirely is worse: abandoned device threads keep polling and eventually
+    /// starve the kernel's multitouch queue for every client.
     private static let retirementDelayNanos: UInt64 = 2 * 1_000_000_000
 
     private static let callback: ContactCallback = { device, touches, count, _, _ in
@@ -113,6 +116,10 @@ final class TrackpadGestureManager {
     private var lastRestartUptime: UInt64 = 0
     private var consecutiveRestarts: UInt = 0
     private var lastStartFailureLog: String?
+    // One strong reference per discovered device, held for the process lifetime:
+    // without it the device thread's exit release hits refcount zero and the
+    // framework's final-release path re-stops a stopped port and crashes.
+    private var keepAliveDevices: [AnyObject] = []
     /// Regression hook: when set, replaces the system-wide idle query.
     var inputIdleSecondsOverride: (() -> Double)?
     /// Regression hook: when set, replaces the rediscovery rebuild.
@@ -168,7 +175,9 @@ final class TrackpadGestureManager {
         var discovered: [UnsafeMutableRawPointer] = []
         for index in 0..<CFArrayGetCount(list) {
             guard let device = CFArrayGetValueAtIndex(list, index) else { continue }
-            discovered.append(UnsafeMutableRawPointer(mutating: device))
+            let pointer = UnsafeMutableRawPointer(mutating: device)
+            keepAliveDevices.append(unsafeBitCast(pointer, to: AnyObject.self))
+            discovered.append(pointer)
         }
 
         guard !discovered.isEmpty else {
