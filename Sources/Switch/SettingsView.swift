@@ -341,6 +341,8 @@ struct SettingsView: View {
 
                 blacklistSection
 
+                passthroughSection
+
                 titleExclusionSection
             }
             .padding(24)
@@ -548,20 +550,38 @@ struct SettingsView: View {
     }
 
     private var blacklistSection: some View {
-        section("Excluded apps") {
+        appListSection(
+            "Excluded apps",
+            caption: "Windows from these apps won't appear in the picker.",
+            emptyText: "Nothing excluded.",
+            apps: $prefs.blacklist
+        )
+    }
+
+    private var passthroughSection: some View {
+        appListSection(
+            "Pass-through apps",
+            caption: "Switch's hotkeys go to these apps while they're frontmost, e.g. a virtual machine or remote desktop.",
+            emptyText: "No pass-through apps.",
+            apps: $prefs.passthroughApps
+        )
+    }
+
+    private func appListSection(_ title: String, caption: String, emptyText: String, apps: Binding<Set<String>>) -> some View {
+        section(title) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Windows from these apps won't appear in the picker.")
+                Text(caption)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                if prefs.blacklist.isEmpty {
-                    Text("Nothing excluded.")
+                if apps.wrappedValue.isEmpty {
+                    Text(emptyText)
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                         .padding(.vertical, 4)
                 } else {
                     VStack(spacing: 4) {
-                        ForEach(Array(prefs.blacklist).sorted(by: { sortKey($0) < sortKey($1) }), id: \.self) { bid in
-                            blacklistRow(bundleID: bid)
+                        ForEach(Array(apps.wrappedValue).sorted(by: { sortKey($0) < sortKey($1) }), id: \.self) { bid in
+                            appRow(bundleID: bid) { apps.wrappedValue.remove(bid) }
                         }
                     }
                 }
@@ -569,7 +589,7 @@ struct SettingsView: View {
                     ForEach(addableApps(), id: \.bundleIdentifier) { app in
                         Button {
                             if let bid = app.bundleIdentifier {
-                                prefs.blacklist.insert(bid)
+                                apps.wrappedValue.insert(bid)
                             }
                         } label: {
                             if let icon = app.icon {
@@ -590,7 +610,7 @@ struct SettingsView: View {
         }
     }
 
-    private func blacklistRow(bundleID: String) -> some View {
+    private func appRow(bundleID: String, onRemove: @escaping () -> Void) -> some View {
         let (name, icon) = appInfo(for: bundleID)
         return HStack(spacing: 8) {
             if let icon {
@@ -606,9 +626,7 @@ struct SettingsView: View {
                     .lineLimit(1)
             }
             Spacer()
-            Button {
-                prefs.blacklist.remove(bundleID)
-            } label: {
+            Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
             }
