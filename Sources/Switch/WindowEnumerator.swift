@@ -111,15 +111,23 @@ enum WindowEnumerator {
     }
 
     static func fullSnapshot() -> FullSnapshot {
-        let onScreen = enumerate(option: [.optionOnScreenOnly, .excludeDesktopElements])
-        let everything = enumerate(option: [.optionAll, .excludeDesktopElements])
-        let pids = Set(everything.map(\.pid)).union(onScreen.map(\.pid))
+        let rawOnScreen = enumerate(option: [.optionOnScreenOnly, .excludeDesktopElements])
+        let rawEverything = enumerate(option: [.optionAll, .excludeDesktopElements])
+        let pids = Set(rawEverything.map(\.pid)).union(rawOnScreen.map(\.pid))
         let ax = axWindowState(for: pids)
         let cid = CGSMainConnectionID()
         let metadata = spaceMetadata(cid: cid)
         let stageManager = stageManagerEnabled
         // Without Screen Recording every CG title is empty, so emptiness is no ghost signal (#106).
         let titlesReliable = CGPreflightScreenCaptureAccess()
+        // An untitled on-screen window AX doesn't list, from an app whose other windows AX does list,
+        // is an overlay: Notes' find highlight (#152), in-process border windows (#154).
+        let axPIDs = Set(rawEverything.filter { ax.axBacked.contains($0.id) }.map(\.pid))
+        let overlays: Set<CGWindowID> = titlesReliable ? Set(rawOnScreen.filter {
+            $0.title.isEmpty && !ax.axBacked.contains($0.id) && axPIDs.contains($0.pid)
+        }.map(\.id)) : []
+        let onScreen = rawOnScreen.filter { !overlays.contains($0.id) }
+        let everything = rawEverything.filter { !overlays.contains($0.id) }
 
         let active = pruneGhosts(onScreen, axBacked: ax.axBacked, cid: cid)
         let activeIDs = Set(active.map(\.id))
