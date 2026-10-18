@@ -56,6 +56,8 @@ final class HotkeyManager {
     private var lastShift = false
     private var shiftTapPending = false
     private var suspended = false
+    /// Read on the tap thread; NSWorkspace is only safe to query from main.
+    private var frontmostBundleID: String?
     private var stopRequested = false
 
     private var tapThread: Thread?
@@ -65,6 +67,7 @@ final class HotkeyManager {
     private static let stickyQuickTapMS: Double = 200
     private var wakeToken: NSObjectProtocol?
     private var screensWakeToken: NSObjectProtocol?
+    private var activateToken: NSObjectProtocol?
     private var healthTimer: Timer?
 
     private static let kcEscape: CGKeyCode = 53
@@ -82,14 +85,17 @@ final class HotkeyManager {
         if !ensureAccessibility() { return }
         startTapThread()
         installWakeObserver()
+        installFrontmostObserver()
         startHealthCheck()
     }
 
     func stop() {
         if let wakeToken { NSWorkspace.shared.notificationCenter.removeObserver(wakeToken) }
         if let screensWakeToken { NSWorkspace.shared.notificationCenter.removeObserver(screensWakeToken) }
+        if let activateToken { NSWorkspace.shared.notificationCenter.removeObserver(activateToken) }
         wakeToken = nil
         screensWakeToken = nil
+        activateToken = nil
         healthTimer?.invalidate()
         healthTimer = nil
         stateLock.lock()
@@ -170,6 +176,34 @@ final class HotkeyManager {
         ) { [weak self] _ in
             self?.reinstallIfNeeded()
         }
+    }
+
+    private func installFrontmostObserver() {
+        setFrontmost(NSWorkspace.shared.frontmostApplication)
+        activateToken = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil, queue: .main
+        ) { [weak self] note in
+            self?.setFrontmost(note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)
+        }
+    }
+
+    private func setFrontmost(_ app: NSRunningApplication?) {
+        stateLock.lock()
+        frontmostBundleID = app?.bundleIdentifier
+        stateLock.unlock()
+    }
+
+    /// Hotkeys go to pass-through apps (VMs, remote desktops) instead of arming the picker.
+    /// Once armed, keep handling them so cycling onto such an app doesn't drop the picker.
+    private func shouldPassThrough() -> Bool {
+        stateLock.lock()
+        let bid = frontmostBundleID
+        let isArmed = armed != nil
+        stateLock.unlock()
+        guard !isArmed, let bid else { return false }
+        let apps = UserDefaults.standard.stringArray(forKey: SwitchPreferences.passthroughAppsKey) ?? []
+        return apps.contains(bid)
     }
 
     /// Defense in depth: even with timeout + wake handlers, occasionally a tap
@@ -254,6 +288,7 @@ final class HotkeyManager {
 
             if let stickyBinding = HotkeyConfig.shared[.stickyToggle],
                stickyBinding.matchesTrigger(keyCode: kc, flags: flags) {
+                if shouldPassThrough() { return Unmanaged.passUnretained(event) }
                 DispatchQueue.main.async { [weak self] in
                     self?.onStickyToggle?()
                 }
@@ -263,6 +298,7 @@ final class HotkeyManager {
             for (slot, style) in Self.armSlots {
                 guard let binding = HotkeyConfig.shared[slot],
                       binding.matchesTrigger(keyCode: kc, flags: flags) else { continue }
+                if shouldPassThrough() { return Unmanaged.passUnretained(event) }
                 armOrAdvance(style, binding: binding, shift: shift)
                 return nil
             }
