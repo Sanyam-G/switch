@@ -10,8 +10,8 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let defaultGridColumns = 4
     nonisolated static let defaultMaxListRows = 8
     nonisolated static let defaultPanelWidthScale = 1.0
-    nonisolated static let minPanelWidthScale = 0.6
-    nonisolated static let maxPanelWidthScale = 2.0
+    nonisolated static let minPanelWidthScale = 0.65  // 572pt grid, above its 560pt floor
+    nonisolated static let maxPanelWidthScale = 2.4  // covers the 300pt thumbnail maximum when migrating
     nonisolated static let defaultGridPanelWidth = 880.0
     nonisolated static let defaultListPanelWidth = 520.0
     nonisolated static let defaultPickerActivationDelay = 130.0
