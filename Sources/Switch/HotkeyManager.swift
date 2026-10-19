@@ -391,6 +391,8 @@ final class HotkeyManager {
                     }
                     return nil
                 }
+                // Unbound keys stay with the picker; otherwise ⌘S or ⌘X lands in the app underneath.
+                return nil
             }
         }
 
