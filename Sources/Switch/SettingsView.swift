@@ -311,8 +311,17 @@ struct SettingsView: View {
                                 .tint(prefs.accent.color)
                         }
                         Divider().opacity(0.4)
+                        row(title: "Panel width",
+                            detail: panelWidthDetail) {
+                            Slider(value: $prefs.panelWidthScale,
+                                   in: SwitchPreferences.minPanelWidthScale...SwitchPreferences.maxPanelWidthScale,
+                                   step: 0.05)
+                                .frame(width: 140)
+                                .tint(prefs.accent.color)
+                        }
+                        Divider().opacity(0.4)
                         row(title: "Thumbnail size",
-                            detail: "Overall picker size. \(Int(prefs.thumbnailHeight))pt") {
+                            detail: "Height of each window preview. \(Int(prefs.thumbnailHeight))pt") {
                             Slider(value: $prefs.thumbnailHeight, in: 80...300, step: 5)
                                 .frame(width: 140)
                                 .tint(prefs.accent.color)
@@ -326,7 +335,7 @@ struct SettingsView: View {
                         }
                         Divider().opacity(0.4)
                         row(title: "Reset sizing",
-                            detail: "Restore columns, rows, thumbnail size, and app icon size.") {
+                            detail: "Restore panel width, columns, rows, thumbnail size, and app icon size.") {
                             Button("Reset") {
                                 resetSizing()
                             }
@@ -428,9 +437,19 @@ struct SettingsView: View {
         }
     }
 
+    private var panelWidthDetail: String {
+        let base = prefs.verticalList
+            ? SwitchPreferences.defaultListPanelWidth
+            : SwitchPreferences.defaultGridPanelWidth
+        let points = Int((base * prefs.panelWidthScale).rounded())
+        let layout = prefs.verticalList ? "list" : "grid"
+        return "Width of the picker, independent of thumbnail size. \(points)pt (\(layout))"
+    }
+
     private func resetSizing() {
         prefs.gridColumns = SwitchPreferences.defaultGridColumns
         prefs.maxListRows = SwitchPreferences.defaultMaxListRows
+        prefs.panelWidthScale = SwitchPreferences.defaultPanelWidthScale
         prefs.thumbnailHeight = SwitchPreferences.defaultThumbnailHeight
         prefs.appIconSize = SwitchPreferences.defaultAppIconSize
     }
