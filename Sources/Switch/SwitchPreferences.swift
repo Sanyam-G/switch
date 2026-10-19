@@ -204,6 +204,7 @@ final class SwitchPreferences: ObservableObject {
         didSet {
             UserDefaults.standard.set(typeToFilter, forKey: SwitchPreferences.typeToFilterKey)
             if typeToFilter && vimNavigation { vimNavigation = false }
+            if typeToFilter && homeRowSelection { homeRowSelection = false }
         }
     }
 
@@ -211,6 +212,15 @@ final class SwitchPreferences: ObservableObject {
         didSet {
             UserDefaults.standard.set(vimNavigation, forKey: SwitchPreferences.vimNavigationKey)
             if vimNavigation && typeToFilter { typeToFilter = false }
+            if vimNavigation && homeRowSelection { homeRowSelection = false }
+        }
+    }
+
+    @Published var homeRowSelection: Bool {
+        didSet {
+            UserDefaults.standard.set(homeRowSelection, forKey: SwitchPreferences.homeRowSelectionKey)
+            if homeRowSelection && typeToFilter { typeToFilter = false }
+            if homeRowSelection && vimNavigation { vimNavigation = false }
         }
     }
 
@@ -282,6 +292,9 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let currentDisplayOnlyKey = "switch.currentDisplayOnly"
     nonisolated static let typeToFilterKey = "switch.typeToFilter"
     nonisolated static let vimNavigationKey = "switch.vimNavigation"
+    nonisolated static let homeRowSelectionKey = "switch.homeRowSelection"
+    // Pick windows 1-9 by layout character; H is left out so ⌘H still hides (#171).
+    nonisolated static let homeRowKeys: [Character] = ["a", "s", "d", "f", "g", "j", "k", "l", ";"]
     nonisolated static let thumbnailHeightKey = "switch.thumbnailHeight"
     nonisolated static let appIconSizeKey = "switch.appIconSize"
     nonisolated static let gridColumnsKey = "switch.gridColumns"
@@ -320,9 +333,11 @@ final class SwitchPreferences: ObservableObject {
         showHintStrip = (UserDefaults.standard.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
         showWindowCount = (UserDefaults.standard.object(forKey: SwitchPreferences.showWindowCountKey) as? Bool) ?? true
         currentDisplayOnly = UserDefaults.standard.bool(forKey: SwitchPreferences.currentDisplayOnlyKey)
-        let storedVimNavigation = UserDefaults.standard.bool(forKey: SwitchPreferences.vimNavigationKey)
+        let storedHomeRow = UserDefaults.standard.bool(forKey: SwitchPreferences.homeRowSelectionKey)
+        let storedVimNavigation = !storedHomeRow && UserDefaults.standard.bool(forKey: SwitchPreferences.vimNavigationKey)
+        homeRowSelection = storedHomeRow
         vimNavigation = storedVimNavigation
-        typeToFilter = storedVimNavigation
+        typeToFilter = storedVimNavigation || storedHomeRow
             ? false
             : (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
         thumbnailHeight = (UserDefaults.standard.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double) ?? Self.defaultThumbnailHeight

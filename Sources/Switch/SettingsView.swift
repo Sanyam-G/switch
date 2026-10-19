@@ -210,12 +210,16 @@ struct SettingsView: View {
                                   $prefs.hideMenuBarIcon)
                         Divider().opacity(0.4)
                         toggleRow("Vim navigation",
-                                  "Use H J K L to move the selection. Turns off type to filter.",
+                                  "Use H J K L to move the selection. Turns off type to filter and home row keys.",
                                   $prefs.vimNavigation)
                         Divider().opacity(0.4)
+                        toggleRow("Home row keys",
+                                  "Pick the first nine windows with A S D F G J K L ; as well as 1-9. Turns off type to filter and Vim navigation.",
+                                  $prefs.homeRowSelection)
+                        Divider().opacity(0.4)
                         toggleRow("Type to filter",
-                                  prefs.vimNavigation
-                                    ? "Turn this on to disable Vim navigation and filter windows by typing."
+                                  prefs.vimNavigation || prefs.homeRowSelection
+                                    ? "Turn this on to filter windows by typing. Turns off Vim navigation and home row keys."
                                     : "Filter windows by typing while the picker is open. When disabled, ⌘W/⌘Q/⌘H work directly.",
                                   $prefs.typeToFilter)
                         Divider().opacity(0.4)
@@ -239,8 +243,8 @@ struct SettingsView: View {
                                   "Leave out windows that are minimized to the Dock or belong to hidden apps.",
                                   $prefs.hideMinimizedWindows)
                         Divider().opacity(0.4)
-                        toggleRow("Show number key hints",
-                                  "Label the first nine windows with the 1-9 key that picks them.",
+                        toggleRow("Show key hints",
+                                  "Label the first nine windows with the key that picks them.",
                                   $prefs.showNumberKeyHints)
                         Divider().opacity(0.4)
                         toggleRow("Include apps with no windows",

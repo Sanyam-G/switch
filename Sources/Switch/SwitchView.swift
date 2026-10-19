@@ -68,7 +68,7 @@ struct SwitchView: View {
     @ViewBuilder
     private func numberHint(index: Int) -> some View {
         if prefs.showNumberKeyHints && !isSpaceMode && index < 9 {
-            Text("\(index + 1)")
+            Text(prefs.homeRowSelection ? SwitchPreferences.homeRowKeys[index].uppercased() : "\(index + 1)")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.9))
                 .frame(width: 16, height: 16)
