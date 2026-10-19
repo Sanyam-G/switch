@@ -200,6 +200,12 @@ enum WindowEnumerator {
         return (axBacked, minimized, titles)
     }
 
+    // A destroyed window's element answers invalidUIElement; a suspended off-stage one doesn't.
+    private static func isLiveElement(_ element: AXUIElement) -> Bool {
+        var role: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) != .invalidUIElement
+    }
+
     private static func backfillTitles(_ windows: [WindowInfo], from titles: [CGWindowID: String]) -> [WindowInfo] {
         windows.map { w in
             guard w.title.isEmpty, let title = titles[w.id] else { return w }
@@ -259,7 +265,7 @@ enum WindowEnumerator {
                 // With Stage Manager off that signature is a closed Settings/Preferences
                 // leftover, so it only survives while Stage Manager is on.
                 let everBacked = ax.axBacked.contains(w.id)
-                    || (!axPIDs.contains(w.pid) && AXWindowCache.element(for: w.id) != nil)
+                    || (!axPIDs.contains(w.pid) && AXWindowCache.element(for: w.id).map(isLiveElement) == true)
                 guard everBacked, stageManager else { return nil }
                 out.isCrossSpace = false
                 return out
@@ -391,8 +397,9 @@ enum WindowEnumerator {
                 width: boundsDict["Width"] ?? 0,
                 height: boundsDict["Height"] ?? 0
             )
-            // Stage Manager reports tiny bounds for real off-stage windows, so titled ones skip the size check (#99).
-            if (bounds.width < 100 || bounds.height < 80) && (title.isEmpty || !stageManager) { continue }
+            // Stage Manager reports tiny bounds for real off-stage windows, so titled or AX-seen ones skip the size check (#99).
+            if (bounds.width < 100 || bounds.height < 80)
+                && !(stageManager && (!title.isEmpty || AXWindowCache.element(for: id) != nil)) { continue }
             if title.isEmpty && titlesReliable
                 && (bounds.width < 400 || bounds.height < 300) { continue }
             // Dedupe by CGWindowID only; it's already unique per window.
