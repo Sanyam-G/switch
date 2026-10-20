@@ -126,7 +126,6 @@ SIGN_UPDATE=$(find "$HOME/Library/Developer/Xcode/DerivedData" -path "*Sparkle/b
 APPCAST_ITEM=""
 if [[ -x "$SIGN_UPDATE" ]]; then
     SIGN_OUT=$("$SIGN_UPDATE" "$DMG_PATH")
-    DMG_LENGTH=$(stat -f%z "$DMG_PATH")
     PUB_DATE=$(date -u "+%a, %d %b %Y %H:%M:%S +0000")
     APPCAST_ITEM=$(cat <<EOF
         <item>
@@ -136,7 +135,6 @@ if [[ -x "$SIGN_UPDATE" ]]; then
             <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/Sanyam-G/switch/releases/download/v$VERSION/Switch-$VERSION.dmg"
-                       length="$DMG_LENGTH"
                        type="application/octet-stream"
                        $SIGN_OUT />
         </item>
