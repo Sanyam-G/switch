@@ -311,8 +311,9 @@ final class HotkeyManager {
 
             if armedMode != nil {
                 let key = layoutChar(from: event)
-                let vimNavigation = UserDefaults.standard.bool(forKey: SwitchPreferences.vimNavigationKey)
-                let typeToFilter = vimNavigation
+                let homeRow = UserDefaults.standard.bool(forKey: SwitchPreferences.homeRowSelectionKey)
+                let vimNavigation = !homeRow && UserDefaults.standard.bool(forKey: SwitchPreferences.vimNavigationKey)
+                let typeToFilter = vimNavigation || homeRow
                     ? false
                     : (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
@@ -375,7 +376,8 @@ final class HotkeyManager {
                     }
                     return nil
                 }
-                if let index = digitIndex(for: kc) {
+                if let index = digitIndex(for: kc)
+                    ?? (homeRow ? key.flatMap { SwitchPreferences.homeRowKeys.firstIndex(of: $0) } : nil) {
                     let chain = cmd
                     DispatchQueue.main.async { [weak self] in
                         if chain { self?.onPickSelectOnly?(index) }
@@ -389,6 +391,8 @@ final class HotkeyManager {
                     }
                     return nil
                 }
+                // Unbound keys stay with the picker; otherwise ⌘S or ⌘X lands in the app underneath.
+                return nil
             }
         }
 
