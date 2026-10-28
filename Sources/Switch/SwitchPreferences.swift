@@ -265,6 +265,10 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(shiftTapReverses, forKey: SwitchPreferences.shiftTapReversesKey) }
     }
 
+    @Published var backtickReverses: Bool {
+        didSet { UserDefaults.standard.set(backtickReverses, forKey: SwitchPreferences.backtickReversesKey) }
+    }
+
     @Published var hideMinimizedWindows: Bool {
         didSet { UserDefaults.standard.set(hideMinimizedWindows, forKey: SwitchPreferences.hideMinimizedWindowsKey) }
     }
@@ -317,6 +321,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let pinnedBundleIDsKey = "switch.pinnedBundleIDs"
     nonisolated static let pickerActivationDelayKey = "switch.pickerActivationDelay"
     nonisolated static let shiftTapReversesKey = "switch.shiftTapReverses"
+    nonisolated static let backtickReversesKey = "switch.backtickReverses"
     nonisolated static let hideMinimizedWindowsKey = "switch.hideMinimizedWindows"
     nonisolated static let showNumberKeyHintsKey = "switch.showNumberKeyHints"
     nonisolated static let pickerDisplayKey = "switch.pickerDisplay"
@@ -368,6 +373,7 @@ final class SwitchPreferences: ObservableObject {
         pinnedBundleIDs = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.pinnedBundleIDsKey) ?? [])
         pickerActivationDelay = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? Self.defaultPickerActivationDelay
         shiftTapReverses = UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey)
+        backtickReverses = UserDefaults.standard.bool(forKey: SwitchPreferences.backtickReversesKey)
         hideMinimizedWindows = UserDefaults.standard.bool(forKey: SwitchPreferences.hideMinimizedWindowsKey)
         showNumberKeyHints = UserDefaults.standard.bool(forKey: SwitchPreferences.showNumberKeyHintsKey)
         pickerDisplay = PickerDisplay(rawValue: UserDefaults.standard.string(forKey: SwitchPreferences.pickerDisplayKey) ?? "") ?? .mouse

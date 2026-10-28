@@ -348,8 +348,8 @@ final class HotkeyManager {
                     ? false
                     : (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
-                // ⌘` navigates backwards while the picker is active.
-                if cmd && key == "`" {
+                // Navigate backwards with prefix + backtick while the picker is active.
+                if cmd && key == "`" && UserDefaults.standard.bool(forKey: SwitchPreferences.backtickReversesKey) {
                     DispatchQueue.main.async { [weak self] in
                         self?.onAdvance?(true)
                     }

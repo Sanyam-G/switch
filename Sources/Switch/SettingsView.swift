@@ -391,6 +391,10 @@ struct SettingsView: View {
                           "While holding the hotkey, tap Shift to step backward. ⇧-Tab still works too.",
                           $prefs.shiftTapReverses)
                 Divider().opacity(0.4)
+                toggleRow("Reverse with Cmd backtick",
+                          "While holding the hotkey, tap backtick(`) to step backward.",
+                          $prefs.backtickReverses)
+                Divider().opacity(0.4)
                 row(title: "Show picker on",
                     detail: "Mouse: the screen under the cursor. Active: the screen with the focused window. Primary: your main display.") {
                     Picker("", selection: $prefs.pickerDisplay) {
