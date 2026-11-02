@@ -283,6 +283,8 @@ final class SwitchModel: ObservableObject {
     }
 
     private func removeFromPicker(_ shouldRemove: (WindowInfo) -> Bool) {
+        let before = filteredWindows
+        let selectedID = before.indices.contains(selected) ? before[selected].id : nil
         windows.removeAll(where: shouldRemove)
         let liveIDs = Set(windows.map { $0.id })
         thumbnails = thumbnails.filter { liveIDs.contains($0.key) }
@@ -291,7 +293,10 @@ final class SwitchModel: ObservableObject {
             cancelAndDismiss?()
             return
         }
-        if selected >= remaining.count {
+        // Click only: closing another tile from under the pointer must not slide the selection onto its neighbour.
+        if SwitchPreferences.shared.clickOnly, let idx = remaining.firstIndex(where: { $0.id == selectedID }) {
+            selected = idx
+        } else if selected >= remaining.count {
             selected = remaining.count - 1
         }
     }
