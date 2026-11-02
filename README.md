@@ -34,7 +34,7 @@ Or quit Switch and drag `Switch.app` from `/Applications` to the Trash.
 - type to filter inline
 - optional Vim-style H J K L navigation
 - 1-9 (or numpad) picks a tile
-- ⌘W close window, ⌘Q quit app, ⌘H hide app
+- ⇧⌘W close window, ⇧⌘Q quit app, ⇧⌘H hide app (no ⇧ needed in sticky mode or with type to filter off)
 - ↵ commits, Esc cancels
 - MRU ordering, picker pre-warms in the background
 
