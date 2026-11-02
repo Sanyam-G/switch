@@ -40,7 +40,7 @@ Or quit Switch and drag `Switch.app` from `/Applications` to the Trash.
 
 ## Cross-Space
 
-Windows on other Spaces show up in the picker, badged OTHER SPACE. Pick one and it moves to your current Space, no Mission Control animation. Toggle off, and choose whether to mix Spaces by recency, in Settings → Cross-Space.
+Windows on other Spaces show up in the picker, badged OTHER SPACE. Pick one and Switch takes you to it. Toggle off, and choose whether to mix Spaces by recency, in Settings → Cross-Space.
 
 ## Vertical list
 

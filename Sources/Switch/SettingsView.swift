@@ -431,7 +431,7 @@ struct SettingsView: View {
         section("Cross-Space") {
             VStack(spacing: 0) {
                 toggleRow("Show cross-Space windows",
-                          "Include windows on other Spaces. Picking one moves it to your current Space.",
+                          "Include windows on other Spaces. Picking one takes you to it.",
                           $prefs.showCrossSpace)
                 Divider().opacity(0.4)
                 toggleRow("Mix by recent use",
