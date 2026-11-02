@@ -692,7 +692,12 @@ struct SettingsView: View {
                 section("Accent") {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(spacing: 14) {
-                            ForEach(SwitchPreferences.AccentChoice.allCases) { choice in
+                            ForEach(SwitchPreferences.AccentChoice.soft) { choice in
+                                accentSwatch(choice)
+                            }
+                        }
+                        HStack(spacing: 14) {
+                            ForEach(SwitchPreferences.AccentChoice.vivid) { choice in
                                 accentSwatch(choice)
                             }
                         }
