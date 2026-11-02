@@ -330,7 +330,7 @@ final class SwitchPreferences: ObservableObject {
         showCrossSpace = (UserDefaults.standard.object(forKey: SwitchPreferences.crossSpaceKey) as? Bool) ?? true
         stickyMode = UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
         disableMouse = UserDefaults.standard.bool(forKey: SwitchPreferences.disableMouseKey)
-        clickOnly = UserDefaults.standard.bool(forKey: SwitchPreferences.clickOnlyKey)
+        clickOnly = (UserDefaults.standard.object(forKey: SwitchPreferences.clickOnlyKey) as? Bool) ?? true
         disableAnimations = UserDefaults.standard.bool(forKey: disableAnimationsKey)
         verticalList = UserDefaults.standard.bool(forKey: SwitchPreferences.verticalListKey)
         blacklist = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.blacklistKey) ?? [])

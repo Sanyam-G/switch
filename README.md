@@ -71,7 +71,7 @@ Settings → Picker → Sticky picker. Release ⌘ to keep the picker open. ↵ 
 
 ## Click only
 
-Settings → Picker → Click only. Hovering leaves the selection alone, so only the keyboard and clicks move it. Click a window to pick it. Without sticky mode, keep ⌘ held until you click, since releasing it switches to the selected window. Keyboard only overrides this setting.
+Settings → Picker → Click only, on by default. Hovering leaves the selection alone, so only the keyboard and clicks move it. Click a window to pick it. Without sticky mode, keep ⌘ held until you click, since releasing it switches to the selected window. Keyboard only overrides this setting.
 
 ## Stage Manager
 
