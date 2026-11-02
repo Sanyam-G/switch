@@ -19,7 +19,10 @@ final class SwitchPreferences: ObservableObject {
 
     enum AccentChoice: String, CaseIterable, Identifiable {
         case system, rose, blue, mint, peach, lavender, monochrome
+        case crimson, orange, amber, green, cyan, cobalt, violet, magenta
         var id: String { rawValue }
+        static let soft: [AccentChoice] = [.system, .rose, .blue, .mint, .peach, .lavender, .monochrome]
+        static let vivid: [AccentChoice] = [.crimson, .orange, .amber, .green, .cyan, .cobalt, .violet, .magenta]
         var label: String {
             switch self {
             case .system: return "System"
@@ -29,6 +32,14 @@ final class SwitchPreferences: ObservableObject {
             case .peach: return "Peach"
             case .lavender: return "Lavender"
             case .monochrome: return "Mono"
+            case .crimson: return "Crimson"
+            case .orange: return "Orange"
+            case .amber: return "Amber"
+            case .green: return "Green"
+            case .cyan: return "Cyan"
+            case .cobalt: return "Cobalt"
+            case .violet: return "Violet"
+            case .magenta: return "Magenta"
             }
         }
         var color: Color {
@@ -40,6 +51,14 @@ final class SwitchPreferences: ObservableObject {
             case .peach: return Color(red: 0.98, green: 0.69, blue: 0.49)
             case .lavender: return Color(red: 0.66, green: 0.58, blue: 0.86)
             case .monochrome: return Color(white: 0.86)
+            case .crimson: return Color(red: 0.91, green: 0.13, blue: 0.22)
+            case .orange: return Color(red: 1.00, green: 0.44, blue: 0.00)
+            case .amber: return Color(red: 1.00, green: 0.72, blue: 0.00)
+            case .green: return Color(red: 0.10, green: 0.74, blue: 0.28)
+            case .cyan: return Color(red: 0.00, green: 0.68, blue: 0.90)
+            case .cobalt: return Color(red: 0.13, green: 0.36, blue: 1.00)
+            case .violet: return Color(red: 0.56, green: 0.24, blue: 0.96)
+            case .magenta: return Color(red: 0.93, green: 0.13, blue: 0.62)
             }
         }
     }
