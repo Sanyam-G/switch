@@ -69,6 +69,10 @@ Settings → Picker → Excluded apps. Hide windows from specific apps. Excluded
 
 Settings → Picker → Sticky picker. Release ⌘ to keep the picker open. ↵ to switch, Esc to cancel. Settings → General → Hotkeys → Sticky toggle binds a separate hotkey that flips sticky on or off at runtime.
 
+## Click only
+
+Settings → Picker → Click only, on by default. Hovering leaves the selection alone, so only the keyboard and clicks move it. Click a window to pick it. Without sticky mode, keep ⌘ held until you click, since releasing it switches to the selected window. Keyboard only overrides this setting.
+
 ## Stage Manager
 
 With Stage Manager on, windows of apps that aren't on stage stay in the picker.

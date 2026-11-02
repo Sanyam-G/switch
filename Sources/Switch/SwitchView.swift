@@ -27,7 +27,7 @@ struct SwitchView: View {
                 hasMouseMovedSinceOpen = true
             }
             hoveredID = windowID
-            if model.selected != index {
+            if !prefs.clickOnly && model.selected != index {
                 lastSelectionFromMouse = true
                 model.selected = index
             }

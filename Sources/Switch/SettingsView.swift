@@ -201,6 +201,12 @@ struct SettingsView: View {
                                   "Ignore mouse hover and click while the picker is open.",
                                   $prefs.disableMouse)
                         Divider().opacity(0.4)
+                        toggleRow("Click only",
+                                  "Ignore mouse hover while the picker is open. Click a window to pick it.",
+                                  $prefs.clickOnly)
+                            .disabled(prefs.disableMouse)
+                            .opacity(prefs.disableMouse ? 0.5 : 1)
+                        Divider().opacity(0.4)
                         toggleRow("Reduce motion",
                                   "Turn off picker fade, selection movement, and other switcher animations.",
                                   $prefs.disableAnimations)
