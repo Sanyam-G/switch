@@ -133,11 +133,8 @@ enum WindowFocuser {
     /// title matching remain as last resorts; never `first`; raising an
     /// arbitrary sibling sends focus to the wrong window.
     private static func bestMatch(for window: WindowInfo, in axWindows: [AXUIElement]) -> AXUIElement? {
-        if let exact = axWindows.first(where: { AXHelpers.windowID(of: $0) == window.id }) {
+        if let exact = AXHelpers.element(for: window, in: axWindows) {
             return exact
-        }
-        if let cached = AXWindowCache.element(for: window.id) {
-            return cached
         }
         var bestByBounds: (element: AXUIElement, distance: CGFloat)?
         for ax in axWindows {
@@ -185,9 +182,9 @@ enum WindowZoomer {
 @discardableResult
 private func pressButton(_ window: WindowInfo, attribute: String, exactOnly: Bool = false) -> Bool {
     let axWindows = AXHelpers.windowList(of: AXUIElementCreateApplication(window.pid))
-    let exact = axWindows.first(where: { AXHelpers.windowID(of: $0) == window.id })
+    let exact = AXHelpers.element(for: window, in: axWindows)
     let target = exactOnly
-        ? exact ?? AXWindowCache.element(for: window.id)
+        ? exact
         : exact
             ?? axWindows.first(where: { AXHelpers.title(of: $0) == window.title })
             ?? axWindows.first
@@ -208,6 +205,42 @@ enum AXHelpers {
     static func windowID(of element: AXUIElement) -> CGWindowID? {
         var id: CGWindowID = 0
         return _AXUIElementGetWindow(element, &id) == .success && id != 0 ? id : nil
+    }
+
+    /// This exact window's element, never a sibling: the live list, then
+    /// AXWindowCache, then a remote-token scan of the app's element ids.
+    /// kAXWindowsAttribute only lists windows on the current Space, so a window
+    /// on another Space that this Switch process never saw on-screen (after a
+    /// relaunch or update) needs the scan. The app keeps the ids it vended to
+    /// earlier AX clients, so the scan finds them (#176).
+    static func element(for window: WindowInfo, in axWindows: [AXUIElement]) -> AXUIElement? {
+        if let live = axWindows.first(where: { windowID(of: $0) == window.id }) { return live }
+        if let cached = AXWindowCache.element(for: window.id) { return cached }
+        guard window.isCrossSpace, let found = scanForWindow(pid: window.pid, wid: window.id) else { return nil }
+        AXWindowCache.store(found, for: window.id)
+        return found
+    }
+
+    // Element ids count up from 0 over the app's lifetime (~40µs per probe).
+    // ponytail: linear scan capped at 0.3s, misses windows created after
+    // ~7k other elements; walk in the background at launch if that bites.
+    private static func scanForWindow(pid: pid_t, wid: CGWindowID) -> AXUIElement? {
+        var token = Data(count: 20)  // pid, 0, "coco", element id
+        withUnsafeBytes(of: pid) { token.replaceSubrange(0..<4, with: $0) }
+        withUnsafeBytes(of: UInt32(0x636f636f)) { token.replaceSubrange(8..<12, with: $0) }
+        let deadline = Date().addingTimeInterval(0.3)
+        var id: UInt64 = 0
+        while Date() < deadline {
+            withUnsafeBytes(of: id) { token.replaceSubrange(12..<20, with: $0) }
+            id += 1
+            guard let el = _AXUIElementCreateWithRemoteToken(token as CFData)?.takeRetainedValue() else { continue }
+            AXUIElementSetMessagingTimeout(el, 0.1)
+            guard windowID(of: el) == wid else { continue }
+            var role: CFTypeRef?
+            AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &role)
+            if role as? String == kAXWindowRole { return el }
+        }
+        return nil
     }
 
     static func windowList(of appAX: AXUIElement) -> [AXUIElement] {
