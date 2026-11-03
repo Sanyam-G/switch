@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon.HIToolbox
 import CoreGraphics
 
 final class HotkeyManager {
@@ -58,6 +59,9 @@ final class HotkeyManager {
     private var suspended = false
     /// Read on the tap thread; NSWorkspace is only safe to query from main.
     private var frontmostBundleID: String?
+    /// Read on the tap thread; TIS calls hit TSM, which is only safe from main.
+    private var layoutData: Data?
+    private var keyboardType: UInt32 = 0
     private var stopRequested = false
 
     private var tapThread: Thread?
@@ -68,6 +72,7 @@ final class HotkeyManager {
     private var wakeToken: NSObjectProtocol?
     private var screensWakeToken: NSObjectProtocol?
     private var activateToken: NSObjectProtocol?
+    private var layoutToken: NSObjectProtocol?
     private var healthTimer: Timer?
 
     private static let kcEscape: CGKeyCode = 53
@@ -86,6 +91,7 @@ final class HotkeyManager {
         startTapThread()
         installWakeObserver()
         installFrontmostObserver()
+        installLayoutObserver()
         startHealthCheck()
     }
 
@@ -96,6 +102,8 @@ final class HotkeyManager {
         wakeToken = nil
         screensWakeToken = nil
         activateToken = nil
+        if let layoutToken { DistributedNotificationCenter.default().removeObserver(layoutToken) }
+        layoutToken = nil
         healthTimer?.invalidate()
         healthTimer = nil
         stateLock.lock()
@@ -191,6 +199,29 @@ final class HotkeyManager {
     private func setFrontmost(_ app: NSRunningApplication?) {
         stateLock.lock()
         frontmostBundleID = app?.bundleIdentifier
+        stateLock.unlock()
+    }
+
+    private func installLayoutObserver() {
+        refreshLayoutData()
+        layoutToken = DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.refreshLayoutData()
+        }
+    }
+
+    private func refreshLayoutData() {
+        var data: Data?
+        if let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+           let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) {
+            data = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
+        }
+        let type = UInt32(LMGetKbdType())
+        stateLock.lock()
+        layoutData = data
+        keyboardType = type
         stateLock.unlock()
     }
 
@@ -534,6 +565,10 @@ final class HotkeyManager {
 
     // The character the key produces on the current layout, so ⌘W is the W key on AZERTY too (#149).
     private func layoutChar(from event: CGEvent, keeping: CGEventFlags = []) -> Character? {
+        // A key event's string is fixed when it's created, so clearing ⌥ on a copy still gives ç for C.
+        if event.flags.contains(.maskAlternate), let c = translatedChar(from: event, keeping: keeping) {
+            return c
+        }
         guard let copy = event.copy() else { return nil }
         copy.flags = copy.flags.intersection(keeping)
         var length = 0
@@ -541,6 +576,29 @@ final class HotkeyManager {
         copy.keyboardGetUnicodeString(maxStringLength: 4, actualStringLength: &length, unicodeString: &buffer)
         guard length > 0, let c = String(utf16CodeUnits: buffer, count: length).first else { return nil }
         return Character(c.lowercased())
+    }
+
+    private func translatedChar(from event: CGEvent, keeping: CGEventFlags) -> Character? {
+        stateLock.lock()
+        let layout = layoutData
+        let type = keyboardType
+        stateLock.unlock()
+        guard let layout else { return nil }
+        let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        let shifted = keeping.contains(.maskShift) && event.flags.contains(.maskShift)
+        var deadKeyState: UInt32 = 0
+        var length = 0
+        var buffer = [UniChar](repeating: 0, count: 4)
+        let status = layout.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> OSStatus in
+            guard let base = raw.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return -1 }
+            return UCKeyTranslate(
+                base, code, UInt16(kUCKeyActionDown), shifted ? UInt32(shiftKey >> 8) : 0,
+                type, OptionBits(kUCKeyTranslateNoDeadKeysBit),
+                &deadKeyState, 4, &length, &buffer
+            )
+        }
+        guard status == noErr, length > 0 else { return nil }
+        return String(utf16CodeUnits: buffer, count: length).lowercased().first
     }
 
     private func arrowDirection(for kc: CGKeyCode) -> Direction? {
