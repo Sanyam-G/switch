@@ -454,7 +454,10 @@ final class HotkeyManager {
             }
 
             if !armingHeld {
-                let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < Self.stickyQuickTapMS } ?? false) && !advanced
+                // Only quick if the picker hasn't shown yet, so a 0ms delay never flips back (#179).
+                let delayMS = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? SwitchPreferences.defaultPickerActivationDelay
+                let quickTapMS = min(Self.stickyQuickTapMS, delayMS)
+                let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < quickTapMS } ?? false) && !advanced
                 if !armedSticky || quickTap {
                     let stickyQuickTap = armedSticky
                     clearArmedLocked()
