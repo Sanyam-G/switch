@@ -83,6 +83,7 @@ final class HotkeyManager {
     private static let kcRightArrow: CGKeyCode = 124
     private static let kcDownArrow: CGKeyCode = 125
     private static let kcUpArrow: CGKeyCode = 126
+    private static let kcBacktick: CGKeyCode = 50
     private static let kcDigits: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
     private static let kcKeypadDigits: [CGKeyCode] = [83, 84, 85, 86, 87, 88, 89, 91, 92]
 
@@ -326,6 +327,18 @@ final class HotkeyManager {
                 return nil
             }
 
+            // Ahead of armSlots so a ⌘` binding steps back once armed; key code like the system ⌘` (#177).
+            if cmd && kc == Self.kcBacktick && isArmed
+                && UserDefaults.standard.bool(forKey: SwitchPreferences.backtickReversesKey) {
+                stateLock.lock()
+                advanced = true
+                stateLock.unlock()
+                DispatchQueue.main.async { [weak self] in
+                    self?.onAdvance?(true)
+                }
+                return nil
+            }
+
             for (slot, style) in Self.armSlots {
                 guard let binding = HotkeyConfig.shared[slot],
                       binding.matchesTrigger(keyCode: kc, flags: flags) else { continue }
@@ -348,13 +361,6 @@ final class HotkeyManager {
                     ? false
                     : (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
-                // Navigate backwards with prefix + backtick while the picker is active.
-                if cmd && key == "`" && UserDefaults.standard.bool(forKey: SwitchPreferences.backtickReversesKey) {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onAdvance?(true)
-                    }
-                    return nil
-                }
                 if kc == Self.kcEscape {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
