@@ -35,6 +35,11 @@ enum WindowEnumerator {
         "Extension"
     ]
 
+    private static let chromiumBundles: [String] = [
+        "com.google.Chrome", "org.chromium.Chromium", "com.brave.Browser",
+        "com.microsoft.edgemac", "company.thebrowser.Browser", "com.vivaldi.Vivaldi"
+    ]
+
     private static func isHelperProcess(_ name: String) -> Bool {
         for s in helperSuffixes where name.hasSuffix(s) { return true }
         return false
@@ -123,9 +128,14 @@ enum WindowEnumerator {
         // An untitled on-screen window AX doesn't list, from an app whose other windows AX does list,
         // is an overlay: Notes' find highlight (#152), in-process border windows (#154).
         let axPIDs = Set(rawEverything.filter { ax.axBacked.contains($0.id) }.map(\.pid))
-        let overlays: Set<CGWindowID> = titlesReliable ? Set(rawOnScreen.filter {
+        let untitled: Set<CGWindowID> = titlesReliable ? Set(rawOnScreen.filter {
             $0.title.isEmpty && !ax.axBacked.contains($0.id) && axPIDs.contains($0.pid)
         }.map(\.id)) : []
+        // Chromium's find bar is a titled borderless child window, AX subrole AXUnknown (#186).
+        let overlays = untitled.union(rawEverything.filter { w in
+            chromiumBundles.contains(where: { w.bundleID?.hasPrefix($0) == true })
+                && AXWindowCache.element(for: w.id).map(isUnknownSubrole) == true
+        }.map(\.id))
         let onScreen = rawOnScreen.filter { !overlays.contains($0.id) }
         let everything = rawEverything.filter { !overlays.contains($0.id) }
 
@@ -204,6 +214,12 @@ enum WindowEnumerator {
     private static func isLiveElement(_ element: AXUIElement) -> Bool {
         var role: CFTypeRef?
         return AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) != .invalidUIElement
+    }
+
+    private static func isUnknownSubrole(_ element: AXUIElement) -> Bool {
+        var subrole: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
+        return subrole as? String == kAXUnknownSubrole
     }
 
     private static func backfillTitles(_ windows: [WindowInfo], from titles: [CGWindowID: String]) -> [WindowInfo] {
