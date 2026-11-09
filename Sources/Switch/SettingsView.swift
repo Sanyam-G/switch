@@ -1,62 +1,5 @@
 import AppKit
-import Carbon.HIToolbox
 import SwiftUI
-import ServiceManagement
-#if canImport(Sparkle)
-import Sparkle
-#endif
-
-@MainActor
-final class SettingsModel: ObservableObject {
-    @Published var launchAtLogin: Bool = false
-    @Published var autoUpdateCheck: Bool = true
-    @Published var bindings: [HotkeyConfig.Slot: HotkeyBinding] = [:]
-
-    init() { refresh() }
-
-    #if canImport(Sparkle)
-    private var updater: SPUUpdater? { AppDelegate.shared?.sparkleUpdater }
-    #endif
-
-    func refresh() {
-        launchAtLogin = SMAppService.mainApp.status == .enabled
-        #if canImport(Sparkle)
-        autoUpdateCheck = updater?.automaticallyChecksForUpdates ?? true
-        #endif
-        bindings = HotkeyConfig.Slot.allCases.reduce(into: [:]) { $0[$1] = HotkeyConfig.shared[$1] }
-    }
-
-    func setLaunchAtLogin(_ enabled: Bool) {
-        do {
-            if enabled {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
-            launchAtLogin = enabled
-        } catch {
-            NSLog("Switch: login-item toggle failed: \(error)")
-            refresh()
-        }
-    }
-
-    func setAutoUpdateCheck(_ enabled: Bool) {
-        #if canImport(Sparkle)
-        updater?.automaticallyChecksForUpdates = enabled
-        #endif
-        autoUpdateCheck = enabled
-    }
-
-    func update(_ slot: HotkeyConfig.Slot, _ b: HotkeyBinding?) {
-        HotkeyConfig.shared[slot] = b
-        bindings[slot] = b
-    }
-
-    func resetHotkeys() {
-        HotkeyConfig.shared.resetToDefaults()
-        refresh()
-    }
-}
 
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case general, picker, permissions, appearance, about
@@ -69,6 +12,17 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         case .about: return "About"
         }
+    }
+}
+
+struct SettingsRowBackground: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            )
     }
 }
 
@@ -167,7 +121,7 @@ struct SettingsView: View {
                         .padding(.top, 4)
                     }
                     .padding(14)
-                    .background(rowBackground)
+                    .background(SettingsRowBackground())
                 }
 
                 section("Updates") {
@@ -301,48 +255,23 @@ struct SettingsView: View {
 
                 section("Sizing") {
                     VStack(spacing: 0) {
-                        row(title: "Columns",
-                            detail: "Number of columns in the grid view. \(prefs.gridColumns)") {
-                            Slider(value: Binding(
-                                get: { Double(prefs.gridColumns) },
-                                set: { prefs.gridColumns = Int($0.rounded()) }
-                            ), in: 3...6, step: 1)
-                                .frame(width: 140)
-                                .tint(prefs.accent.color)
-                        }
+                        intSliderRow("Columns", "Number of columns in the grid view. \(prefs.gridColumns)",
+                                     value: $prefs.gridColumns, in: 3...6)
                         Divider().opacity(0.4)
-                        row(title: "Rows",
-                            detail: "Rows visible at once in the list view. \(prefs.maxListRows)") {
-                            Slider(value: Binding(
-                                get: { Double(prefs.maxListRows) },
-                                set: { prefs.maxListRows = Int($0.rounded()) }
-                            ), in: 4...20, step: 1)
-                                .frame(width: 140)
-                                .tint(prefs.accent.color)
-                        }
+                        intSliderRow("Grid rows", "Rows visible at once in the grid view. \(prefs.maxGridRows)",
+                                     value: $prefs.maxGridRows, in: 2...10)
                         Divider().opacity(0.4)
-                        row(title: "Panel width",
-                            detail: panelWidthDetail) {
-                            Slider(value: $prefs.panelWidthScale,
-                                   in: SwitchPreferences.minPanelWidthScale...SwitchPreferences.maxPanelWidthScale,
-                                   step: 0.05)
-                                .frame(width: 140)
-                                .tint(prefs.accent.color)
-                        }
+                        intSliderRow("List rows", "Rows visible at once in the list view. \(prefs.maxListRows)",
+                                     value: $prefs.maxListRows, in: 4...20)
                         Divider().opacity(0.4)
-                        row(title: "Thumbnail size",
-                            detail: "Height of each window preview. \(Int(prefs.thumbnailHeight))pt") {
-                            Slider(value: $prefs.thumbnailHeight, in: 80...300, step: 5)
-                                .frame(width: 140)
-                                .tint(prefs.accent.color)
-                        }
+                        sliderRow("Panel width", panelWidthDetail, value: $prefs.panelWidthScale,
+                                  in: SwitchPreferences.minPanelWidthScale...SwitchPreferences.maxPanelWidthScale, step: 0.05)
                         Divider().opacity(0.4)
-                        row(title: "App icon size",
-                            detail: "Size of the app icon on each tile and list row. \(Int(prefs.appIconSize))pt") {
-                            Slider(value: $prefs.appIconSize, in: 20...48, step: 2)
-                                .frame(width: 140)
-                                .tint(prefs.accent.color)
-                        }
+                        sliderRow("Thumbnail size", "Height of each window preview. \(Int(prefs.thumbnailHeight))pt",
+                                  value: $prefs.thumbnailHeight, in: 80...300, step: 5)
+                        Divider().opacity(0.4)
+                        sliderRow("App icon size", "Size of the app icon on each tile and list row. \(Int(prefs.appIconSize))pt",
+                                  value: $prefs.appIconSize, in: 20...48, step: 2)
                         Divider().opacity(0.4)
                         row(title: "Reset sizing",
                             detail: "Restore panel width, columns, rows, thumbnail size, and app icon size.") {
@@ -380,12 +309,9 @@ struct SettingsView: View {
     private var advancedSection: some View {
         section("Advanced") {
             VStack(spacing: 0) {
-                row(title: "Picker activation delay",
-                    detail: "Hold the hotkey this long before the picker appears. A quick tap switches to your previous window without showing it. \(Int(prefs.pickerActivationDelay))ms") {
-                    Slider(value: $prefs.pickerActivationDelay, in: 0...300, step: 10)
-                        .frame(width: 140)
-                        .tint(prefs.accent.color)
-                }
+                sliderRow("Picker activation delay",
+                          "Hold the hotkey this long before the picker appears. A quick tap switches to your previous window without showing it. \(Int(prefs.pickerActivationDelay))ms",
+                          value: $prefs.pickerActivationDelay, in: 0...300, step: 10)
                 Divider().opacity(0.4)
                 toggleRow("Reverse with Shift tap",
                           "While holding the hotkey, tap Shift to step backward. ⇧-Tab still works too.",
@@ -463,6 +389,7 @@ struct SettingsView: View {
     private func resetSizing() {
         prefs.gridColumns = SwitchPreferences.defaultGridColumns
         prefs.maxListRows = SwitchPreferences.defaultMaxListRows
+        prefs.maxGridRows = SwitchPreferences.defaultMaxGridRows
         prefs.panelWidthScale = SwitchPreferences.defaultPanelWidthScale
         prefs.thumbnailHeight = SwitchPreferences.defaultThumbnailHeight
         prefs.appIconSize = SwitchPreferences.defaultAppIconSize
@@ -578,7 +505,7 @@ struct SettingsView: View {
                     }
             }
             .padding(14)
-            .background(rowBackground)
+            .background(SettingsRowBackground())
         }
     }
 
@@ -639,7 +566,7 @@ struct SettingsView: View {
                 .fixedSize()
             }
             .padding(14)
-            .background(rowBackground)
+            .background(SettingsRowBackground())
         }
     }
 
@@ -719,7 +646,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(14)
-                    .background(rowBackground)
+                    .background(SettingsRowBackground())
                 }
 
                 section("Theme") {
@@ -736,7 +663,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(14)
-                    .background(rowBackground)
+                    .background(SettingsRowBackground())
                 }
 
                 section("Background") {
@@ -754,7 +681,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(14)
-                    .background(rowBackground)
+                    .background(SettingsRowBackground())
                 }
 
             }
@@ -768,13 +695,19 @@ struct SettingsView: View {
 
     // MARK: - Building blocks
 
-    private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-            )
+    private func sliderRow(_ title: String, _ detail: String, value: Binding<Double>, in range: ClosedRange<Double>, step: Double) -> some View {
+        row(title: title, detail: detail) {
+            Slider(value: value, in: range, step: step)
+                .frame(width: 140)
+                .tint(prefs.accent.color)
+        }
+    }
+
+    private func intSliderRow(_ title: String, _ detail: String, value: Binding<Int>, in range: ClosedRange<Double>) -> some View {
+        sliderRow(title, detail, value: Binding(
+            get: { Double(value.wrappedValue) },
+            set: { value.wrappedValue = Int($0.rounded()) }
+        ), in: range, step: 1)
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -805,7 +738,7 @@ struct SettingsView: View {
             trailing()
         }
         .padding(14)
-        .background(rowBackground)
+        .background(SettingsRowBackground())
     }
 
     private func toggleRow(_ title: String, _ detail: String, _ isOn: Binding<Bool>) -> some View {
@@ -895,235 +828,6 @@ struct SettingsView: View {
         } else {
             rejectMessage = nil
             model.update(slot, b)
-        }
-    }
-}
-
-struct PermissionsTabView: View {
-    let accent: Color
-    @StateObject private var perms = OnboardingModel()
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Switch needs Accessibility for the ⌘-Tab hotkey. Screen Recording is only needed when thumbnails are enabled.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-                permRow(
-                    title: "Accessibility",
-                    detail: "Intercept ⌘-Tab and ⌥-` system-wide.",
-                    granted: perms.accessibility,
-                    action: { perms.openAccessibility() }
-                )
-                permRow(
-                    title: "Screen Recording",
-                    detail: SwitchPreferences.shared.showThumbnails ? "Capture live thumbnails of every window." : "Optional while thumbnails are disabled.",
-                    granted: perms.screenCapture,
-                    action: { perms.openScreenCapture() }
-                )
-            }
-            .padding(24)
-        }
-        .onAppear { perms.startPolling() }
-        .onDisappear { perms.stopPolling() }
-    }
-
-    private func permRow(title: String, detail: String, granted: Bool, action: @escaping () -> Void) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .font(.system(size: 18))
-                .foregroundStyle(granted ? Color.green : Color.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13, weight: .medium))
-                Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if !granted {
-                Button("Open in System Settings", action: action)
-                    .controlSize(.small)
-            } else {
-                Text("Granted").font(.system(size: 11)).foregroundStyle(.tertiary)
-            }
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-                )
-        )
-    }
-}
-
-// MARK: - Key recorder
-
-struct KeyRecorderField: NSViewRepresentable {
-    let initialBinding: HotkeyBinding
-    let onCapture: (HotkeyBinding) -> Void
-    var accent: Color = .accentColor
-    var placeholder: String = "—"
-
-    func makeNSView(context: Context) -> KeyRecorderNSView {
-        let v = KeyRecorderNSView()
-        v.binding = initialBinding
-        v.onCapture = onCapture
-        v.accentNSColor = NSColor(accent)
-        v.placeholder = placeholder
-        return v
-    }
-
-    func updateNSView(_ view: KeyRecorderNSView, context: Context) {
-        if view.binding != initialBinding {
-            view.binding = initialBinding
-        }
-        view.onCapture = onCapture
-        view.accentNSColor = NSColor(accent)
-        view.placeholder = placeholder
-    }
-}
-
-extension Notification.Name {
-    static let switchRecorderBegan = Notification.Name("com.sanyamgarg.switch.recorderBegan")
-    static let switchRecorderEnded = Notification.Name("com.sanyamgarg.switch.recorderEnded")
-}
-
-final class KeyRecorderNSView: NSView {
-    var onCapture: ((HotkeyBinding) -> Void)?
-    var accentNSColor: NSColor = .controlAccentColor { didSet { redraw() } }
-    var placeholder: String = "—" { didSet { redraw() } }
-    private let label = NSTextField(labelWithString: "")
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
-    private var resignToken: NSObjectProtocol?
-    private var recording = false { didSet { redraw() } }
-
-    var binding: HotkeyBinding = .defaultAllWindows {
-        didSet { redraw() }
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.cornerCurve = .continuous
-        layer?.borderWidth = 1
-        layer?.borderColor = NSColor.separatorColor.cgColor
-
-        label.alignment = .center
-        label.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
-        redraw()
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override func mouseDown(with event: NSEvent) {
-        if recording { stopRecording() } else { startRecording() }
-    }
-
-    override func resignFirstResponder() -> Bool {
-        stopRecording()
-        return super.resignFirstResponder()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window == nil { stopRecording() }
-    }
-
-    deinit { teardownTap() }
-
-    // NSEvent local monitors never see Cmd+Tab (system app switcher grabs it upstream).
-    // Session tap at head fires first, swallows.
-    private func startRecording() {
-        recording = true
-        window?.makeFirstResponder(self)
-        let mask = CGEventMask((1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue))
-        let info = Unmanaged.passUnretained(self).toOpaque()
-        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
-                                          options: .defaultTap, eventsOfInterest: mask,
-                                          callback: { _, type, event, info in
-            guard let info else { return Unmanaged.passUnretained(event) }
-            return Unmanaged<KeyRecorderNSView>.fromOpaque(info).takeUnretainedValue().capture(type, event)
-        }, userInfo: info) else { recording = false; return }
-        let src = CFMachPortCreateRunLoopSource(nil, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
-        eventTap = tap
-        runLoopSource = src
-        if let win = window {
-            resignToken = NotificationCenter.default.addObserver(
-                forName: NSWindow.didResignKeyNotification, object: win, queue: .main
-            ) { [weak self] _ in
-                self?.stopRecording()
-            }
-        }
-        NotificationCenter.default.post(name: .switchRecorderBegan, object: nil)
-    }
-
-    private func stopRecording() {
-        let wasRecording = eventTap != nil || recording
-        teardownTap()
-        recording = false
-        if wasRecording {
-            NotificationCenter.default.post(name: .switchRecorderEnded, object: nil)
-        }
-    }
-
-    private func teardownTap() {
-        if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: false) }
-        if let src = runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), src, .commonModes) }
-        eventTap = nil
-        runLoopSource = nil
-        if let resignToken { NotificationCenter.default.removeObserver(resignToken) }
-        resignToken = nil
-    }
-
-    fileprivate func capture(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
-        if type == .flagsChanged { return nil }
-        guard type == .keyDown else { return Unmanaged.passUnretained(event) }
-        let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
-        let mods: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
-        let held = event.flags.intersection(mods)
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            // Bare Esc cancels; Esc with a modifier is a recordable combo (#116).
-            if kc != 53 || !held.isEmpty {
-                let b = HotkeyBinding(keyCode: UInt16(kc), modifiersRaw: held.rawValue)
-                self.binding = b
-                self.onCapture?(b)
-            }
-            self.stopRecording()
-        }
-        return nil
-    }
-
-    private func redraw() {
-        if recording {
-            label.stringValue = "Press a key…"
-            label.textColor = .secondaryLabelColor
-            layer?.borderColor = accentNSColor.cgColor
-            layer?.backgroundColor = accentNSColor.withAlphaComponent(0.10).cgColor
-        } else {
-            if binding.keyCode == 0 && binding.modifiersRaw == 0 {
-                label.stringValue = placeholder
-                label.textColor = .tertiaryLabelColor
-            } else {
-                label.stringValue = binding.displayString
-                label.textColor = .labelColor
-            }
-            layer?.borderColor = NSColor.separatorColor.cgColor
-            layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
         }
     }
 }
