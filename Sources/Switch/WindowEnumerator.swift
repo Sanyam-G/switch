@@ -16,9 +16,16 @@ struct WindowInfo: Identifiable, Hashable {
     var isFullscreenSpace: Bool = false
     var isWindowless: Bool = false
     var bundleID: String?
+
+    func isPinned(in pinned: Set<String>) -> Bool {
+        bundleID.map { pinned.contains($0) } ?? false
+    }
 }
 
 enum WindowEnumerator {
+    private typealias SpaceMetadata = (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>)
+    private typealias AXState = (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, titles: [CGWindowID: String])
+
     private static let skipApps: Set<String> = [
         "Window Server", "Dock", "SystemUIServer", "Control Center",
         "Notification Center", "Spotlight", "WallpaperAgent", "Switch",
@@ -166,7 +173,7 @@ enum WindowEnumerator {
     }
 
     // AX-backed windows, minimized window IDs, and AX titles for the given processes; an orderedOut leftover appears in neither.
-    private static func axWindowState(for pids: Set<pid_t>) -> (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, titles: [CGWindowID: String]) {
+    private static func axWindowState(for pids: Set<pid_t>) -> AXState {
         var axBacked: Set<CGWindowID> = []
         var minimized: Set<CGWindowID> = []
         var titles: [CGWindowID: String] = [:]
@@ -210,30 +217,38 @@ enum WindowEnumerator {
         }
     }
 
+    private static func spaces(of id: CGWindowID, cid: CGSConnectionID) -> [Int] {
+        CGSCopySpacesForWindows(cid, 7, [NSNumber(value: id)] as CFArray)?.takeRetainedValue() as? [Int] ?? []
+    }
+
+    private static func annotateSpace(_ w: inout WindowInfo, spaces: [Int], metadata: SpaceMetadata) {
+        guard let sid = spaces.first else { return }
+        let info = metadata.labels[sid]
+        w.spaceID = sid
+        w.spaceLabel = info?.label
+        w.isFullscreenSpace = info?.isFullscreen ?? false
+    }
+
     // Drop orphaned on-screen entries: no live AX window and no Space. Real windows always have a Space.
     private static func pruneGhosts(_ windows: [WindowInfo], axBacked: Set<CGWindowID>, cid: CGSConnectionID) -> [WindowInfo] {
         guard !windows.isEmpty else { return windows }
         return windows.filter { w in
-            if axBacked.contains(w.id) { return true }
-            let arr = [NSNumber(value: w.id)] as CFArray
-            let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
-            return !spaces.isEmpty
+            axBacked.contains(w.id) || !spaces(of: w.id, cid: cid).isEmpty
         }
     }
 
     private static func annotateAndPrune(
         _ candidates: [WindowInfo],
-        ax: (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, titles: [CGWindowID: String]),
+        ax: AXState,
         axPIDs: Set<pid_t>,
         cid: CGSConnectionID,
-        metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>),
+        metadata: SpaceMetadata,
         stageManager: Bool,
         titlesReliable: Bool
     ) -> [WindowInfo] {
         return candidates.compactMap { w in
             var out = w
-            let arr = [NSNumber(value: w.id)] as CFArray
-            let spaces = CGSCopySpacesForWindows(cid, 7, arr)?.takeRetainedValue() as? [Int] ?? []
+            let spaces = spaces(of: w.id, cid: cid)
             if out.isHidden || ax.minimized.contains(w.id) {
                 out.isMinimized = ax.minimized.contains(w.id)
                 // A window with no Space claim counts as current, older macOS drops the assignment once a window is ordered out (#129).
@@ -243,12 +258,7 @@ enum WindowEnumerator {
                 // Same real-window signature as the cross-Space prune below, for windows hidden before Switch ever saw them.
                 let offSpaceReal = out.isCrossSpace && (!titlesReliable || !w.title.isEmpty)
                 guard everBacked || offSpaceReal else { return nil }
-                if let sid = spaces.first {
-                    let info = metadata.labels[sid]
-                    out.spaceID = sid
-                    out.spaceLabel = info?.label
-                    out.isFullscreenSpace = info?.isFullscreen ?? false
-                }
+                annotateSpace(&out, spaces: spaces, metadata: metadata)
                 return out
             }
             if spaces.isEmpty {
@@ -285,12 +295,7 @@ enum WindowEnumerator {
                     clearGhostStrike(w.id)
                 }
             }
-            if let sid = spaces.first {
-                let info = metadata.labels[sid]
-                out.spaceID = sid
-                out.spaceLabel = info?.label
-                out.isFullscreenSpace = info?.isFullscreen ?? false
-            }
+            annotateSpace(&out, spaces: spaces, metadata: metadata)
             return out
         }
     }
@@ -298,7 +303,7 @@ enum WindowEnumerator {
     private static func spaceRepresentatives(
         from annotated: [WindowInfo],
         cid: CGSConnectionID,
-        metadata: (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>)
+        metadata: SpaceMetadata
     ) -> [WindowInfo] {
         let active = Int(CGSGetActiveSpace(cid))
         let grouped = Dictionary(grouping: annotated) { $0.spaceID ?? -1 }
@@ -329,7 +334,7 @@ enum WindowEnumerator {
     }
 
     /// Builds a `spaceID → "Desktop N" / "Fullscreen"` map by walking CGS's managed-display spaces in order.
-    private static func spaceMetadata(cid: CGSConnectionID) -> (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>) {
+    private static func spaceMetadata(cid: CGSConnectionID) -> SpaceMetadata {
         guard let displays = CGSCopyManagedDisplaySpaces(cid)?.takeRetainedValue() as? [[String: Any]] else { return ([:], [], []) }
         var labels: [Int: (label: String, isFullscreen: Bool)] = [:]
         var order: [Int] = []

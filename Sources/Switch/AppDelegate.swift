@@ -33,8 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingModel: OnboardingModel?
     private var onboardingWindow: NSWindow?
     private var focusTracker: FocusTracker?
-    private var hotkeyStarted = false
-    private var focusTrackerStarted = false
+    private var servicesStarted = false
     #if DEBUG
     private let debugHarness = DebugFocusHarness()
     #endif
@@ -125,8 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if enabled && CGPreflightScreenCaptureAccess() == false {
                     self?.showOnboarding()
                 } else if self?.requiredPermissionsGranted == true {
-                    self?.startHotkeyIfNeeded()
-                    self?.startFocusTrackerIfNeeded()
+                    self?.startServicesIfNeeded()
                 }
             }
             .store(in: &cancellables)
@@ -161,16 +159,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !requiredPermissionsGranted {
             showOnboarding()
         } else {
-            startHotkeyIfNeeded()
-            startFocusTrackerIfNeeded()
+            startServicesIfNeeded()
         }
 
         // Background poll: as soon as both are granted, install the tap.
         permsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             if self.requiredPermissionsGranted {
-                self.startHotkeyIfNeeded()
-                self.startFocusTrackerIfNeeded()
+                self.startServicesIfNeeded()
             }
         }
 
@@ -256,18 +252,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingPresent = nil
     }
 
-    private func startHotkeyIfNeeded() {
-        guard !hotkeyStarted else { return }
+    private func startServicesIfNeeded() {
+        guard !servicesStarted else { return }
+        servicesStarted = true
         hotkey?.start()
-        hotkeyStarted = true
         WindowStore.shared.refresh()
         MainActor.assumeIsolated { model?.startPrewarm() }
-    }
-
-    private func startFocusTrackerIfNeeded() {
-        guard !focusTrackerStarted else { return }
         focusTracker?.start()
-        focusTrackerStarted = true
     }
 
     @objc private func handleCheckForUpdates() {

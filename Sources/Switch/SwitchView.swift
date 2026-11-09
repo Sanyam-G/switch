@@ -51,7 +51,7 @@ struct SwitchView: View {
     }
 
     private func isPinned(_ window: WindowInfo) -> Bool {
-        window.bundleID.map { prefs.pinnedBundleIDs.contains($0) } ?? false
+        window.isPinned(in: prefs.pinnedBundleIDs)
     }
 
     @ViewBuilder
@@ -274,7 +274,7 @@ struct SwitchView: View {
 
     private func pinButton(for window: WindowInfo) -> some View {
         let bid = window.bundleID
-        let isPinned = bid.map { prefs.pinnedBundleIDs.contains($0) } ?? false
+        let isPinned = window.isPinned(in: prefs.pinnedBundleIDs)
         return Button {
             guard let bid else { return }
             if isPinned { prefs.pinnedBundleIDs.remove(bid) }

@@ -72,6 +72,17 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
+struct SettingsRowBackground: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            )
+    }
+}
+
 struct SettingsView: View {
     @StateObject private var model = SettingsModel()
     @ObservedObject private var prefs = SwitchPreferences.shared
@@ -167,7 +178,7 @@ struct SettingsView: View {
                         .padding(.top, 4)
                     }
                     .padding(14)
-                    .background(rowBackground)
+                    .background(SettingsRowBackground())
                 }
 
                 section("Updates") {
@@ -301,58 +312,23 @@ struct SettingsView: View {
 
                 section("Sizing") {
                     VStack(spacing: 0) {
-                        row(title: "Columns",
-                            detail: "Number of columns in the grid view. \(prefs.gridColumns)") {
-                            Slider(value: Binding(
-                                get: { Double(prefs.gridColumns) },
-                                set: { prefs.gridColumns = Int($0.rounded()) }
-                            ), in: 3...6, step: 1)
-                                .frame(width: 140)
-                                .tint(prefs.accent.color)
-                        }
+                        intSliderRow("Columns", "Number of columns in the grid view. \(prefs.gridColumns)",
+                                     value: $prefs.gridColumns, in: 3...6)
                         Divider().opacity(0.4)
-                        row(title: "Grid rows",
-                            detail: "Rows visible at once in the grid view. \(prefs.maxGridRows)") {
-                            Slider(value: Binding(
-                                get: { Double(prefs.maxGridRows) },
-                                set: { prefs.maxGridRows = Int($0.rounded()) }
-                            ), in: 2...10, step: 1)
-                                .frame(width: 140)
-                                .tint(prefs.accent.color)
-                        }
+                        intSliderRow("Grid rows", "Rows visible at once in the grid view. \(prefs.maxGridRows)",
+                                     value: $prefs.maxGridRows, in: 2...10)
                         Divider().opacity(0.4)
-                        row(title: "List rows",
-                            detail: "Rows visible at once in the list view. \(prefs.maxListRows)") {
-                            Slider(value: Binding(
-                                get: { Double(prefs.maxListRows) },
-                                set: { prefs.maxListRows = Int($0.rounded()) }
-                            ), in: 4...20, step: 1)
-                                .frame(width: 140)
-                                .tint(prefs.accent.color)
-                        }
+                        intSliderRow("List rows", "Rows visible at once in the list view. \(prefs.maxListRows)",
+                                     value: $prefs.maxListRows, in: 4...20)
                         Divider().opacity(0.4)
-                        row(title: "Panel width",
-                            detail: panelWidthDetail) {
-                            Slider(value: $prefs.panelWidthScale,
-                                   in: SwitchPreferences.minPanelWidthScale...SwitchPreferences.maxPanelWidthScale,
-                                   step: 0.05)
-                                .frame(width: 140)
-                                .tint(prefs.accent.color)
-                        }
+                        sliderRow("Panel width", panelWidthDetail, value: $prefs.panelWidthScale,
+                                  in: SwitchPreferences.minPanelWidthScale...SwitchPreferences.maxPanelWidthScale, step: 0.05)
                         Divider().opacity(0.4)
-                        row(title: "Thumbnail size",
-                            detail: "Height of each window preview. \(Int(prefs.thumbnailHeight))pt") {
-                            Slider(value: $prefs.thumbnailHeight, in: 80...300, step: 5)
-                                .frame(width: 140)
-                                .tint(prefs.accent.color)
-                        }
+                        sliderRow("Thumbnail size", "Height of each window preview. \(Int(prefs.thumbnailHeight))pt",
+                                  value: $prefs.thumbnailHeight, in: 80...300, step: 5)
                         Divider().opacity(0.4)
-                        row(title: "App icon size",
-                            detail: "Size of the app icon on each tile and list row. \(Int(prefs.appIconSize))pt") {
-                            Slider(value: $prefs.appIconSize, in: 20...48, step: 2)
-                                .frame(width: 140)
-                                .tint(prefs.accent.color)
-                        }
+                        sliderRow("App icon size", "Size of the app icon on each tile and list row. \(Int(prefs.appIconSize))pt",
+                                  value: $prefs.appIconSize, in: 20...48, step: 2)
                         Divider().opacity(0.4)
                         row(title: "Reset sizing",
                             detail: "Restore panel width, columns, rows, thumbnail size, and app icon size.") {
@@ -390,12 +366,9 @@ struct SettingsView: View {
     private var advancedSection: some View {
         section("Advanced") {
             VStack(spacing: 0) {
-                row(title: "Picker activation delay",
-                    detail: "Hold the hotkey this long before the picker appears. A quick tap switches to your previous window without showing it. \(Int(prefs.pickerActivationDelay))ms") {
-                    Slider(value: $prefs.pickerActivationDelay, in: 0...300, step: 10)
-                        .frame(width: 140)
-                        .tint(prefs.accent.color)
-                }
+                sliderRow("Picker activation delay",
+                          "Hold the hotkey this long before the picker appears. A quick tap switches to your previous window without showing it. \(Int(prefs.pickerActivationDelay))ms",
+                          value: $prefs.pickerActivationDelay, in: 0...300, step: 10)
                 Divider().opacity(0.4)
                 toggleRow("Reverse with Shift tap",
                           "While holding the hotkey, tap Shift to step backward. ⇧-Tab still works too.",
@@ -589,7 +562,7 @@ struct SettingsView: View {
                     }
             }
             .padding(14)
-            .background(rowBackground)
+            .background(SettingsRowBackground())
         }
     }
 
@@ -650,7 +623,7 @@ struct SettingsView: View {
                 .fixedSize()
             }
             .padding(14)
-            .background(rowBackground)
+            .background(SettingsRowBackground())
         }
     }
 
@@ -730,7 +703,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(14)
-                    .background(rowBackground)
+                    .background(SettingsRowBackground())
                 }
 
                 section("Theme") {
@@ -747,7 +720,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(14)
-                    .background(rowBackground)
+                    .background(SettingsRowBackground())
                 }
 
                 section("Background") {
@@ -765,7 +738,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(14)
-                    .background(rowBackground)
+                    .background(SettingsRowBackground())
                 }
 
             }
@@ -779,13 +752,19 @@ struct SettingsView: View {
 
     // MARK: - Building blocks
 
-    private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-            )
+    private func sliderRow(_ title: String, _ detail: String, value: Binding<Double>, in range: ClosedRange<Double>, step: Double) -> some View {
+        row(title: title, detail: detail) {
+            Slider(value: value, in: range, step: step)
+                .frame(width: 140)
+                .tint(prefs.accent.color)
+        }
+    }
+
+    private func intSliderRow(_ title: String, _ detail: String, value: Binding<Int>, in range: ClosedRange<Double>) -> some View {
+        sliderRow(title, detail, value: Binding(
+            get: { Double(value.wrappedValue) },
+            set: { value.wrappedValue = Int($0.rounded()) }
+        ), in: range, step: 1)
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -816,7 +795,7 @@ struct SettingsView: View {
             trailing()
         }
         .padding(14)
-        .background(rowBackground)
+        .background(SettingsRowBackground())
     }
 
     private func toggleRow(_ title: String, _ detail: String, _ isOn: Binding<Bool>) -> some View {
@@ -958,14 +937,7 @@ struct PermissionsTabView: View {
             }
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-                )
-        )
+        .background(SettingsRowBackground())
     }
 }
 
@@ -1104,8 +1076,7 @@ final class KeyRecorderNSView: NSView {
         if type == .flagsChanged { return nil }
         guard type == .keyDown else { return Unmanaged.passUnretained(event) }
         let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
-        let mods: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
-        let held = event.flags.intersection(mods)
+        let held = event.flags.intersection(.recordableModifiers)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             // Bare Esc cancels; Esc with a modifier is a recordable combo (#116).

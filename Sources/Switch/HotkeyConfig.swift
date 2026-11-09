@@ -3,6 +3,11 @@ import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
 
+extension CGEventFlags {
+    static let primaryModifiers: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
+    static let recordableModifiers: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
+}
+
 /// User-rebindable hotkey for arming the switcher.
 struct HotkeyBinding: Codable, Equatable {
     var keyCode: UInt16
@@ -23,10 +28,8 @@ struct HotkeyBinding: Codable, Equatable {
 
     /// Whether `flags` include all the required modifiers (ignoring shift, which is used for reverse).
     func modifiersHeld(_ flags: CGEventFlags) -> Bool {
-        let needed = cgFlags
-        let mask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
-        let needNeeded = needed.intersection(mask)
-        let havNeeded = flags.intersection(mask)
+        let needNeeded = cgFlags.intersection(.primaryModifiers)
+        let havNeeded = flags.intersection(.primaryModifiers)
         return havNeeded.contains(needNeeded) && needNeeded.rawValue != 0
     }
 
@@ -34,15 +37,12 @@ struct HotkeyBinding: Codable, Equatable {
     /// Shift is ignored for matching (reserved for reverse-direction nav).
     func matchesTrigger(keyCode: CGKeyCode, flags: CGEventFlags) -> Bool {
         guard CGKeyCode(self.keyCode) == keyCode else { return false }
-        let mask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
-        let needNeeded = cgFlags.intersection(mask)
-        return flags.intersection(mask) == needNeeded
+        return flags.intersection(.primaryModifiers) == cgFlags.intersection(.primaryModifiers)
     }
 
     func conflicts(with other: HotkeyBinding) -> Bool {
-        let mask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
-        return keyCode == other.keyCode
-            && cgFlags.intersection(mask) == other.cgFlags.intersection(mask)
+        keyCode == other.keyCode
+            && cgFlags.intersection(.primaryModifiers) == other.cgFlags.intersection(.primaryModifiers)
     }
 
     var displayString: String {
@@ -158,9 +158,8 @@ enum HotkeyValidator {
 
     /// Returns nil if the combo is allowed; otherwise a short human reason.
     static func reject(keyCode: UInt16, flags: CGEventFlags) -> String? {
-        let mask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
-        let cleaned = flags.intersection(mask)
-        if cleaned.intersection([.maskCommand, .maskAlternate, .maskControl]).rawValue == 0 {
+        let cleaned = flags.intersection(.recordableModifiers)
+        if cleaned.intersection(.primaryModifiers).rawValue == 0 {
             return "Needs at least one modifier (⌘, ⌥, or ⌃)."
         }
         for (rk, rf) in reserved where rk == keyCode && rf == cleaned {
