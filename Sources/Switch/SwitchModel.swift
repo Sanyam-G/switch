@@ -18,9 +18,9 @@ final class SwitchModel: ObservableObject {
     private var armFrontWindowID: CGWindowID?
     private var armReverse = false
 
-    /// Set by AppDelegate so the view can request a commit + window dismiss from a mouse click.
+    /// Set by AppDelegate so the view can request a commit + window dismiss from a click or a direct pick.
     var commitAndDismiss: (() -> Void)?
-    /// Set by AppDelegate so the model can request a dismiss when no windows remain after a close.
+    /// Set by AppDelegate so the model can request a dismiss after a close empties the list, or after hiding an app.
     var cancelAndDismiss: (() -> Void)?
 
     private var refreshTimer: Timer?
@@ -334,7 +334,7 @@ final class SwitchModel: ObservableObject {
         WindowStore.shared.refresh { snap in
             let ws = snap.windows.allWindows
             let liveIDs = Set(ws.map { $0.id })
-            WindowMRU.purge(keeping: snap.windows.allIDs)
+            WindowMRU.purge(keeping: liveIDs)
             Task.detached(priority: .utility) {
                 AXWindowCache.purgeDead()
             }

@@ -21,7 +21,7 @@ struct HotkeyBinding: Codable, Equatable {
         modifiersRaw: CGEventFlags.maskAlternate.rawValue
     )
 
-    /// Whether `flags` contain exactly the required modifiers (ignoring shift, which is used for reverse).
+    /// Whether `flags` include all the required modifiers (ignoring shift, which is used for reverse).
     func modifiersHeld(_ flags: CGEventFlags) -> Bool {
         let needed = cgFlags
         let mask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]

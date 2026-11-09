@@ -183,7 +183,7 @@ struct SwitchView: View {
                         } else {
                             LazyVGrid(columns: gridColumns, spacing: 14) {
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, w in
-                                    tile(window: w, index: idx, list: list)
+                                    tile(window: w, index: idx)
                                         .id(w.id)
                                 }
                             }
@@ -323,7 +323,7 @@ struct SwitchView: View {
         Array(repeating: GridItem(.flexible(), spacing: 14), count: prefs.gridColumns)
     }
 
-    private func tile(window: WindowInfo, index: Int, list: [WindowInfo]) -> some View {
+    private func tile(window: WindowInfo, index: Int) -> some View {
         let selected = index == model.selected
         let hovered = hoveredID == window.id
         let icon = appIcon(for: window)

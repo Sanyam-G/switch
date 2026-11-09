@@ -27,9 +27,9 @@ enum WindowEnumerator {
     ]
 
     private static let helperSuffixes: [String] = [
-        "Helper", " Helper", " Helper (Renderer)", " Helper (GPU)", " Helper (Plugin)",
-        "Agent", " Agent",
-        "Service", " Service", " View Service",
+        "Helper", " Helper (GPU)", " Helper (Plugin)",
+        "Agent",
+        "Service",
         "Renderer", "(Renderer)",
         "WebContent", "Networking",
         "Extension"
@@ -45,18 +45,12 @@ enum WindowEnumerator {
         return false
     }
 
-    struct Enumeration {
-        let activeSpace: [WindowInfo]
-        let crossSpace: [WindowInfo]
-    }
-
     struct FullSnapshot {
         let activeSpace: [WindowInfo]
         let crossSpace: [WindowInfo]
         let spaceRepresentatives: [WindowInfo]
 
         var allWindows: [WindowInfo] { activeSpace + crossSpace }
-        var allIDs: Set<CGWindowID> { Set(allWindows.map(\.id)) }
         var allPIDs: Set<pid_t> { Set(allWindows.map(\.pid)) }
     }
 
@@ -159,21 +153,6 @@ enum WindowEnumerator {
         let cross = titledAll.filter { !activeIDs.contains($0.id) }
         let reps = spaceRepresentatives(from: titledAll, cid: cid, metadata: metadata)
         return FullSnapshot(activeSpace: titledActive, crossSpace: cross, spaceRepresentatives: reps)
-    }
-
-    static func enumerate(scope: HotkeyManager.Mode, frontmostPID: pid_t?) -> Enumeration {
-        let full = fullSnapshot()
-        var active = full.activeSpace
-        var cross = full.crossSpace
-        if scope == .currentApp, let f = frontmostPID {
-            active = active.filter { $0.pid == f }
-            cross = cross.filter { $0.pid == f }
-        }
-        let showCross = (UserDefaults.standard.object(forKey: SwitchPreferences.crossSpaceKey) as? Bool) ?? true
-        if !showCross {
-            cross = cross.filter { !$0.isCrossSpace }
-        }
-        return Enumeration(activeSpace: active, crossSpace: cross)
     }
 
     private static var stageManagerEnabled: Bool {
