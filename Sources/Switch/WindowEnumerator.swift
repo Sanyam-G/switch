@@ -120,7 +120,8 @@ enum WindowEnumerator {
         let rawOnScreen = enumerate(option: [.optionOnScreenOnly, .excludeDesktopElements])
         let rawEverything = enumerate(option: [.optionAll, .excludeDesktopElements])
         let pids = Set(rawEverything.map(\.pid)).union(rawOnScreen.map(\.pid))
-        let ax = axWindowState(for: pids)
+        let needsTitle = Set((rawOnScreen + rawEverything).filter(\.title.isEmpty).map(\.id))
+        let ax = axWindowState(for: pids, needingTitles: needsTitle)
         let cid = CGSMainConnectionID()
         let metadata = spaceMetadata(cid: cid)
         let stageManager = stageManagerEnabled
@@ -173,7 +174,7 @@ enum WindowEnumerator {
     }
 
     // AX-backed windows, minimized window IDs, and AX titles for the given processes; an orderedOut leftover appears in neither.
-    private static func axWindowState(for pids: Set<pid_t>) -> AXState {
+    private static func axWindowState(for pids: Set<pid_t>, needingTitles needsTitle: Set<CGWindowID>) -> AXState {
         var axBacked: Set<CGWindowID> = []
         var minimized: Set<CGWindowID> = []
         var titles: [CGWindowID: String] = [:]
@@ -182,9 +183,11 @@ enum WindowEnumerator {
                 guard let id = AXHelpers.windowID(of: ax) else { continue }
                 axBacked.insert(id)
                 AXWindowCache.store(ax, for: id)
-                let title = AXHelpers.title(of: ax)
-                if !title.isEmpty {
-                    titles[id] = title
+                if needsTitle.contains(id) {
+                    let title = AXHelpers.title(of: ax)
+                    if !title.isEmpty {
+                        titles[id] = title
+                    }
                 }
                 var minRef: CFTypeRef?
                 if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
@@ -386,9 +389,6 @@ enum WindowEnumerator {
             if skipApps.contains(appName) { continue }
             if isHelperProcess(appName) { continue }
             if blockedPIDs.contains(pid) { continue }
-            let app = NSRunningApplication(processIdentifier: pid)
-            if app == nil || app?.activationPolicy != .regular { continue }
-            if alpha <= 0 && app?.isHidden != true { continue }
             let title = d[kCGWindowName as String] as? String ?? ""
             let boundsDict = d[kCGWindowBounds as String] as? [String: CGFloat] ?? [:]
             let bounds = CGRect(
@@ -402,6 +402,9 @@ enum WindowEnumerator {
                 && !(stageManager && (!title.isEmpty || AXWindowCache.element(for: id) != nil)) { continue }
             if title.isEmpty && titlesReliable
                 && (bounds.width < 400 || bounds.height < 300) { continue }
+            let app = NSRunningApplication(processIdentifier: pid)
+            if app == nil || app?.activationPolicy != .regular { continue }
+            if alpha <= 0 && app?.isHidden != true { continue }
             // Dedupe by CGWindowID only; it's already unique per window.
             // The earlier (pid, title, bounds) dedupe was collapsing multiple
             // Chrome windows that shared the same active-tab title.

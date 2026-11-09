@@ -463,7 +463,7 @@ final class SwitchModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 if let img {
                     if batch { collected[id] = img }
-                    else if visible { thumbnails[id] = img }
+                    else if visible, thumbnails[id] !== img { thumbnails[id] = img }
                 }
             }
         }

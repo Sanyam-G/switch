@@ -163,9 +163,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Background poll: as soon as both are granted, install the tap.
-        permsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        permsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
             guard let self else { return }
-            if self.requiredPermissionsGranted {
+            if self.servicesStarted {
+                timer.invalidate()
+                self.permsTimer = nil
+            } else if self.requiredPermissionsGranted {
                 self.startServicesIfNeeded()
             }
         }
