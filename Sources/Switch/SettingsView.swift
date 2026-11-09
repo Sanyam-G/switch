@@ -311,7 +311,17 @@ struct SettingsView: View {
                                 .tint(prefs.accent.color)
                         }
                         Divider().opacity(0.4)
-                        row(title: "Rows",
+                        row(title: "Grid rows",
+                            detail: "Rows visible at once in the grid view. \(prefs.maxGridRows)") {
+                            Slider(value: Binding(
+                                get: { Double(prefs.maxGridRows) },
+                                set: { prefs.maxGridRows = Int($0.rounded()) }
+                            ), in: 2...10, step: 1)
+                                .frame(width: 140)
+                                .tint(prefs.accent.color)
+                        }
+                        Divider().opacity(0.4)
+                        row(title: "List rows",
                             detail: "Rows visible at once in the list view. \(prefs.maxListRows)") {
                             Slider(value: Binding(
                                 get: { Double(prefs.maxListRows) },
@@ -463,6 +473,7 @@ struct SettingsView: View {
     private func resetSizing() {
         prefs.gridColumns = SwitchPreferences.defaultGridColumns
         prefs.maxListRows = SwitchPreferences.defaultMaxListRows
+        prefs.maxGridRows = SwitchPreferences.defaultMaxGridRows
         prefs.panelWidthScale = SwitchPreferences.defaultPanelWidthScale
         prefs.thumbnailHeight = SwitchPreferences.defaultThumbnailHeight
         prefs.appIconSize = SwitchPreferences.defaultAppIconSize
