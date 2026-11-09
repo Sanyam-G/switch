@@ -143,7 +143,7 @@ private enum SwitcherPanelSize {
         let height = wholeRowsHeight(
             rows: Int(ceil(Double(count) / Double(columns))),
             maxRows: defaults.read(SwitchPreferences.maxGridRowsKey, default: SwitchPreferences.defaultMaxGridRows),
-            rowHeight: tileThumb + 52,
+            rowHeight: tileThumb + PickerLayout.tileExtraHeight,
             gap: PickerLayout.gridSpacing,
             chrome: PickerLayout.headerHeight + 16 + hintHeight,
             screen: screen

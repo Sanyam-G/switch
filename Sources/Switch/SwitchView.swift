@@ -5,6 +5,11 @@ enum PickerLayout {
     static let headerHeight: CGFloat = 26
     static let listRowSpacing: CGFloat = 4
     static let gridSpacing: CGFloat = 14
+    static let tilePadding: CGFloat = 9
+    static let tileTitleSpacing: CGFloat = 7
+    static let tileTitleHeight: CGFloat = 16
+    /// A tile's height beyond its thumbnail.
+    static let tileExtraHeight = tilePadding * 2 + tileTitleSpacing + tileTitleHeight
 }
 
 struct SwitchView: View {
@@ -335,7 +340,7 @@ struct SwitchView: View {
         let hovered = hoveredID == window.id
         let icon = appIcon(for: window)
 
-        return VStack(alignment: .leading, spacing: 7) {
+        return VStack(alignment: .leading, spacing: PickerLayout.tileTitleSpacing) {
             ZStack(alignment: .bottomLeading) {
                 ZStack {
                     Color.black.opacity(0.22)
@@ -408,9 +413,10 @@ struct SwitchView: View {
                 }
                 Spacer(minLength: 0)
             }
+            .frame(height: PickerLayout.tileTitleHeight)
             .padding(.horizontal, 2)
         }
-        .padding(9)
+        .padding(PickerLayout.tilePadding)
         .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 9, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animationsEnabled: animationsEnabled))
         .contentShape(Rectangle())
         .onHover { handleHover($0, windowID: window.id, index: index) }
