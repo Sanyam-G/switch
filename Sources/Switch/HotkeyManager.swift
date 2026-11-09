@@ -316,11 +316,7 @@ final class HotkeyManager {
 
             if armedMode != nil {
                 let key = layoutChar(from: event)
-                let homeRow = UserDefaults.standard.bool(forKey: SwitchPreferences.homeRowSelectionKey)
-                let vimNavigation = !homeRow && UserDefaults.standard.bool(forKey: SwitchPreferences.vimNavigationKey)
-                let typeToFilter = vimNavigation || homeRow
-                    ? false
-                    : (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
+                let (homeRow, vimNavigation, typeToFilter) = SwitchPreferences.storedInputModes()
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
                 if kc == Self.kcEscape {
                     clearArmed()
@@ -429,7 +425,7 @@ final class HotkeyManager {
 
             if !armingHeld {
                 // Only quick if the picker hasn't shown yet, so a 0ms delay never flips back (#179).
-                let delayMS = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? SwitchPreferences.defaultPickerActivationDelay
+                let delayMS = SwitchPreferences.storedActivationDelay
                 let quickTapMS = min(Self.stickyQuickTapMS, delayMS)
                 let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < quickTapMS } ?? false) && !advanced
                 if !armedSticky || quickTap {
