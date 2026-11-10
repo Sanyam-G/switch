@@ -176,6 +176,10 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(titleExclusions, forKey: SwitchPreferences.titleExclusionsKey) }
     }
 
+    @Published var includedAppNames: [String] {
+        didSet { UserDefaults.standard.set(includedAppNames, forKey: SwitchPreferences.includedAppNamesKey) }
+    }
+
     @Published var mruMixSpaces: Bool {
         didSet { UserDefaults.standard.set(mruMixSpaces, forKey: mruMixSpacesKey) }
     }
@@ -314,6 +318,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let blacklistKey = "switch.blacklist"
     nonisolated static let passthroughAppsKey = "switch.passthroughApps"
     nonisolated static let titleExclusionsKey = "switch.titleExclusions"
+    nonisolated static let includedAppNamesKey = "switch.includedAppNames"
     private let mruMixSpacesKey = "switch.mruMixSpaces"
     nonisolated static let staticOrderKey = "switch.staticOrder"
     nonisolated static let appOrderKey = "switch.appOrder"
@@ -360,6 +365,7 @@ final class SwitchPreferences: ObservableObject {
         blacklist = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.blacklistKey) ?? [])
         passthroughApps = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.passthroughAppsKey) ?? [])
         titleExclusions = UserDefaults.standard.stringArray(forKey: SwitchPreferences.titleExclusionsKey) ?? []
+        includedAppNames = UserDefaults.standard.stringArray(forKey: SwitchPreferences.includedAppNamesKey) ?? []
         mruMixSpaces = (UserDefaults.standard.object(forKey: mruMixSpacesKey) as? Bool) ?? true
         staticOrder = UserDefaults.standard.bool(forKey: SwitchPreferences.staticOrderKey)
         appOrder = UserDefaults.standard.stringArray(forKey: SwitchPreferences.appOrderKey) ?? []

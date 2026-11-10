@@ -376,11 +376,26 @@ enum WindowEnumerator {
         return (labels, order, currentSpaces)
     }
 
+    /// App-name substrings from Settings → Picker → Always include apps, lowercased.
+    /// Matching is "contains", so a partial name also covers the app's renames.
+    static func forceIncludedNames() -> [String] {
+        (UserDefaults.standard.stringArray(forKey: SwitchPreferences.includedAppNamesKey) ?? [])
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty }
+    }
+
+    static func isForceIncluded(_ appName: String, names: [String]) -> Bool {
+        guard !names.isEmpty else { return false }
+        let lowered = appName.lowercased()
+        return names.contains { lowered.contains($0) }
+    }
+
     private static func enumerate(option: CGWindowListOption) -> [WindowInfo] {
         guard let raw = CGWindowListCopyWindowInfo(option, kCGNullWindowID) as? [[String: Any]] else {
             return []
         }
         let blacklist = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.blacklistKey) ?? [])
+        let forceIncluded = forceIncludedNames()
         var blockedPIDs: Set<pid_t> = []
         if !blacklist.isEmpty {
             for app in NSWorkspace.shared.runningApplications {
@@ -402,9 +417,14 @@ enum WindowEnumerator {
             if skipApps.contains(appName) { continue }
             if isHelperProcess(appName) { continue }
             if blockedPIDs.contains(pid) { continue }
-            let app = NSRunningApplication(processIdentifier: pid)
-            if app == nil || app?.activationPolicy != .regular { continue }
-            if alpha <= 0 && app?.isHidden != true { continue }
+            guard let app = NSRunningApplication(processIdentifier: pid) else { continue }
+            // Only regular apps are switchable by default. Menu-bar extras
+            // (LSUIElement, .accessory) and daemons (.prohibited) stay out unless
+            // the user names them in Settings → Picker → Always include apps, so
+            // nothing shows up in the picker that ⌘-Tab itself wouldn't reach
+            // without an explicit opt-in.
+            guard app.activationPolicy == .regular || isForceIncluded(appName, names: forceIncluded) else { continue }
+            if alpha <= 0 && app.isHidden != true { continue }
             let title = d[kCGWindowName as String] as? String ?? ""
             let boundsDict = d[kCGWindowBounds as String] as? [String: CGFloat] ?? [:]
             let bounds = CGRect(
@@ -429,8 +449,8 @@ enum WindowEnumerator {
                 appName: appName,
                 bounds: bounds,
                 title: title,
-                isHidden: app?.isHidden == true,
-                bundleID: app?.bundleIdentifier
+                isHidden: app.isHidden,
+                bundleID: app.bundleIdentifier
             ))
         }
         return out
