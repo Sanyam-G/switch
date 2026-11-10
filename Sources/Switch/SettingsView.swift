@@ -360,6 +360,8 @@ struct SettingsView: View {
 
                 blacklistSection
 
+                includeSection
+
                 passthroughSection
 
                 titleExclusionSection
@@ -589,6 +591,54 @@ struct SettingsView: View {
             emptyText: "Nothing excluded.",
             apps: $prefs.blacklist
         )
+    }
+
+    @State private var newIncludedAppName = ""
+
+    private var includeSection: some View {
+        section("Always include apps") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Menu-bar apps have no Dock icon, so macOS keeps their windows out of ⌘-Tab and the picker leaves them out too. Add part of an app's name here and its windows are listed anyway, matching case-insensitively.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                if prefs.includedAppNames.isEmpty {
+                    Text("No apps added.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .padding(.vertical, 4)
+                } else {
+                    VStack(spacing: 4) {
+                        ForEach(prefs.includedAppNames, id: \.self) { name in
+                            HStack(spacing: 8) {
+                                Text(name).font(.system(size: 12))
+                                Spacer()
+                                Button {
+                                    prefs.includedAppNames.removeAll { $0 == name }
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 6)
+                        }
+                    }
+                }
+                TextField("Add app name, press Return", text: $newIncludedAppName)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+                    .frame(width: 260)
+                    .onSubmit {
+                        let name = newIncludedAppName.trimmingCharacters(in: .whitespaces)
+                        guard !name.isEmpty, !prefs.includedAppNames.contains(name) else { return }
+                        prefs.includedAppNames.append(name)
+                        newIncludedAppName = ""
+                    }
+            }
+            .padding(14)
+            .background(rowBackground)
+        }
     }
 
     private var passthroughSection: some View {

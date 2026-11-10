@@ -65,6 +65,10 @@ Settings → Picker → Vertical list. Single-column layout with app icon, name,
 
 Settings → Picker → Excluded apps. Hide windows from specific apps. Excluded titles does the same for windows by title.
 
+## Always include apps
+
+Settings → Picker → Always include apps. Menu-bar apps (`LSUIElement` extras with no Dock icon) are left out of the picker, the way macOS keeps them out of ⌘-Tab. Add part of an app's name here and its windows are listed anyway. Matches the CG window owner name, ignoring case.
+
 ## Sticky mode
 
 Settings → Picker → Sticky picker. Release ⌘ to keep the picker open. ↵ to switch, Esc to cancel. Settings → General → Hotkeys → Sticky toggle binds a separate hotkey that flips sticky on or off at runtime.

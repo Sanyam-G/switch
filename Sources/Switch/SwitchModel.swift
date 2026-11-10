@@ -229,9 +229,12 @@ final class SwitchModel: ObservableObject {
             let switchablePIDs = full.allPIDs
             let ownBundle = Bundle.main.bundleIdentifier
             let blacklist = SwitchPreferences.shared.blacklist
+            // Menu-bar apps the user forced in stay switchable even with no window open.
+            let forcedNames = WindowEnumerator.forceIncludedNames()
             let extras = NSWorkspace.shared.runningApplications
                 .filter {
-                    $0.activationPolicy == .regular
+                    ($0.activationPolicy == .regular
+                        || WindowEnumerator.isForceIncluded($0.localizedName ?? "", names: forcedNames))
                         && !switchablePIDs.contains($0.processIdentifier)
                         && $0.bundleIdentifier != ownBundle
                         && $0.bundleIdentifier.map(blacklist.contains) != true
