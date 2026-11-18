@@ -338,6 +338,7 @@ extension AppDelegate: SPUStandardUserDriverDelegate {
 
 final class SwitcherWindow: NSPanel {
     private let model: SwitchModel
+    private var activePickerScreen: NSScreen?
 
     init(model: SwitchModel) {
         self.model = model
@@ -380,7 +381,7 @@ final class SwitcherWindow: NSPanel {
     }
 
     func applyContentSize(for screen: NSScreen? = nil) {
-        let targetScreen = screen ?? (model.visible ? Self.pickerScreen() : nil)
+        let targetScreen = screen ?? activePickerScreen ?? (model.visible ? Self.pickerScreen() : nil)
         let fitted = SwitcherPanelSize.current(
             mode: model.mode,
             itemCount: model.filteredWindows.count,
@@ -401,6 +402,7 @@ final class SwitcherWindow: NSPanel {
         animationBehavior = SwitchPreferences.shared.disableAnimations ? .none : .default
 
         let screen = Self.pickerScreen()
+        activePickerScreen = screen
         applyContentSize(for: screen)
         if let screen {
             let visible = screen.visibleFrame
@@ -414,6 +416,7 @@ final class SwitcherWindow: NSPanel {
 
     func dismiss() {
         orderOut(nil)
+        activePickerScreen = nil
     }
 
     static func pickerScreen() -> NSScreen? {
@@ -499,7 +502,7 @@ private enum SwitcherPanelSize {
         let rowsHeight = CGFloat(rows) * tileHeight + CGFloat(max(rows - 1, 0)) * 14
         let hintHeight: CGFloat = showHints ? 38 : 0
         let height = 26 + 16 + rowsHeight + hintHeight
-        return NSSize(width: width, height: min(560 * scale, max(260, height)))
+        return NSSize(width: max(560, width), height: min(560 * scale, max(260, height)))
     }
 
     private static func fit(_ size: NSSize, on screen: NSScreen?) -> NSSize {
