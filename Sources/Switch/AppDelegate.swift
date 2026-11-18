@@ -90,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window?.dismiss()
         }
         model.cancelAndDismiss = cancelAndDismiss
+        model.requestPanelResize = { [weak window] in window?.applyContentSize() }
         hotkey.onCloseSelected = { present(); model.closeSelected() }
         hotkey.onCloseSelectedApp = { present(); model.closeSelectedApp() }
         hotkey.onHideSelected = { present(); model.hideSelected() }
@@ -379,13 +380,19 @@ final class SwitcherWindow: NSPanel {
     }
 
     func applyContentSize(for screen: NSScreen? = nil) {
+        let targetScreen = screen ?? (model.visible ? Self.pickerScreen() : nil)
         let fitted = SwitcherPanelSize.current(
             mode: model.mode,
             itemCount: model.filteredWindows.count,
-            screen: screen
+            screen: targetScreen
         )
         model.panelSize = CGSize(width: fitted.width, height: fitted.height)
         setContentSize(fitted)
+        if model.visible, let targetScreen {
+            let visible = targetScreen.visibleFrame
+            setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2,
+                                   y: visible.midY - frame.height / 2))
+        }
     }
 
     func present() {
@@ -424,6 +431,22 @@ final class SwitcherWindow: NSPanel {
     }
 }
 
+enum SwitcherGridLayout {
+    static func columns(count: Int, configured: Int) -> Int {
+        min(max(count, 1), max(configured, 1))
+    }
+
+    static func previewScale(count: Int, configured: Int) -> CGFloat {
+        guard count > 0, count < 4, count <= configured else { return 1 }
+        return [0, 1.4, 1.3, 1.15][count]
+    }
+
+    static func widthScale(count: Int, configured: Int) -> CGFloat {
+        guard count > 0, count < 4, count <= configured else { return 1 }
+        return [0, 1.8, 1.5, 1.25][count]
+    }
+}
+
 private enum SwitcherPanelSize {
     static func current(mode: HotkeyManager.Mode, itemCount: Int, screen: NSScreen?) -> NSSize {
         let defaults = UserDefaults.standard
@@ -454,7 +477,7 @@ private enum SwitcherPanelSize {
         let visibleRows = max(1, min(count, maxRows, fitting))
         let rowGaps = CGFloat(max(visibleRows - 1, 0)) * 4
         let height = chrome + CGFloat(visibleRows) * rowHeight + rowGaps
-        return NSSize(width: CGFloat(SwitchPreferences.defaultListPanelWidth) * widthScale, height: max(260, height))
+        return NSSize(width: CGFloat(SwitchPreferences.defaultListPanelWidth) * widthScale, height: max(140, height))
     }
 
     private static func gridSize(defaults: UserDefaults, count: Int, thumb: CGFloat, scale: CGFloat, widthScale: CGFloat) -> NSSize {
@@ -462,20 +485,21 @@ private enum SwitcherPanelSize {
         let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
         let tileThumb: CGFloat = showThumbs ? thumb : SwitchPreferences.compactThumbnailHeight
         let configuredColumns = (defaults.object(forKey: SwitchPreferences.gridColumnsKey) as? Int) ?? SwitchPreferences.defaultGridColumns
-        let columns = min(max(configuredColumns, 1), max(count, 3))
+        let columns = SwitcherGridLayout.columns(count: count, configured: configuredColumns)
         let baseWidth: CGFloat = CGFloat(SwitchPreferences.defaultGridPanelWidth) * widthScale
         let horizontalPadding: CGFloat = 44
         let columnSpacing: CGFloat = 14
         let usable = baseWidth - horizontalPadding - CGFloat(max(configuredColumns - 1, 0)) * columnSpacing
         let columnWidth = usable / CGFloat(configuredColumns)
+            * SwitcherGridLayout.widthScale(count: count, configured: configuredColumns)
         let width = horizontalPadding + CGFloat(columns) * columnWidth + CGFloat(max(columns - 1, 0)) * columnSpacing
 
         let rows = Int(ceil(Double(count) / Double(columns)))
-        let tileHeight = tileThumb + 52
+        let tileHeight = tileThumb * SwitcherGridLayout.previewScale(count: count, configured: configuredColumns) + 52
         let rowsHeight = CGFloat(rows) * tileHeight + CGFloat(max(rows - 1, 0)) * 14
         let hintHeight: CGFloat = showHints ? 38 : 0
         let height = 26 + 16 + rowsHeight + hintHeight
-        return NSSize(width: max(560, width), height: min(560 * scale, max(320, height)))
+        return NSSize(width: width, height: min(560 * scale, max(260, height)))
     }
 
     private static func fit(_ size: NSSize, on screen: NSScreen?) -> NSSize {

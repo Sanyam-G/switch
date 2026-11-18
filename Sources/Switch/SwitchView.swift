@@ -138,6 +138,9 @@ struct SwitchView: View {
                 hoveredID = nil
             }
         }
+        .onChange(of: model.filteredWindows.count) { _, _ in
+            if model.visible { model.requestPanelResize?() }
+        }
     }
 
     private var header: some View {
@@ -251,6 +254,12 @@ struct SwitchView: View {
 
     private func stoplights(for window: WindowInfo) -> some View {
         HStack(spacing: 4) {
+            if model.mode == .allWindows {
+                stoplight(color: Color(red: 0.66, green: 0.43, blue: 0.94), symbol: "power") {
+                    model.quitApp(for: window)
+                }
+                .help("Quit \(window.appName)")
+            }
             stoplight(color: Color(red: 1.0, green: 0.36, blue: 0.34), symbol: "xmark") {
                 model.close(window)
             }
@@ -320,7 +329,8 @@ struct SwitchView: View {
     }
 
     private var gridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 14), count: prefs.gridColumns)
+        Array(repeating: GridItem(.flexible(), spacing: 14),
+              count: SwitcherGridLayout.columns(count: model.filteredWindows.count, configured: prefs.gridColumns))
     }
 
     private func tile(window: WindowInfo, index: Int, list: [WindowInfo]) -> some View {
@@ -350,7 +360,8 @@ struct SwitchView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: prefs.showThumbnails ? prefs.thumbnailHeight : SwitchPreferences.compactThumbnailHeight)
+                .frame(height: (prefs.showThumbnails ? prefs.thumbnailHeight : SwitchPreferences.compactThumbnailHeight)
+                    * SwitcherGridLayout.previewScale(count: list.count, configured: prefs.gridColumns))
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(alignment: .topLeading) {
                     if prefs.showStoplights && !window.isWindowless {

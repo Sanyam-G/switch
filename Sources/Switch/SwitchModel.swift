@@ -22,6 +22,8 @@ final class SwitchModel: ObservableObject {
     var commitAndDismiss: (() -> Void)?
     /// Set by AppDelegate so the model can request a dismiss when no windows remain after a close.
     var cancelAndDismiss: (() -> Void)?
+    /// Refit the picker when filtering or closing changes the visible tile count.
+    var requestPanelResize: (() -> Void)?
 
     private var refreshTimer: Timer?
     private var prewarmTimer: Timer?
@@ -391,7 +393,11 @@ final class SwitchModel: ObservableObject {
         guard mode != .spaces else { return }
         let list = filteredWindows
         guard list.indices.contains(selected) else { return }
-        let target = list[selected]
+        quitApp(for: list[selected])
+    }
+
+    func quitApp(for target: WindowInfo) {
+        guard mode != .spaces else { return }
         AppCloser.close(target)
         quitPIDs.insert(target.pid)
         removeFromPicker { $0.pid == target.pid }
