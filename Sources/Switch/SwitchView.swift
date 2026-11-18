@@ -139,7 +139,7 @@ struct SwitchView: View {
             }
         }
         .onChange(of: model.filteredWindows.count) { _, _ in
-            if model.visible { model.requestPanelResize?() }
+            if model.visible && prefs.autoResizePicker { model.requestPanelResize?() }
         }
     }
 
@@ -252,22 +252,24 @@ struct SwitchView: View {
         (model.stickySession || !prefs.typeToFilter) ? "⌘W" : "⇧⌘W"
     }
 
-    private func stoplights(for window: WindowInfo) -> some View {
+    private func stoplights(for window: WindowInfo, showStandardButtons: Bool) -> some View {
         HStack(spacing: 4) {
-            if model.mode == .allWindows {
+            if prefs.showQuitAppButton && model.mode == .allWindows {
                 stoplight(color: Color(red: 0.66, green: 0.43, blue: 0.94), symbol: "power") {
                     model.quitApp(for: window)
                 }
                 .help("Quit \(window.appName)")
             }
-            stoplight(color: Color(red: 1.0, green: 0.36, blue: 0.34), symbol: "xmark") {
-                model.close(window)
-            }
-            stoplight(color: Color(red: 1.0, green: 0.74, blue: 0.20), symbol: "minus") {
-                WindowMinimizer.minimize(window)
-            }
-            stoplight(color: Color(red: 0.30, green: 0.78, blue: 0.34), symbol: "plus") {
-                WindowZoomer.zoom(window)
+            if showStandardButtons {
+                stoplight(color: Color(red: 1.0, green: 0.36, blue: 0.34), symbol: "xmark") {
+                    model.close(window)
+                }
+                stoplight(color: Color(red: 1.0, green: 0.74, blue: 0.20), symbol: "minus") {
+                    WindowMinimizer.minimize(window)
+                }
+                stoplight(color: Color(red: 0.30, green: 0.78, blue: 0.34), symbol: "plus") {
+                    WindowZoomer.zoom(window)
+                }
             }
         }
         .opacity(prefs.disableMouse ? 0 : 1)
@@ -330,7 +332,9 @@ struct SwitchView: View {
 
     private var gridColumns: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: 14),
-              count: SwitcherGridLayout.columns(count: model.filteredWindows.count, configured: prefs.gridColumns))
+              count: SwitcherGridLayout.columns(count: model.filteredWindows.count,
+                                                configured: prefs.gridColumns,
+                                                adaptive: prefs.autoResizePicker))
     }
 
     private func tile(window: WindowInfo, index: Int, list: [WindowInfo]) -> some View {
@@ -361,11 +365,13 @@ struct SwitchView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: (prefs.showThumbnails ? prefs.thumbnailHeight : SwitchPreferences.compactThumbnailHeight)
-                    * SwitcherGridLayout.previewScale(count: list.count, configured: prefs.gridColumns))
+                    * SwitcherGridLayout.previewScale(count: list.count,
+                                                      configured: prefs.gridColumns,
+                                                      adaptive: prefs.autoResizePicker))
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(alignment: .topLeading) {
-                    if prefs.showStoplights && !window.isWindowless {
-                        stoplights(for: window).padding(7)
+                    if !window.isWindowless && (prefs.showStoplights || (prefs.showQuitAppButton && model.mode == .allWindows)) {
+                        stoplights(for: window, showStandardButtons: prefs.showStoplights).padding(7)
                     }
                 }
                 .overlay(alignment: .topTrailing) {
@@ -453,8 +459,9 @@ struct SwitchView: View {
                 }
             }
             Spacer(minLength: 6)
-            if !isSpaceMode && prefs.showStoplights && prefs.verticalShowStoplights && !window.isWindowless {
-                stoplights(for: window)
+            if !isSpaceMode && !window.isWindowless
+                && ((prefs.showStoplights && prefs.verticalShowStoplights) || (prefs.showQuitAppButton && model.mode == .allWindows)) {
+                stoplights(for: window, showStandardButtons: prefs.showStoplights && prefs.verticalShowStoplights)
                     .opacity(hovered ? 1 : 0.45)
             }
             if !isSpaceMode && !window.isWindowless && (isPinned(window) || hovered) {

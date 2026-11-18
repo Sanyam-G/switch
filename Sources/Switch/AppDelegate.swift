@@ -113,6 +113,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .dropFirst()
             .sink { [weak window] _ in window?.applyContentSize() }
             .store(in: &cancellables)
+        SwitchPreferences.shared.$autoResizePicker
+            .dropFirst()
+            .sink { [weak window] _ in window?.applyContentSize() }
+            .store(in: &cancellables)
         SwitchPreferences.shared.$thumbnailHeight
             .dropFirst()
             .sink { [weak window] _ in window?.applyContentSize() }
@@ -435,17 +439,17 @@ final class SwitcherWindow: NSPanel {
 }
 
 enum SwitcherGridLayout {
-    static func columns(count: Int, configured: Int) -> Int {
-        min(max(count, 1), max(configured, 1))
+    static func columns(count: Int, configured: Int, adaptive: Bool) -> Int {
+        adaptive ? min(max(count, 1), max(configured, 1)) : max(configured, 1)
     }
 
-    static func previewScale(count: Int, configured: Int) -> CGFloat {
-        guard count > 0, count < 4, count <= configured else { return 1 }
+    static func previewScale(count: Int, configured: Int, adaptive: Bool) -> CGFloat {
+        guard adaptive, count > 0, count < 4, count <= configured else { return 1 }
         return [0, 1.4, 1.3, 1.15][count]
     }
 
-    static func widthScale(count: Int, configured: Int) -> CGFloat {
-        guard count > 0, count < 4, count <= configured else { return 1 }
+    static func widthScale(count: Int, configured: Int, adaptive: Bool) -> CGFloat {
+        guard adaptive, count > 0, count < 4, count <= configured else { return 1 }
         return [0, 1.8, 1.5, 1.25][count]
     }
 }
@@ -459,15 +463,16 @@ private enum SwitcherPanelSize {
         let widthScale = CGFloat(SwitchPreferences.clampedPanelWidthScale(
             defaults.object(forKey: SwitchPreferences.panelWidthScaleKey) as? Double
         ))
+        let adaptive = (defaults.object(forKey: SwitchPreferences.autoResizePickerKey) as? Bool) ?? true
         let count = max(itemCount, 1)
         // Every mode sizes to the window count; a fixed panel leaves rows of empty backdrop (#134).
         let size = (mode == .spaces || isList)
-            ? listSize(defaults: defaults, count: count, widthScale: widthScale, screen: screen)
-            : gridSize(defaults: defaults, count: count, thumb: thumb, scale: scale, widthScale: widthScale)
+            ? listSize(defaults: defaults, count: count, widthScale: widthScale, screen: screen, adaptive: adaptive)
+            : gridSize(defaults: defaults, count: count, thumb: thumb, scale: scale, widthScale: widthScale, adaptive: adaptive)
         return fit(size, on: screen)
     }
 
-    private static func listSize(defaults: UserDefaults, count: Int, widthScale: CGFloat, screen: NSScreen?) -> NSSize {
+    private static func listSize(defaults: UserDefaults, count: Int, widthScale: CGFloat, screen: NSScreen?, adaptive: Bool) -> NSSize {
         let showHints = (defaults.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
         let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
         let showPreview = ((defaults.object(forKey: SwitchPreferences.verticalShowPreviewKey) as? Bool) ?? true) && showThumbs
@@ -480,29 +485,32 @@ private enum SwitcherPanelSize {
         let visibleRows = max(1, min(count, maxRows, fitting))
         let rowGaps = CGFloat(max(visibleRows - 1, 0)) * 4
         let height = chrome + CGFloat(visibleRows) * rowHeight + rowGaps
-        return NSSize(width: CGFloat(SwitchPreferences.defaultListPanelWidth) * widthScale, height: max(140, height))
+        return NSSize(width: CGFloat(SwitchPreferences.defaultListPanelWidth) * widthScale,
+                      height: max(adaptive ? 140 : 260, height))
     }
 
-    private static func gridSize(defaults: UserDefaults, count: Int, thumb: CGFloat, scale: CGFloat, widthScale: CGFloat) -> NSSize {
+    private static func gridSize(defaults: UserDefaults, count: Int, thumb: CGFloat, scale: CGFloat, widthScale: CGFloat, adaptive: Bool) -> NSSize {
         let showHints = (defaults.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
         let showThumbs = (defaults.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
         let tileThumb: CGFloat = showThumbs ? thumb : SwitchPreferences.compactThumbnailHeight
         let configuredColumns = (defaults.object(forKey: SwitchPreferences.gridColumnsKey) as? Int) ?? SwitchPreferences.defaultGridColumns
-        let columns = SwitcherGridLayout.columns(count: count, configured: configuredColumns)
+        let columns = adaptive
+            ? SwitcherGridLayout.columns(count: count, configured: configuredColumns, adaptive: true)
+            : min(max(configuredColumns, 1), max(count, 3))
         let baseWidth: CGFloat = CGFloat(SwitchPreferences.defaultGridPanelWidth) * widthScale
         let horizontalPadding: CGFloat = 44
         let columnSpacing: CGFloat = 14
         let usable = baseWidth - horizontalPadding - CGFloat(max(configuredColumns - 1, 0)) * columnSpacing
         let columnWidth = usable / CGFloat(configuredColumns)
-            * SwitcherGridLayout.widthScale(count: count, configured: configuredColumns)
+            * SwitcherGridLayout.widthScale(count: count, configured: configuredColumns, adaptive: adaptive)
         let width = horizontalPadding + CGFloat(columns) * columnWidth + CGFloat(max(columns - 1, 0)) * columnSpacing
 
         let rows = Int(ceil(Double(count) / Double(columns)))
-        let tileHeight = tileThumb * SwitcherGridLayout.previewScale(count: count, configured: configuredColumns) + 52
+        let tileHeight = tileThumb * SwitcherGridLayout.previewScale(count: count, configured: configuredColumns, adaptive: adaptive) + 52
         let rowsHeight = CGFloat(rows) * tileHeight + CGFloat(max(rows - 1, 0)) * 14
         let hintHeight: CGFloat = showHints ? 38 : 0
         let height = 26 + 16 + rowsHeight + hintHeight
-        return NSSize(width: max(560, width), height: min(560 * scale, max(260, height)))
+        return NSSize(width: max(560, width), height: min(560 * scale, max(adaptive ? 260 : 320, height)))
     }
 
     private static func fit(_ size: NSSize, on screen: NSScreen?) -> NSSize {

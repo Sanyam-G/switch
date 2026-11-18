@@ -265,6 +265,10 @@ struct SettingsView: View {
                                   "Red/yellow/green buttons to close, minimize, or zoom each window. ⌘W closes the selected window either way.",
                                   $prefs.showStoplights)
                         Divider().opacity(0.4)
+                        toggleRow("Show quit app button",
+                                  "Purple power button in the all-windows picker. Quits the app that owns the window.",
+                                  $prefs.showQuitAppButton)
+                        Divider().opacity(0.4)
                         toggleRow("Show hint strip",
                                   "Keyboard shortcut hints at the bottom of the picker.",
                                   $prefs.showHintStrip)
@@ -301,6 +305,10 @@ struct SettingsView: View {
 
                 section("Sizing") {
                     VStack(spacing: 0) {
+                        toggleRow("Auto resize for few windows",
+                                  "Enlarge previews and reduce empty space for one to three windows. Refit the picker while filtering or closing.",
+                                  $prefs.autoResizePicker)
+                        Divider().opacity(0.4)
                         row(title: "Columns",
                             detail: "Number of columns in the grid view. \(prefs.gridColumns)") {
                             Slider(value: Binding(
