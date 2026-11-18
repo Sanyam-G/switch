@@ -115,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
         SwitchPreferences.shared.$autoResizePicker
             .dropFirst()
-            .sink { [weak window] _ in window?.applyContentSize() }
+            .sink { [weak window] enabled in window?.applyContentSize(autoResizePicker: enabled) }
             .store(in: &cancellables)
         SwitchPreferences.shared.$thumbnailHeight
             .dropFirst()
@@ -384,12 +384,13 @@ final class SwitcherWindow: NSPanel {
         super.sendEvent(event)
     }
 
-    func applyContentSize(for screen: NSScreen? = nil) {
+    func applyContentSize(for screen: NSScreen? = nil, autoResizePicker: Bool? = nil) {
         let targetScreen = screen ?? activePickerScreen ?? (model.visible ? Self.pickerScreen() : nil)
         let fitted = SwitcherPanelSize.current(
             mode: model.mode,
             itemCount: model.filteredWindows.count,
-            screen: targetScreen
+            screen: targetScreen,
+            autoResizePicker: autoResizePicker
         )
         model.panelSize = CGSize(width: fitted.width, height: fitted.height)
         setContentSize(fitted)
@@ -455,7 +456,7 @@ enum SwitcherGridLayout {
 }
 
 private enum SwitcherPanelSize {
-    static func current(mode: HotkeyManager.Mode, itemCount: Int, screen: NSScreen?) -> NSSize {
+    static func current(mode: HotkeyManager.Mode, itemCount: Int, screen: NSScreen?, autoResizePicker: Bool? = nil) -> NSSize {
         let defaults = UserDefaults.standard
         let isList = defaults.bool(forKey: SwitchPreferences.verticalListKey)
         let thumb = CGFloat((defaults.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double) ?? SwitchPreferences.defaultThumbnailHeight)
@@ -463,7 +464,7 @@ private enum SwitcherPanelSize {
         let widthScale = CGFloat(SwitchPreferences.clampedPanelWidthScale(
             defaults.object(forKey: SwitchPreferences.panelWidthScaleKey) as? Double
         ))
-        let adaptive = (defaults.object(forKey: SwitchPreferences.autoResizePickerKey) as? Bool) ?? true
+        let adaptive = autoResizePicker ?? (defaults.object(forKey: SwitchPreferences.autoResizePickerKey) as? Bool) ?? true
         let count = max(itemCount, 1)
         // Every mode sizes to the window count; a fixed panel leaves rows of empty backdrop (#134).
         let size = (mode == .spaces || isList)
