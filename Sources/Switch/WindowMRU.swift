@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// In-memory most-recently-used tracking for windows focused via Switch.
-/// Touched on every focus + close. Sorted output puts most recent first.
+/// In-memory most-recently-used tracking for windows.
+/// Touched on any focus change, from Switch or FocusTracker. Sorted output puts most recent first.
 enum WindowMRU {
     private static let lock = NSLock()
     private static var stamps: [CGWindowID: Date] = [:]

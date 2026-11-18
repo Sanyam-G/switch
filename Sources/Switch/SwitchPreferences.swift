@@ -2,6 +2,12 @@ import AppKit
 import SwiftUI
 import Combine
 
+extension UserDefaults {
+    func read<T>(_ key: String, default fallback: T) -> T {
+        (object(forKey: key) as? T) ?? fallback
+    }
+}
+
 @MainActor
 final class SwitchPreferences: ObservableObject {
     static let shared = SwitchPreferences()
@@ -9,6 +15,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let defaultAppIconSize = 32.0
     nonisolated static let defaultGridColumns = 4
     nonisolated static let defaultMaxListRows = 8
+    nonisolated static let defaultMaxGridRows = 3
     nonisolated static let defaultPanelWidthScale = 1.0
     nonisolated static let minPanelWidthScale = 0.65  // 572pt grid, above its 560pt floor
     nonisolated static let maxPanelWidthScale = 2.4  // covers the 300pt thumbnail maximum when migrating
@@ -16,6 +23,20 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let defaultListPanelWidth = 520.0
     nonisolated static let defaultPickerActivationDelay = 130.0
     nonisolated static let compactThumbnailHeight = 72.0
+
+    // For the event tap and panel sizing, which read defaults directly instead of this main-actor state.
+    nonisolated static var storedShowThumbnails: Bool { UserDefaults.standard.read(showThumbnailsKey, default: true) }
+    nonisolated static var storedShowHintStrip: Bool { UserDefaults.standard.read(showHintStripKey, default: true) }
+    nonisolated static var storedVerticalShowPreview: Bool { UserDefaults.standard.read(verticalShowPreviewKey, default: true) }
+    nonisolated static var storedActivationDelay: Double { UserDefaults.standard.read(pickerActivationDelayKey, default: defaultPickerActivationDelay) }
+
+    /// Home row beats Vim, and either one turns off type to filter.
+    nonisolated static func storedInputModes() -> (homeRow: Bool, vim: Bool, typeToFilter: Bool) {
+        let defaults = UserDefaults.standard
+        let homeRow = defaults.bool(forKey: homeRowSelectionKey)
+        let vim = !homeRow && defaults.bool(forKey: vimNavigationKey)
+        return (homeRow, vim, !(vim || homeRow) && defaults.read(typeToFilterKey, default: true))
+    }
 
     enum AccentChoice: String, CaseIterable, Identifiable {
         case system, rose, blue, mint, peach, lavender, monochrome
@@ -268,6 +289,10 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(maxListRows, forKey: SwitchPreferences.maxListRowsKey) }
     }
 
+    @Published var maxGridRows: Int {
+        didSet { UserDefaults.standard.set(maxGridRows, forKey: SwitchPreferences.maxGridRowsKey) }
+    }
+
     @Published var panelWidthScale: Double {
         didSet { UserDefaults.standard.set(panelWidthScale, forKey: SwitchPreferences.panelWidthScaleKey) }
     }
@@ -336,6 +361,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let appIconSizeKey = "switch.appIconSize"
     nonisolated static let gridColumnsKey = "switch.gridColumns"
     nonisolated static let maxListRowsKey = "switch.maxListRows"
+    nonisolated static let maxGridRowsKey = "switch.maxGridRows"
     nonisolated static let panelWidthScaleKey = "switch.panelWidthScale"
     nonisolated static let pinnedBundleIDsKey = "switch.pinnedBundleIDs"
     nonisolated static let pickerActivationDelayKey = "switch.pickerActivationDelay"
@@ -365,32 +391,30 @@ final class SwitchPreferences: ObservableObject {
         appOrder = UserDefaults.standard.stringArray(forKey: SwitchPreferences.appOrderKey) ?? []
         includeWindowlessApps = UserDefaults.standard.bool(forKey: SwitchPreferences.includeWindowlessKey)
         hideMenuBarIcon = UserDefaults.standard.bool(forKey: SwitchPreferences.hideMenuBarIconKey)
-        showThumbnails = (UserDefaults.standard.object(forKey: SwitchPreferences.showThumbnailsKey) as? Bool) ?? true
+        showThumbnails = Self.storedShowThumbnails
         showStoplights = (UserDefaults.standard.object(forKey: SwitchPreferences.showStoplightsKey) as? Bool) ?? true
         verticalShowStoplights = (UserDefaults.standard.object(forKey: SwitchPreferences.verticalShowStoplightsKey) as? Bool) ?? true
-        verticalShowPreview = (UserDefaults.standard.object(forKey: SwitchPreferences.verticalShowPreviewKey) as? Bool) ?? true
+        verticalShowPreview = Self.storedVerticalShowPreview
         verticalShowHeader = (UserDefaults.standard.object(forKey: SwitchPreferences.verticalShowHeaderKey) as? Bool) ?? true
-        showHintStrip = (UserDefaults.standard.object(forKey: SwitchPreferences.showHintStripKey) as? Bool) ?? true
+        showHintStrip = Self.storedShowHintStrip
         showWindowCount = (UserDefaults.standard.object(forKey: SwitchPreferences.showWindowCountKey) as? Bool) ?? true
         currentDisplayOnly = UserDefaults.standard.bool(forKey: SwitchPreferences.currentDisplayOnlyKey)
-        let storedHomeRow = UserDefaults.standard.bool(forKey: SwitchPreferences.homeRowSelectionKey)
-        let storedVimNavigation = !storedHomeRow && UserDefaults.standard.bool(forKey: SwitchPreferences.vimNavigationKey)
-        homeRowSelection = storedHomeRow
-        vimNavigation = storedVimNavigation
-        typeToFilter = storedVimNavigation || storedHomeRow
-            ? false
-            : (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
+        let inputModes = Self.storedInputModes()
+        homeRowSelection = inputModes.homeRow
+        vimNavigation = inputModes.vim
+        typeToFilter = inputModes.typeToFilter
         thumbnailHeight = (UserDefaults.standard.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double) ?? Self.defaultThumbnailHeight
         appIconSize = (UserDefaults.standard.object(forKey: SwitchPreferences.appIconSizeKey) as? Double) ?? Self.defaultAppIconSize
         gridColumns = (UserDefaults.standard.object(forKey: SwitchPreferences.gridColumnsKey) as? Int) ?? Self.defaultGridColumns
         maxListRows = (UserDefaults.standard.object(forKey: SwitchPreferences.maxListRowsKey) as? Int) ?? Self.defaultMaxListRows
+        maxGridRows = (UserDefaults.standard.object(forKey: SwitchPreferences.maxGridRowsKey) as? Int) ?? Self.defaultMaxGridRows
         // Before this setting, thumbnail size also set the panel width; start from that so nobody's panel shrinks.
         let storedPanelWidth = UserDefaults.standard.object(forKey: SwitchPreferences.panelWidthScaleKey) as? Double
         let panelWidth = Self.clampedPanelWidthScale(storedPanelWidth ?? (UserDefaults.standard.object(forKey: SwitchPreferences.thumbnailHeightKey) as? Double ?? Self.defaultThumbnailHeight) / Self.defaultThumbnailHeight)
         panelWidthScale = panelWidth
         if storedPanelWidth == nil { UserDefaults.standard.set(panelWidth, forKey: SwitchPreferences.panelWidthScaleKey) }
         pinnedBundleIDs = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.pinnedBundleIDsKey) ?? [])
-        pickerActivationDelay = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? Self.defaultPickerActivationDelay
+        pickerActivationDelay = Self.storedActivationDelay
         shiftTapReverses = UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey)
         backtickReverses = UserDefaults.standard.bool(forKey: SwitchPreferences.backtickReversesKey)
         hideMinimizedWindows = UserDefaults.standard.bool(forKey: SwitchPreferences.hideMinimizedWindowsKey)

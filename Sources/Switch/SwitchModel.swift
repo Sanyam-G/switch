@@ -18,9 +18,9 @@ final class SwitchModel: ObservableObject {
     private var armFrontWindowID: CGWindowID?
     private var armReverse = false
 
-    /// Set by AppDelegate so the view can request a commit + window dismiss from a mouse click.
+    /// Set by AppDelegate so the view can request a commit + window dismiss from a click or a direct pick.
     var commitAndDismiss: (() -> Void)?
-    /// Set by AppDelegate so the model can request a dismiss when no windows remain after a close.
+    /// Set by AppDelegate so the model can request a dismiss after a close empties the list, or after hiding an app.
     var cancelAndDismiss: (() -> Void)?
 
     private var refreshTimer: Timer?
@@ -29,7 +29,7 @@ final class SwitchModel: ObservableObject {
     private var armFrontmostPID: pid_t?
     private var armSelfHadKeyWindow = false
     private var quitPIDs: Set<pid_t> = []
-    private var thumbnailTasks: [Task<Void, Never>] = []
+    private var thumbnailTask: Task<Void, Never>?
     var pointerWindowID: CGWindowID?
 
     var filteredWindows: [WindowInfo] {
@@ -42,6 +42,11 @@ final class SwitchModel: ObservableObject {
             return (w, s)
         }
         return scored.sorted { $0.1 > $1.1 }.map { $0.0 }
+    }
+
+    private var selectedWindow: WindowInfo? {
+        let list = filteredWindows
+        return list.indices.contains(selected) ? list[selected] : nil
     }
 
     private static func fuzzyScore(pattern: String, target: String) -> Int? {
@@ -92,11 +97,7 @@ final class SwitchModel: ObservableObject {
     }
 
     private func apply(snapshot: WindowStore.Snapshot, initial: Bool) {
-        let previousSelectedID: CGWindowID? = {
-            guard !initial else { return nil }
-            let list = filteredWindows
-            return list.indices.contains(selected) ? list[selected].id : nil
-        }()
+        let previousSelectedID = initial ? nil : selectedWindow?.id
 
         let final: [WindowInfo]
         if mode == .spaces {
@@ -141,27 +142,18 @@ final class SwitchModel: ObservableObject {
             }
         }
 
-        thumbnailTasks.forEach { $0.cancel() }
-        thumbnailTasks = []
+        thumbnailTask?.cancel()
         let thumbTargets = final.filter { !$0.isWindowless }
         let gen = armGeneration
-        if initial {
-            let task = Task {
-                await fetchThumbnails(for: thumbTargets, force: false)
+        let liveIDs = Set(thumbTargets.map { $0.id })
+        thumbnailTask = Task {
+            if !initial, SwitchPreferences.shared.showThumbnails {
+                // Don't full-purge; pre-warmed thumbs are valid as long as the window still exists.
+                await WindowSnapshotter.shared.purge(keeping: liveIDs)
             }
-            thumbnailTasks.append(task)
-        } else {
-            let liveIDs = Set(thumbTargets.map { $0.id })
-            let task = Task {
-                if SwitchPreferences.shared.showThumbnails {
-                    // Don't full-purge; pre-warmed thumbs are valid as long as the window still exists.
-                    await WindowSnapshotter.shared.purge(keeping: liveIDs)
-                }
-                await fetchThumbnails(for: thumbTargets, force: false)
-                guard armGeneration == gen, visible else { return }
-                await fetchThumbnails(for: thumbTargets, force: true, batch: true)
-            }
-            thumbnailTasks.append(task)
+            await fetchThumbnails(for: thumbTargets, force: false)
+            guard !initial, armGeneration == gen, visible else { return }
+            await fetchThumbnails(for: thumbTargets, force: true, batch: true)
         }
     }
 
@@ -173,31 +165,29 @@ final class SwitchModel: ObservableObject {
     private func buildWindowList(from full: WindowEnumerator.FullSnapshot) -> [WindowInfo] {
         var active = full.activeSpace
         var cross = full.crossSpace
-        active.removeAll { quitPIDs.contains($0.pid) }
-        cross.removeAll { quitPIDs.contains($0.pid) }
+        func drop(where rejected: (WindowInfo) -> Bool) {
+            active.removeAll(where: rejected)
+            cross.removeAll(where: rejected)
+        }
+        drop { quitPIDs.contains($0.pid) }
         if SwitchPreferences.shared.hideMinimizedWindows {
-            active.removeAll { $0.isMinimized || $0.isHidden }
-            cross.removeAll { $0.isMinimized || $0.isHidden }
+            drop { $0.isMinimized || $0.isHidden }
         }
         let exclusions = SwitchPreferences.shared.titleExclusions.map { $0.lowercased() }
         if !exclusions.isEmpty {
-            let hit: (WindowInfo) -> Bool = { w in
+            drop { w in
                 let t = w.title.lowercased()
                 return exclusions.contains { t.contains($0) }
             }
-            active.removeAll(where: hit)
-            cross.removeAll(where: hit)
         }
         if mode == .currentApp, let f = armFrontmostPID {
-            active = active.filter { $0.pid == f }
-            cross = cross.filter { $0.pid == f }
+            drop { $0.pid != f }
         }
         if !SwitchPreferences.shared.showCrossSpace || currentSpaceOnly {
             cross = cross.filter { !$0.isCrossSpace }
         }
         if let display = armDisplayFrame {
-            active.removeAll { !$0.bounds.intersects(display) }
-            cross.removeAll { !$0.bounds.intersects(display) }
+            drop { !$0.bounds.intersects(display) }
         }
         let activeFront = WindowMRU.mostRecent(in: active) ?? active.first
         let ws: [WindowInfo]
@@ -252,19 +242,14 @@ final class SwitchModel: ObservableObject {
         }
         let pinned = SwitchPreferences.shared.pinnedBundleIDs
         if !pinned.isEmpty {
-            final.sort { (a, b) in
-                let aP = a.bundleID.map { pinned.contains($0) } ?? false
-                let bP = b.bundleID.map { pinned.contains($0) } ?? false
-                return aP && !bP
-            }
+            final.sort { $0.isPinned(in: pinned) && !$1.isPinned(in: pinned) }
         }
         return final
     }
 
     func closeSelected() {
-        let list = filteredWindows
-        guard list.indices.contains(selected) else { return }
-        close(list[selected])
+        guard let target = selectedWindow else { return }
+        close(target)
     }
 
     func close(_ target: WindowInfo) {
@@ -283,8 +268,7 @@ final class SwitchModel: ObservableObject {
     }
 
     private func removeFromPicker(_ shouldRemove: (WindowInfo) -> Bool) {
-        let before = filteredWindows
-        let selectedID = before.indices.contains(selected) ? before[selected].id : nil
+        let selectedID = selectedWindow?.id
         windows.removeAll(where: shouldRemove)
         let liveIDs = Set(windows.map { $0.id })
         thumbnails = thumbnails.filter { liveIDs.contains($0.key) }
@@ -334,7 +318,7 @@ final class SwitchModel: ObservableObject {
         WindowStore.shared.refresh { snap in
             let ws = snap.windows.allWindows
             let liveIDs = Set(ws.map { $0.id })
-            WindowMRU.purge(keeping: snap.windows.allIDs)
+            WindowMRU.purge(keeping: liveIDs)
             Task.detached(priority: .utility) {
                 AXWindowCache.purgeDead()
             }
@@ -388,10 +372,7 @@ final class SwitchModel: ObservableObject {
     }
 
     func closeSelectedApp() {
-        guard mode != .spaces else { return }
-        let list = filteredWindows
-        guard list.indices.contains(selected) else { return }
-        let target = list[selected]
+        guard mode != .spaces, let target = selectedWindow else { return }
         AppCloser.close(target)
         quitPIDs.insert(target.pid)
         removeFromPicker { $0.pid == target.pid }
@@ -399,10 +380,7 @@ final class SwitchModel: ObservableObject {
 
 
     func hideSelected() {
-        guard mode != .spaces else { return }
-        let list = filteredWindows
-        guard list.indices.contains(selected) else { return }
-        let target = list[selected]
+        guard mode != .spaces, let target = selectedWindow else { return }
         if let app = NSRunningApplication(processIdentifier: target.pid) {
             app.hide()
         }
@@ -464,8 +442,8 @@ final class SwitchModel: ObservableObject {
         thumbnails = [:]
         filterText = ""
         stopRefreshTimer()
-        thumbnailTasks.forEach { $0.cancel() }
-        thumbnailTasks = []
+        thumbnailTask?.cancel()
+        thumbnailTask = nil
     }
 
     private func fetchThumbnails(for windows: [WindowInfo], force: Bool, batch: Bool = false) async {
@@ -485,7 +463,7 @@ final class SwitchModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 if let img {
                     if batch { collected[id] = img }
-                    else if visible { thumbnails[id] = img }
+                    else if visible, thumbnails[id] !== img { thumbnails[id] = img }
                 }
             }
         }

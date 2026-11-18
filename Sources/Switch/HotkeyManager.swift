@@ -62,17 +62,12 @@ final class HotkeyManager {
     /// Read on the tap thread; TIS calls hit TSM, which is only safe from main.
     private var layoutData: Data?
     private var keyboardType: UInt32 = 0
-    private var stopRequested = false
 
     private var tapThread: Thread?
     private var tapRunLoop: CFRunLoop?
     private let tapReady = DispatchSemaphore(value: 0)
 
     private static let stickyQuickTapMS: Double = 200
-    private var wakeToken: NSObjectProtocol?
-    private var screensWakeToken: NSObjectProtocol?
-    private var activateToken: NSObjectProtocol?
-    private var layoutToken: NSObjectProtocol?
     private var healthTimer: Timer?
 
     private static let kcEscape: CGKeyCode = 53
@@ -96,35 +91,8 @@ final class HotkeyManager {
         startHealthCheck()
     }
 
-    func stop() {
-        if let wakeToken { NSWorkspace.shared.notificationCenter.removeObserver(wakeToken) }
-        if let screensWakeToken { NSWorkspace.shared.notificationCenter.removeObserver(screensWakeToken) }
-        if let activateToken { NSWorkspace.shared.notificationCenter.removeObserver(activateToken) }
-        wakeToken = nil
-        screensWakeToken = nil
-        activateToken = nil
-        if let layoutToken { DistributedNotificationCenter.default().removeObserver(layoutToken) }
-        layoutToken = nil
-        healthTimer?.invalidate()
-        healthTimer = nil
-        stateLock.lock()
-        stopRequested = true
-        stateLock.unlock()
-        performOnTapThread { [weak self] in
-            self?.uninstallTap()
-            CFRunLoopStop(CFRunLoopGetCurrent())
-        }
-        tapThread = nil
-        stateLock.lock()
-        tapRunLoop = nil
-        stateLock.unlock()
-    }
-
     private func startTapThread() {
         guard tapThread == nil else { return }
-        stateLock.lock()
-        stopRequested = false
-        stateLock.unlock()
         let thread = Thread { [weak self] in
             guard let self else { return }
             self.stateLock.lock()
@@ -133,10 +101,6 @@ final class HotkeyManager {
             self.installTap()
             self.tapReady.signal()
             while true {
-                self.stateLock.lock()
-                let shouldStop = self.stopRequested
-                self.stateLock.unlock()
-                if shouldStop { break }
                 let result = CFRunLoopRunInMode(.defaultMode, 3600, false)
                 if result == .finished { Thread.sleep(forTimeInterval: 1.0) }
             }
@@ -173,13 +137,13 @@ final class HotkeyManager {
     /// reinstall.
     private func installWakeObserver() {
         let nc = NSWorkspace.shared.notificationCenter
-        wakeToken = nc.addObserver(
+        nc.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
             self?.reinstallIfNeeded()
         }
-        screensWakeToken = nc.addObserver(
+        nc.addObserver(
             forName: NSWorkspace.screensDidWakeNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
@@ -189,7 +153,7 @@ final class HotkeyManager {
 
     private func installFrontmostObserver() {
         setFrontmost(NSWorkspace.shared.frontmostApplication)
-        activateToken = NSWorkspace.shared.notificationCenter.addObserver(
+        NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main
         ) { [weak self] note in
@@ -205,7 +169,7 @@ final class HotkeyManager {
 
     private func installLayoutObserver() {
         refreshLayoutData()
-        layoutToken = DistributedNotificationCenter.default().addObserver(
+        DistributedNotificationCenter.default().addObserver(
             forName: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
             object: nil, queue: .main
         ) { [weak self] _ in
@@ -252,10 +216,7 @@ final class HotkeyManager {
         let tap = self.tap
         stateLock.unlock()
         if let tap, CGEvent.tapIsEnabled(tap: tap) { return }
-        performOnTapThread { [weak self] in
-            self?.uninstallTap()
-            self?.installTap()
-        }
+        reload()
     }
 
     @discardableResult
@@ -355,11 +316,7 @@ final class HotkeyManager {
 
             if armedMode != nil {
                 let key = layoutChar(from: event)
-                let homeRow = UserDefaults.standard.bool(forKey: SwitchPreferences.homeRowSelectionKey)
-                let vimNavigation = !homeRow && UserDefaults.standard.bool(forKey: SwitchPreferences.vimNavigationKey)
-                let typeToFilter = vimNavigation || homeRow
-                    ? false
-                    : (UserDefaults.standard.object(forKey: SwitchPreferences.typeToFilterKey) as? Bool) ?? true
+                let (homeRow, vimNavigation, typeToFilter) = SwitchPreferences.storedInputModes()
                 let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
                 if kc == Self.kcEscape {
                     clearArmed()
@@ -468,7 +425,7 @@ final class HotkeyManager {
 
             if !armingHeld {
                 // Only quick if the picker hasn't shown yet, so a 0ms delay never flips back (#179).
-                let delayMS = (UserDefaults.standard.object(forKey: SwitchPreferences.pickerActivationDelayKey) as? Double) ?? SwitchPreferences.defaultPickerActivationDelay
+                let delayMS = SwitchPreferences.storedActivationDelay
                 let quickTapMS = min(Self.stickyQuickTapMS, delayMS)
                 let quickTap = (armedAt.map { Date().timeIntervalSince($0) * 1000 < quickTapMS } ?? false) && !advanced
                 if !armedSticky || quickTap {
@@ -560,10 +517,6 @@ final class HotkeyManager {
     }
 
     func reload() {
-        reinstall()
-    }
-
-    private func reinstall() {
         performOnTapThread { [weak self] in
             self?.uninstallTap()
             self?.installTap()

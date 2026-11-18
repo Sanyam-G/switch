@@ -6,7 +6,7 @@ import AppKit
 ///
 ///   post "switch.debug.dump"                       → /tmp/switch_debug.json
 ///   post "switch.debug.focus" {"wid": N, "strategy": S} → focuses, then dumps
-///     strategies: current | slps | slps-noax | slps-activate
+///     strategies: current | cached | setfs | menu
 final class DebugFocusHarness {
     private var tokens: [NSObjectProtocol] = []
 
@@ -48,9 +48,14 @@ final class DebugFocusHarness {
         })
     }
 
+    private static func enumerated() -> (activeSpace: [WindowInfo], crossSpace: [WindowInfo]) {
+        let full = WindowEnumerator.fullSnapshot()
+        let showCross = (UserDefaults.standard.object(forKey: SwitchPreferences.crossSpaceKey) as? Bool) ?? true
+        return (full.activeSpace, showCross ? full.crossSpace : full.crossSpace.filter { !$0.isCrossSpace })
+    }
+
     private static func runFocus(wid: CGWindowID, strategy: String) {
-        let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let e = WindowEnumerator.enumerate(scope: .allWindows, frontmostPID: frontmost)
+        let e = enumerated()
         let all = e.activeSpace + e.crossSpace
         guard let window = all.first(where: { $0.id == wid }) else {
             try? "{\"error\": \"wid \(wid) not found\"}".write(toFile: "/tmp/switch_debug_result.json", atomically: true, encoding: .utf8)
@@ -136,7 +141,7 @@ final class DebugFocusHarness {
     private static func dump(to path: String, focusedWid: CGWindowID? = nil, strategy: String? = nil) {
         let cid = CGSMainConnectionID()
         let frontmost = NSWorkspace.shared.frontmostApplication
-        let all = WindowEnumerator.enumerate(scope: .allWindows, frontmostPID: frontmost?.processIdentifier)
+        let all = enumerated()
         func encode(_ w: WindowInfo) -> [String: Any] {
             [
                 "wid": Int(w.id), "pid": Int(w.pid), "app": w.appName, "title": w.title,
