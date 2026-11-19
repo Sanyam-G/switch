@@ -22,6 +22,8 @@ final class SwitchModel: ObservableObject {
     var commitAndDismiss: (() -> Void)?
     /// Set by AppDelegate so the model can request a dismiss after a close empties the list, or after hiding an app.
     var cancelAndDismiss: (() -> Void)?
+    /// Refit the picker when filtering or closing changes the visible tile count.
+    var requestPanelResize: (() -> Void)?
 
     private var refreshTimer: Timer?
     private var prewarmTimer: Timer?
@@ -347,7 +349,9 @@ final class SwitchModel: ObservableObject {
         let list = filteredWindows
         guard !list.isEmpty else { return }
         let n = list.count
-        let cols = (SwitchPreferences.shared.verticalList || mode == .spaces) ? 1 : SwitchPreferences.shared.gridColumns
+        let prefs = SwitchPreferences.shared
+        let cols = (prefs.verticalList || mode == .spaces) ? 1
+            : SwitcherGridLayout.columns(count: n, configured: prefs.gridColumns, adaptive: prefs.autoResizePicker)
         let delta: Int
         switch direction {
         case .left:  delta = -1
@@ -373,6 +377,11 @@ final class SwitchModel: ObservableObject {
 
     func closeSelectedApp() {
         guard mode != .spaces, let target = selectedWindow else { return }
+        quitApp(for: target)
+    }
+
+    func quitApp(for target: WindowInfo) {
+        guard mode != .spaces else { return }
         AppCloser.close(target)
         quitPIDs.insert(target.pid)
         removeFromPicker { $0.pid == target.pid }

@@ -225,6 +225,14 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(showStoplights, forKey: SwitchPreferences.showStoplightsKey) }
     }
 
+    @Published var showQuitAppButton: Bool {
+        didSet { UserDefaults.standard.set(showQuitAppButton, forKey: SwitchPreferences.showQuitAppButtonKey) }
+    }
+
+    @Published var autoResizePicker: Bool {
+        didSet { UserDefaults.standard.set(autoResizePicker, forKey: SwitchPreferences.autoResizePickerKey) }
+    }
+
     @Published var verticalShowStoplights: Bool {
         didSet { UserDefaults.standard.set(verticalShowStoplights, forKey: SwitchPreferences.verticalShowStoplightsKey) }
     }
@@ -346,6 +354,8 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let hideMenuBarIconKey = "switch.hideMenuBarIcon"
     nonisolated static let showThumbnailsKey = "switch.showThumbnails"
     nonisolated static let showStoplightsKey = "switch.showStoplights"
+    nonisolated static let showQuitAppButtonKey = "switch.showQuitAppButton"
+    nonisolated static let autoResizePickerKey = "switch.autoResizePicker"
     nonisolated static let verticalShowStoplightsKey = "switch.verticalShowStoplights"
     nonisolated static let verticalShowPreviewKey = "switch.verticalShowPreview"
     nonisolated static let verticalShowHeaderKey = "switch.verticalShowHeader"
@@ -393,6 +403,8 @@ final class SwitchPreferences: ObservableObject {
         hideMenuBarIcon = UserDefaults.standard.bool(forKey: SwitchPreferences.hideMenuBarIconKey)
         showThumbnails = Self.storedShowThumbnails
         showStoplights = (UserDefaults.standard.object(forKey: SwitchPreferences.showStoplightsKey) as? Bool) ?? true
+        showQuitAppButton = (UserDefaults.standard.object(forKey: SwitchPreferences.showQuitAppButtonKey) as? Bool) ?? true
+        autoResizePicker = (UserDefaults.standard.object(forKey: SwitchPreferences.autoResizePickerKey) as? Bool) ?? true
         verticalShowStoplights = (UserDefaults.standard.object(forKey: SwitchPreferences.verticalShowStoplightsKey) as? Bool) ?? true
         verticalShowPreview = Self.storedVerticalShowPreview
         verticalShowHeader = (UserDefaults.standard.object(forKey: SwitchPreferences.verticalShowHeaderKey) as? Bool) ?? true

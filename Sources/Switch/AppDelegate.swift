@@ -89,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window?.dismiss()
         }
         model.cancelAndDismiss = cancelAndDismiss
+        model.requestPanelResize = { [weak window] in window?.applyContentSize() }
         hotkey.onCloseSelected = { present(); model.closeSelected() }
         hotkey.onCloseSelectedApp = { present(); model.closeSelectedApp() }
         hotkey.onHideSelected = { present(); model.hideSelected() }
@@ -117,6 +118,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         resizeOnChange(SwitchPreferences.shared.$maxListRows)
         resizeOnChange(SwitchPreferences.shared.$maxGridRows)
         resizeOnChange(SwitchPreferences.shared.$panelWidthScale)
+        SwitchPreferences.shared.$autoResizePicker
+            .dropFirst()
+            .sink { [weak window] enabled in window?.applyContentSize(autoResizePicker: enabled) }
+            .store(in: &cancellables)
         SwitchPreferences.shared.$showThumbnails
             .dropFirst()
             .sink { [weak self, weak window] enabled in
