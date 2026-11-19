@@ -73,6 +73,7 @@ final class HotkeyManager {
     private let tapReady = DispatchSemaphore(value: 0)
 
     private static let stickyQuickTapMS: Double = 200
+    private static let shiftRepeatExtraDelay: TimeInterval = 0.25
     private var healthTimer: Timer?
 
     private static let kcEscape: CGKeyCode = 53
@@ -465,7 +466,8 @@ final class HotkeyManager {
 
     /// Main thread. Shift sends no key repeats, so follow the system repeat timing while it stays held alone.
     private func scheduleShiftRepeat(_ gen: Int, first: Bool) {
-        let delay = first ? NSEvent.keyRepeatDelay : NSEvent.keyRepeatInterval
+        // Longer than a key's repeat delay so a slow ⇧⌘W lands before Shift starts repeating.
+        let delay = first ? NSEvent.keyRepeatDelay + Self.shiftRepeatExtraDelay : NSEvent.keyRepeatInterval
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
             self.stateLock.lock()
