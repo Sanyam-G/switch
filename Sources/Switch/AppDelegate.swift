@@ -256,9 +256,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startServicesIfNeeded() {
-        guard !servicesStarted else { return }
+        // A failed start leaves servicesStarted false so the permission poll tries again.
+        guard !servicesStarted, hotkey?.start() == true else { return }
         servicesStarted = true
-        hotkey?.start()
         WindowStore.shared.refresh()
         MainActor.assumeIsolated { model?.startPrewarm() }
         focusTracker?.start()

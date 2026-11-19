@@ -75,6 +75,7 @@ final class HotkeyManager {
     private static let stickyQuickTapMS: Double = 200
     private static let shiftRepeatExtraDelay: TimeInterval = 0.25
     private var healthTimer: Timer?
+    private var tapPingPending = false
 
     private static let kcEscape: CGKeyCode = 53
     private static let kcReturn: CGKeyCode = 36
@@ -88,13 +89,16 @@ final class HotkeyManager {
     private static let kcDigits: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
     private static let kcKeypadDigits: [CGKeyCode] = [83, 84, 85, 86, 87, 88, 89, 91, 92]
 
-    func start() {
-        if !ensureAccessibility() { return }
+    /// False when Accessibility isn't granted yet, so the caller retries instead of treating hotkeys as running.
+    @discardableResult
+    func start() -> Bool {
+        if !ensureAccessibility() { return false }
         startTapThread()
         installWakeObserver()
         installFrontmostObserver()
         installLayoutObserver()
         startHealthCheck()
+        return true
     }
 
     private func startTapThread() {
@@ -123,8 +127,35 @@ final class HotkeyManager {
         let rl = tapRunLoop
         stateLock.unlock()
         guard let rl else { return }
-        CFRunLoopPerformBlock(rl, CFRunLoopMode.defaultMode.rawValue, block)
+        CFRunLoopPerformBlock(rl, CFRunLoopMode.defaultMode.rawValue) { [weak self] in
+            // A thread abandoned by restartTapThread may unstick later; its queued work must not touch the new tap.
+            guard let self else { return }
+            self.stateLock.lock()
+            let current = self.tapRunLoop === CFRunLoopGetCurrent()
+            self.stateLock.unlock()
+            if current { block() }
+        }
         CFRunLoopWakeUp(rl)
+    }
+
+    /// Main thread. The tap thread is stuck (a callback never returned), so work queued to it never runs
+    /// and reload() can't heal it. Abandon it and start a fresh one.
+    // ponytail: leaks the stuck thread instead of killing it; Foundation has no safe way to kill one.
+    private func restartTapThread() {
+        stateLock.lock()
+        let oldTap = tap
+        tap = nil
+        source = nil
+        tapRunLoop = nil
+        tapPingPending = false
+        stateLock.unlock()
+        if let oldTap {
+            CGEvent.tapEnable(tap: oldTap, enable: false)
+            CFMachPortInvalidate(oldTap)
+        }
+        NSLog("Switch: event tap thread stopped responding, restarting it")
+        tapThread = nil
+        startTapThread()
     }
 
     private func uninstallTap() {
@@ -134,7 +165,11 @@ final class HotkeyManager {
         self.tap = nil
         self.source = nil
         stateLock.unlock()
-        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            // Without this a replaced tap can stay registered with the window server.
+            CFMachPortInvalidate(tap)
+        }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes) }
     }
 
@@ -213,8 +248,27 @@ final class HotkeyManager {
     private func startHealthCheck() {
         healthTimer?.invalidate()
         healthTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
-            self?.reinstallIfNeeded()
+            self?.checkHealth()
         }
+    }
+
+    /// Pings the tap thread each tick. If last tick's ping never ran, the thread is stuck.
+    private func checkHealth() {
+        stateLock.lock()
+        let stuck = tapPingPending
+        tapPingPending = true
+        stateLock.unlock()
+        if stuck {
+            restartTapThread()
+            return
+        }
+        performOnTapThread { [weak self] in
+            guard let self else { return }
+            self.stateLock.lock()
+            self.tapPingPending = false
+            self.stateLock.unlock()
+        }
+        reinstallIfNeeded()
     }
 
     private func reinstallIfNeeded() {
