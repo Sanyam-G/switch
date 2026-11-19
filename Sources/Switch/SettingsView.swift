@@ -314,7 +314,7 @@ struct SettingsView: View {
                           value: $prefs.pickerActivationDelay, in: 0...300, step: 10)
                 Divider().opacity(0.4)
                 toggleRow("Reverse with Shift tap",
-                          "While holding the hotkey, tap Shift to step backward. ⇧-Tab still works too.",
+                          "While holding the hotkey, press Shift to step backward, or hold it to keep going. ⇧-Tab still works too.",
                           $prefs.shiftTapReverses)
                 Divider().opacity(0.4)
                 toggleRow("Reverse with ⌘`",

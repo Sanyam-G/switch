@@ -56,7 +56,11 @@ final class HotkeyManager {
     private var armedAt: Date?
     private var advanced = false
     private var lastShift = false
+    /// Shift's press stepped back and nothing else followed yet, so a key now makes it a chord to undo (#199).
     private var shiftTapPending = false
+    private var shiftRepeating = false
+    /// Bumped on every Shift edge and key, so a stale repeat timer stops.
+    private var shiftGen = 0
     private var suspended = false
     /// Read on the tap thread; NSWorkspace is only safe to query from main.
     private var frontmostBundleID: String?
@@ -277,9 +281,17 @@ final class HotkeyManager {
 
         if type == .keyDown {
             stateLock.lock()
-            // Any key while Shift is down makes it a chord (⇧⌘W), not a reverse tap (#143).
+            // Any key while Shift is down makes it a chord (⇧⌘W), not a reverse tap (#143), so
+            // take back the step Shift's press made unless it was already repeating (#199).
+            let undoShiftStep = shiftTapPending && !shiftRepeating
             shiftTapPending = false
+            shiftGen &+= 1
             stateLock.unlock()
+            if undoShiftStep {
+                DispatchQueue.main.async { [weak self] in
+                    self?.onAdvance?(false, false)
+                }
+            }
 
             if let stickyBinding = HotkeyConfig.shared[.stickyToggle],
                stickyBinding.matchesTrigger(keyCode: kc, flags: flags) {
@@ -410,19 +422,23 @@ final class HotkeyManager {
             }
             let armingHeld = armedBinding?.modifiersHeld(flags) ?? false
 
-            // Release-fired so ⇧⌘W closes without stepping first; a pre-arm Shift never sets pending (#143).
-            if armingHeld && UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey) {
-                if shiftRising {
-                    shiftTapPending = true
-                } else if shiftFalling && shiftTapPending {
-                    shiftTapPending = false
-                    advanced = true
-                    stateLock.unlock()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onAdvance?(true, false)
-                    }
-                    return nil
+            if shiftFalling {
+                shiftTapPending = false
+                shiftGen &+= 1
+            }
+            // Steps on press and repeats while held; a chord undoes the step, a pre-arm Shift never steps (#143, #199).
+            if shiftRising && armingHeld && UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey) {
+                shiftTapPending = true
+                shiftRepeating = false
+                advanced = true
+                shiftGen &+= 1
+                let gen = shiftGen
+                stateLock.unlock()
+                DispatchQueue.main.async { [weak self] in
+                    self?.onAdvance?(true, false)
+                    self?.scheduleShiftRepeat(gen, first: true)
                 }
+                return Unmanaged.passUnretained(event)
             }
 
             if !armingHeld {
@@ -445,6 +461,21 @@ final class HotkeyManager {
         }
 
         return Unmanaged.passUnretained(event)
+    }
+
+    /// Main thread. Shift sends no key repeats, so follow the system repeat timing while it stays held alone.
+    private func scheduleShiftRepeat(_ gen: Int, first: Bool) {
+        let delay = first ? NSEvent.keyRepeatDelay : NSEvent.keyRepeatInterval
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.stateLock.lock()
+            let live = self.shiftGen == gen && self.shiftTapPending && self.armed != nil
+            if live { self.shiftRepeating = true }
+            self.stateLock.unlock()
+            guard live else { return }
+            self.onAdvance?(true, true)
+            self.scheduleShiftRepeat(gen, first: false)
+        }
     }
 
     private func armOrAdvance(_ style: ArmStyle, binding: HotkeyBinding, shift: Bool, isRepeat: Bool) {
@@ -481,6 +512,7 @@ final class HotkeyManager {
         armedAt = nil
         advanced = false
         shiftTapPending = false
+        shiftRepeating = false
     }
 
     func clearArmed() {
