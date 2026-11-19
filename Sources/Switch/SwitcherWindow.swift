@@ -140,15 +140,18 @@ private enum SwitcherPanelSize {
         let columnWidth = usable / CGFloat(configuredColumns)
         let width = horizontalPadding + CGFloat(columns) * columnWidth + CGFloat(max(columns - 1, 0)) * PickerLayout.gridSpacing
 
+        let rows = Int(ceil(Double(count) / Double(columns)))
+        let maxRows = defaults.read(SwitchPreferences.maxGridRowsKey, default: SwitchPreferences.defaultMaxGridRows)
         let height = wholeRowsHeight(
-            rows: Int(ceil(Double(count) / Double(columns))),
-            maxRows: defaults.read(SwitchPreferences.maxGridRowsKey, default: SwitchPreferences.defaultMaxGridRows),
+            rows: rows,
+            maxRows: maxRows,
             rowHeight: tileThumb + PickerLayout.tileExtraHeight,
             gap: PickerLayout.gridSpacing,
             chrome: PickerLayout.headerHeight + 16 + hintHeight,
             screen: screen
         )
-        return NSSize(width: max(560, width), height: max(320, height))
+        // The minimum height only pads when every row fits; otherwise it shows part of the next row.
+        return NSSize(width: max(560, width), height: rows > maxRows ? height : max(320, height))
     }
 
     private static func fit(_ size: NSSize, on screen: NSScreen?) -> NSSize {
