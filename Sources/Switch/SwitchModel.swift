@@ -336,11 +336,16 @@ final class SwitchModel: ObservableObject {
         }
     }
 
-    func advance(reverse: Bool) {
+    /// Taps wrap around; a held key (clamp) stops at the first and last window like native ⌘Tab (#200).
+    func advance(reverse: Bool, clamp: Bool = false) {
         let list = filteredWindows
         guard !list.isEmpty else { return }
         let n = list.count
-        selected = reverse ? (selected - 1 + n) % n : (selected + 1) % n
+        if clamp {
+            selected = reverse ? max(selected - 1, 0) : min(selected + 1, n - 1)
+        } else {
+            selected = reverse ? (selected - 1 + n) % n : (selected + 1) % n
+        }
     }
 
     func navigate(direction: HotkeyManager.Direction) {

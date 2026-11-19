@@ -61,9 +61,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.arm(style)
             self?.schedulePresent(window: window)
         }
-        hotkey.onAdvance = { reverse in
+        hotkey.onAdvance = { reverse, clamp in
             present()
-            model.advance(reverse: reverse)
+            model.advance(reverse: reverse, clamp: clamp)
         }
         // Tap-originated commits already cleared armed on the tap thread; clearing again here races a fresh arm.
         hotkey.onCommit = { [weak self, weak model, weak window] quick in

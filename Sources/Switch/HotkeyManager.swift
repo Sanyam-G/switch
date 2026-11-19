@@ -31,7 +31,8 @@ final class HotkeyManager {
     ]
 
     var onArm: ((ArmStyle) -> Void)?
-    var onAdvance: ((Bool) -> Void)?
+    /// (reverse, clamp): clamp is set for held keys so they stop at the ends (#200).
+    var onAdvance: ((Bool, Bool) -> Void)?
     /// True for a sticky-mode quick tap: the picker never showed, so commit the previous window (#96).
     var onCommit: ((Bool) -> Void)?
     var onCancel: (() -> Void)?
@@ -272,6 +273,7 @@ final class HotkeyManager {
         let cmd = flags.contains(.maskCommand)
         let shift = flags.contains(.maskShift)
         let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+        let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
 
         if type == .keyDown {
             stateLock.lock()
@@ -295,7 +297,7 @@ final class HotkeyManager {
                 advanced = true
                 stateLock.unlock()
                 DispatchQueue.main.async { [weak self] in
-                    self?.onAdvance?(true)
+                    self?.onAdvance?(true, isRepeat)
                 }
                 return nil
             }
@@ -304,7 +306,7 @@ final class HotkeyManager {
                 guard let binding = HotkeyConfig.shared[slot],
                       binding.matchesTrigger(keyCode: kc, flags: flags) else { continue }
                 if shouldPassThrough() { return Unmanaged.passUnretained(event) }
-                armOrAdvance(style, binding: binding, shift: shift)
+                armOrAdvance(style, binding: binding, shift: shift, isRepeat: isRepeat)
                 return nil
             }
 
@@ -417,7 +419,7 @@ final class HotkeyManager {
                     advanced = true
                     stateLock.unlock()
                     DispatchQueue.main.async { [weak self] in
-                        self?.onAdvance?(true)
+                        self?.onAdvance?(true, false)
                     }
                     return nil
                 }
@@ -445,7 +447,7 @@ final class HotkeyManager {
         return Unmanaged.passUnretained(event)
     }
 
-    private func armOrAdvance(_ style: ArmStyle, binding: HotkeyBinding, shift: Bool) {
+    private func armOrAdvance(_ style: ArmStyle, binding: HotkeyBinding, shift: Bool, isRepeat: Bool) {
         var effective = style
         effective.sticky = style.sticky || UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
         effective.reverse = shift
@@ -462,7 +464,7 @@ final class HotkeyManager {
         }
         stateLock.unlock()
         DispatchQueue.main.async { [weak self] in
-            if isFirst { self?.onArm?(effective) } else { self?.onAdvance?(shift) }
+            if isFirst { self?.onArm?(effective) } else { self?.onAdvance?(shift, isRepeat) }
         }
     }
 
