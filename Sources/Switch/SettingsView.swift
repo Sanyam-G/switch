@@ -314,7 +314,7 @@ struct SettingsView: View {
                           value: $prefs.pickerActivationDelay, in: 0...300, step: 10)
                 Divider().opacity(0.4)
                 toggleRow("Reverse with Shift tap",
-                          "While holding the hotkey, tap Shift to step backward. ⇧-Tab still works too.",
+                          "While holding the hotkey, press Shift to step backward, or hold it to keep going. ⇧-Tab still works too.",
                           $prefs.shiftTapReverses)
                 Divider().opacity(0.4)
                 toggleRow("Reverse with ⌘`",
@@ -815,20 +815,24 @@ struct SettingsView: View {
         .help(choice.label)
     }
 
-    private func applyHotkey(_ b: HotkeyBinding?, to slot: HotkeyConfig.Slot) {
+    @discardableResult
+    private func applyHotkey(_ b: HotkeyBinding?, to slot: HotkeyConfig.Slot) -> Bool {
         guard let b else {
             rejectMessage = nil
             model.update(slot, nil)
-            return
+            return true
         }
         if let msg = HotkeyValidator.reject(keyCode: b.keyCode, flags: b.cgFlags) {
             rejectMessage = msg
-        } else if model.bindings.contains(where: { $0.key != slot && $0.value.conflicts(with: b) }) {
-            rejectMessage = "That shortcut is already assigned."
-        } else {
-            rejectMessage = nil
-            model.update(slot, b)
+            return false
         }
+        if model.bindings.contains(where: { $0.key != slot && $0.value.conflicts(with: b) }) {
+            rejectMessage = "That shortcut is already assigned."
+            return false
+        }
+        rejectMessage = nil
+        model.update(slot, b)
+        return true
     }
 }
 

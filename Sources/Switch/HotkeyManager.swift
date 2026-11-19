@@ -31,7 +31,10 @@ final class HotkeyManager {
     ]
 
     var onArm: ((ArmStyle) -> Void)?
-    var onAdvance: ((Bool) -> Void)?
+    /// (reverse, clamp): clamp is set for held keys so they stop at the ends (#200).
+    var onAdvance: ((Bool, Bool) -> Void)?
+    /// Shift pressed alone steps back (false); a chord then undoes that step (true) (#199).
+    var onShiftStep: ((Bool) -> Void)?
     /// True for a sticky-mode quick tap: the picker never showed, so commit the previous window (#96).
     var onCommit: ((Bool) -> Void)?
     var onCancel: (() -> Void)?
@@ -55,7 +58,11 @@ final class HotkeyManager {
     private var armedAt: Date?
     private var advanced = false
     private var lastShift = false
+    /// Shift's press stepped back and nothing else followed yet, so a key now makes it a chord to undo (#199).
     private var shiftTapPending = false
+    private var shiftRepeating = false
+    /// Bumped on every Shift edge and key, so a stale repeat timer stops.
+    private var shiftGen = 0
     private var suspended = false
     /// Read on the tap thread; NSWorkspace is only safe to query from main.
     private var frontmostBundleID: String?
@@ -68,7 +75,9 @@ final class HotkeyManager {
     private let tapReady = DispatchSemaphore(value: 0)
 
     private static let stickyQuickTapMS: Double = 200
+    private static let shiftRepeatExtraDelay: TimeInterval = 0.25
     private var healthTimer: Timer?
+    private var tapPingPending = false
 
     private static let kcEscape: CGKeyCode = 53
     private static let kcReturn: CGKeyCode = 36
@@ -82,13 +91,16 @@ final class HotkeyManager {
     private static let kcDigits: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
     private static let kcKeypadDigits: [CGKeyCode] = [83, 84, 85, 86, 87, 88, 89, 91, 92]
 
-    func start() {
-        if !ensureAccessibility() { return }
+    /// False when Accessibility isn't granted yet, so the caller retries instead of treating hotkeys as running.
+    @discardableResult
+    func start() -> Bool {
+        if !ensureAccessibility() { return false }
         startTapThread()
         installWakeObserver()
         installFrontmostObserver()
         installLayoutObserver()
         startHealthCheck()
+        return true
     }
 
     private func startTapThread() {
@@ -117,8 +129,35 @@ final class HotkeyManager {
         let rl = tapRunLoop
         stateLock.unlock()
         guard let rl else { return }
-        CFRunLoopPerformBlock(rl, CFRunLoopMode.defaultMode.rawValue, block)
+        CFRunLoopPerformBlock(rl, CFRunLoopMode.defaultMode.rawValue) { [weak self] in
+            // A thread abandoned by restartTapThread may unstick later; its queued work must not touch the new tap.
+            guard let self else { return }
+            self.stateLock.lock()
+            let current = self.tapRunLoop === CFRunLoopGetCurrent()
+            self.stateLock.unlock()
+            if current { block() }
+        }
         CFRunLoopWakeUp(rl)
+    }
+
+    /// Main thread. The tap thread is stuck (a callback never returned), so work queued to it never runs
+    /// and reload() can't heal it. Abandon it and start a fresh one.
+    // ponytail: leaks the stuck thread instead of killing it; Foundation has no safe way to kill one.
+    private func restartTapThread() {
+        stateLock.lock()
+        let oldTap = tap
+        tap = nil
+        source = nil
+        tapRunLoop = nil
+        tapPingPending = false
+        stateLock.unlock()
+        if let oldTap {
+            CGEvent.tapEnable(tap: oldTap, enable: false)
+            CFMachPortInvalidate(oldTap)
+        }
+        NSLog("Switch: event tap thread stopped responding, restarting it")
+        tapThread = nil
+        startTapThread()
     }
 
     private func uninstallTap() {
@@ -128,7 +167,11 @@ final class HotkeyManager {
         self.tap = nil
         self.source = nil
         stateLock.unlock()
-        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            // Without this a replaced tap can stay registered with the window server.
+            CFMachPortInvalidate(tap)
+        }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes) }
     }
 
@@ -207,8 +250,27 @@ final class HotkeyManager {
     private func startHealthCheck() {
         healthTimer?.invalidate()
         healthTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
-            self?.reinstallIfNeeded()
+            self?.checkHealth()
         }
+    }
+
+    /// Pings the tap thread each tick. If last tick's ping never ran, the thread is stuck.
+    private func checkHealth() {
+        stateLock.lock()
+        let stuck = tapPingPending
+        tapPingPending = true
+        stateLock.unlock()
+        if stuck {
+            restartTapThread()
+            return
+        }
+        performOnTapThread { [weak self] in
+            guard let self else { return }
+            self.stateLock.lock()
+            self.tapPingPending = false
+            self.stateLock.unlock()
+        }
+        reinstallIfNeeded()
     }
 
     private func reinstallIfNeeded() {
@@ -246,12 +308,20 @@ final class HotkeyManager {
             return
         }
         let src = CFMachPortCreateRunLoopSource(nil, tap, 0)
+        // A thread restartTapThread abandoned mid-install must not publish a second live tap.
+        stateLock.lock()
+        let owner = tapRunLoop === CFRunLoopGetCurrent()
+        if owner {
+            self.tap = tap
+            self.source = src
+        }
+        stateLock.unlock()
+        guard owner else {
+            CFMachPortInvalidate(tap)
+            return
+        }
         CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        stateLock.lock()
-        self.tap = tap
-        self.source = src
-        stateLock.unlock()
     }
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -272,12 +342,21 @@ final class HotkeyManager {
         let cmd = flags.contains(.maskCommand)
         let shift = flags.contains(.maskShift)
         let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+        let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
 
         if type == .keyDown {
             stateLock.lock()
-            // Any key while Shift is down makes it a chord (⇧⌘W), not a reverse tap (#143).
+            // Any key while Shift is down makes it a chord (⇧⌘W), not a reverse tap (#143), so
+            // take back the step Shift's press made unless it was already repeating (#199).
+            let undoShiftStep = shiftTapPending && !shiftRepeating
             shiftTapPending = false
+            shiftGen &+= 1
             stateLock.unlock()
+            if undoShiftStep {
+                DispatchQueue.main.async { [weak self] in
+                    self?.onShiftStep?(true)
+                }
+            }
 
             if let stickyBinding = HotkeyConfig.shared[.stickyToggle],
                stickyBinding.matchesTrigger(keyCode: kc, flags: flags) {
@@ -295,7 +374,7 @@ final class HotkeyManager {
                 advanced = true
                 stateLock.unlock()
                 DispatchQueue.main.async { [weak self] in
-                    self?.onAdvance?(true)
+                    self?.onAdvance?(true, isRepeat)
                 }
                 return nil
             }
@@ -304,7 +383,7 @@ final class HotkeyManager {
                 guard let binding = HotkeyConfig.shared[slot],
                       binding.matchesTrigger(keyCode: kc, flags: flags) else { continue }
                 if shouldPassThrough() { return Unmanaged.passUnretained(event) }
-                armOrAdvance(style, binding: binding, shift: shift)
+                armOrAdvance(style, binding: binding, shift: shift, isRepeat: isRepeat)
                 return nil
             }
 
@@ -408,19 +487,23 @@ final class HotkeyManager {
             }
             let armingHeld = armedBinding?.modifiersHeld(flags) ?? false
 
-            // Release-fired so ⇧⌘W closes without stepping first; a pre-arm Shift never sets pending (#143).
-            if armingHeld && UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey) {
-                if shiftRising {
-                    shiftTapPending = true
-                } else if shiftFalling && shiftTapPending {
-                    shiftTapPending = false
-                    advanced = true
-                    stateLock.unlock()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onAdvance?(true)
-                    }
-                    return nil
+            if shiftFalling {
+                shiftTapPending = false
+                shiftGen &+= 1
+            }
+            // Steps on press and repeats while held; a chord undoes the step, a pre-arm Shift never steps (#143, #199).
+            if shiftRising && armingHeld && UserDefaults.standard.bool(forKey: SwitchPreferences.shiftTapReversesKey) {
+                shiftTapPending = true
+                shiftRepeating = false
+                advanced = true
+                shiftGen &+= 1
+                let gen = shiftGen
+                stateLock.unlock()
+                DispatchQueue.main.async { [weak self] in
+                    self?.onShiftStep?(false)
+                    self?.scheduleShiftRepeat(gen, first: true)
                 }
+                return Unmanaged.passUnretained(event)
             }
 
             if !armingHeld {
@@ -445,7 +528,23 @@ final class HotkeyManager {
         return Unmanaged.passUnretained(event)
     }
 
-    private func armOrAdvance(_ style: ArmStyle, binding: HotkeyBinding, shift: Bool) {
+    /// Main thread. Shift sends no key repeats, so follow the system repeat timing while it stays held alone.
+    private func scheduleShiftRepeat(_ gen: Int, first: Bool) {
+        // Longer than a key's repeat delay so a slow ⇧⌘W lands before Shift starts repeating.
+        let delay = first ? NSEvent.keyRepeatDelay + Self.shiftRepeatExtraDelay : NSEvent.keyRepeatInterval
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.stateLock.lock()
+            let live = self.shiftGen == gen && self.shiftTapPending && self.armed != nil
+            if live { self.shiftRepeating = true }
+            self.stateLock.unlock()
+            guard live else { return }
+            self.onAdvance?(true, true)
+            self.scheduleShiftRepeat(gen, first: false)
+        }
+    }
+
+    private func armOrAdvance(_ style: ArmStyle, binding: HotkeyBinding, shift: Bool, isRepeat: Bool) {
         var effective = style
         effective.sticky = style.sticky || UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
         effective.reverse = shift
@@ -462,7 +561,7 @@ final class HotkeyManager {
         }
         stateLock.unlock()
         DispatchQueue.main.async { [weak self] in
-            if isFirst { self?.onArm?(effective) } else { self?.onAdvance?(shift) }
+            if isFirst { self?.onArm?(effective) } else { self?.onAdvance?(shift, isRepeat) }
         }
     }
 
@@ -479,6 +578,7 @@ final class HotkeyManager {
         armedAt = nil
         advanced = false
         shiftTapPending = false
+        shiftRepeating = false
     }
 
     func clearArmed() {

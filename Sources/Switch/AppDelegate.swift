@@ -61,9 +61,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.arm(style)
             self?.schedulePresent(window: window)
         }
-        hotkey.onAdvance = { reverse in
+        hotkey.onAdvance = { reverse, clamp in
             present()
-            model.advance(reverse: reverse)
+            model.advance(reverse: reverse, clamp: clamp)
+        }
+        hotkey.onShiftStep = { undo in
+            if undo {
+                model.undoShiftStep()
+            } else {
+                present()
+                model.shiftStepBack()
+            }
         }
         // Tap-originated commits already cleared armed on the tap thread; clearing again here races a fresh arm.
         hotkey.onCommit = { [weak self, weak model, weak window] quick in
@@ -256,9 +264,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startServicesIfNeeded() {
-        guard !servicesStarted else { return }
+        // A failed start leaves servicesStarted false so the permission poll tries again.
+        guard !servicesStarted, hotkey?.start() == true else { return }
         servicesStarted = true
-        hotkey?.start()
         WindowStore.shared.refresh()
         MainActor.assumeIsolated { model?.startPrewarm() }
         focusTracker?.start()

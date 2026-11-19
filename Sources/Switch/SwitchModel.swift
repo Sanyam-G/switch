@@ -336,11 +336,37 @@ final class SwitchModel: ObservableObject {
         }
     }
 
-    func advance(reverse: Bool) {
+    /// Where Shift's step moved the selection from and to, so a chord like ⇧⌘W can take it back (#199).
+    /// Window ids, not indices, so a list change in between (a removed window) can't restore a stale slot.
+    private var shiftStep: (from: WindowInfo.ID, to: WindowInfo.ID)?
+
+    func shiftStepBack() {
+        let list = filteredWindows
+        guard list.indices.contains(selected) else { return advance(reverse: true) }
+        let from = list[selected].id
+        advance(reverse: true)
+        shiftStep = (from, list[selected].id)
+    }
+
+    /// Only if nothing (hover, arrows) moved the selection since, or the chord would hit a neighbor.
+    func undoShiftStep() {
+        defer { shiftStep = nil }
+        let list = filteredWindows
+        guard let step = shiftStep, list.indices.contains(selected), list[selected].id == step.to,
+              let from = list.firstIndex(where: { $0.id == step.from }) else { return }
+        selected = from
+    }
+
+    /// Taps wrap around; a held key (clamp) stops at the first and last window like native ⌘Tab (#200).
+    func advance(reverse: Bool, clamp: Bool = false) {
         let list = filteredWindows
         guard !list.isEmpty else { return }
         let n = list.count
-        selected = reverse ? (selected - 1 + n) % n : (selected + 1) % n
+        if clamp {
+            selected = reverse ? max(selected - 1, 0) : min(selected + 1, n - 1)
+        } else {
+            selected = reverse ? (selected - 1 + n) % n : (selected + 1) % n
+        }
     }
 
     func navigate(direction: HotkeyManager.Direction) {
