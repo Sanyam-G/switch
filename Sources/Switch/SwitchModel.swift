@@ -336,6 +336,21 @@ final class SwitchModel: ObservableObject {
         }
     }
 
+    /// Where Shift's step moved the selection from and to, so a chord like ⇧⌘W can take it back (#199).
+    private var shiftStep: (from: Int, to: Int)?
+
+    func shiftStepBack() {
+        let from = selected
+        advance(reverse: true)
+        shiftStep = (from, selected)
+    }
+
+    /// Only if nothing (hover, arrows) moved the selection since, or the chord would hit a neighbor.
+    func undoShiftStep() {
+        if let step = shiftStep, selected == step.to { selected = step.from }
+        shiftStep = nil
+    }
+
     /// Taps wrap around; a held key (clamp) stops at the first and last window like native ⌘Tab (#200).
     func advance(reverse: Bool, clamp: Bool = false) {
         let list = filteredWindows

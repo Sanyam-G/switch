@@ -33,6 +33,8 @@ final class HotkeyManager {
     var onArm: ((ArmStyle) -> Void)?
     /// (reverse, clamp): clamp is set for held keys so they stop at the ends (#200).
     var onAdvance: ((Bool, Bool) -> Void)?
+    /// Shift pressed alone steps back (false); a chord then undoes that step (true) (#199).
+    var onShiftStep: ((Bool) -> Void)?
     /// True for a sticky-mode quick tap: the picker never showed, so commit the previous window (#96).
     var onCommit: ((Bool) -> Void)?
     var onCancel: (() -> Void)?
@@ -306,12 +308,20 @@ final class HotkeyManager {
             return
         }
         let src = CFMachPortCreateRunLoopSource(nil, tap, 0)
+        // A thread restartTapThread abandoned mid-install must not publish a second live tap.
+        stateLock.lock()
+        let owner = tapRunLoop === CFRunLoopGetCurrent()
+        if owner {
+            self.tap = tap
+            self.source = src
+        }
+        stateLock.unlock()
+        guard owner else {
+            CFMachPortInvalidate(tap)
+            return
+        }
         CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        stateLock.lock()
-        self.tap = tap
-        self.source = src
-        stateLock.unlock()
     }
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -344,7 +354,7 @@ final class HotkeyManager {
             stateLock.unlock()
             if undoShiftStep {
                 DispatchQueue.main.async { [weak self] in
-                    self?.onAdvance?(false, false)
+                    self?.onShiftStep?(true)
                 }
             }
 
@@ -490,7 +500,7 @@ final class HotkeyManager {
                 let gen = shiftGen
                 stateLock.unlock()
                 DispatchQueue.main.async { [weak self] in
-                    self?.onAdvance?(true, false)
+                    self?.onShiftStep?(false)
                     self?.scheduleShiftRepeat(gen, first: true)
                 }
                 return Unmanaged.passUnretained(event)

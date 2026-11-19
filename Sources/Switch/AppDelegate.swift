@@ -65,6 +65,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             present()
             model.advance(reverse: reverse, clamp: clamp)
         }
+        hotkey.onShiftStep = { undo in
+            if undo {
+                model.undoShiftStep()
+            } else {
+                present()
+                model.shiftStepBack()
+            }
+        }
         // Tap-originated commits already cleared armed on the tap thread; clearing again here races a fresh arm.
         hotkey.onCommit = { [weak self, weak model, weak window] quick in
             self?.cancelPendingPresent()
