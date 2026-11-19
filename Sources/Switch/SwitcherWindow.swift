@@ -109,10 +109,12 @@ private enum SwitcherPanelSize {
     private static var hintHeight: CGFloat { SwitchPreferences.storedShowHintStrip ? 38 : 0 }
 
     // Whole rows only: a screen-capped height leaves a clipped row at the bottom (#132).
-    private static func wholeRowsHeight(rows: Int, maxRows: Int, rowHeight: CGFloat, gap: CGFloat, chrome: CGFloat, screen: NSScreen?) -> CGFloat {
+    // minHeight only pads when every row is visible; padding a capped panel shows part of the next row.
+    private static func wholeRowsHeight(rows: Int, maxRows: Int, rowHeight: CGFloat, gap: CGFloat, chrome: CGFloat, minHeight: CGFloat, screen: NSScreen?) -> CGFloat {
         let fitting = screen.map { Int(($0.visibleFrame.height * maxScreenFraction - chrome + gap) / (rowHeight + gap)) } ?? maxRows
         let visible = max(1, min(rows, maxRows, fitting))
-        return chrome + CGFloat(visible) * rowHeight + CGFloat(visible - 1) * gap
+        let height = chrome + CGFloat(visible) * rowHeight + CGFloat(visible - 1) * gap
+        return visible < rows ? height : max(minHeight, height)
     }
 
     private static func listSize(count: Int, widthScale: CGFloat, screen: NSScreen?) -> NSSize {
@@ -123,9 +125,10 @@ private enum SwitcherPanelSize {
             rowHeight: showPreview ? 62 : 48,
             gap: PickerLayout.listRowSpacing,
             chrome: PickerLayout.headerHeight + hintHeight + 20,
+            minHeight: 260,
             screen: screen
         )
-        return NSSize(width: CGFloat(SwitchPreferences.defaultListPanelWidth) * widthScale, height: max(260, height))
+        return NSSize(width: CGFloat(SwitchPreferences.defaultListPanelWidth) * widthScale, height: height)
     }
 
     private static func gridSize(count: Int, widthScale: CGFloat, screen: NSScreen?) -> NSSize {
@@ -140,18 +143,16 @@ private enum SwitcherPanelSize {
         let columnWidth = usable / CGFloat(configuredColumns)
         let width = horizontalPadding + CGFloat(columns) * columnWidth + CGFloat(max(columns - 1, 0)) * PickerLayout.gridSpacing
 
-        let rows = Int(ceil(Double(count) / Double(columns)))
-        let maxRows = defaults.read(SwitchPreferences.maxGridRowsKey, default: SwitchPreferences.defaultMaxGridRows)
         let height = wholeRowsHeight(
-            rows: rows,
-            maxRows: maxRows,
+            rows: Int(ceil(Double(count) / Double(columns))),
+            maxRows: defaults.read(SwitchPreferences.maxGridRowsKey, default: SwitchPreferences.defaultMaxGridRows),
             rowHeight: tileThumb + PickerLayout.tileExtraHeight,
             gap: PickerLayout.gridSpacing,
             chrome: PickerLayout.headerHeight + 16 + hintHeight,
+            minHeight: 320,
             screen: screen
         )
-        // The minimum height only pads when every row fits; otherwise it shows part of the next row.
-        return NSSize(width: max(560, width), height: rows > maxRows ? height : max(320, height))
+        return NSSize(width: max(560, width), height: height)
     }
 
     private static func fit(_ size: NSSize, on screen: NSScreen?) -> NSSize {
