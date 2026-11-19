@@ -1,5 +1,17 @@
 import SwiftUI
 
+/// Numbers the panel sizer must agree with, or whole-row sizing clips.
+enum PickerLayout {
+    static let headerHeight: CGFloat = 26
+    static let listRowSpacing: CGFloat = 4
+    static let gridSpacing: CGFloat = 14
+    static let tilePadding: CGFloat = 9
+    static let tileTitleSpacing: CGFloat = 7
+    static let tileTitleHeight: CGFloat = 16
+    /// A tile's height beyond its thumbnail.
+    static let tileExtraHeight = tilePadding * 2 + tileTitleSpacing + tileTitleHeight
+}
+
 struct SwitchView: View {
     @EnvironmentObject var model: SwitchModel
     @ObservedObject private var prefs = SwitchPreferences.shared
@@ -44,7 +56,7 @@ struct SwitchView: View {
     }
 
     private func isPinned(_ window: WindowInfo) -> Bool {
-        window.bundleID.map { prefs.pinnedBundleIDs.contains($0) } ?? false
+        window.isPinned(in: prefs.pinnedBundleIDs)
     }
 
     @ViewBuilder
@@ -162,7 +174,7 @@ struct SwitchView: View {
             }
         }
         .padding(.horizontal, 22)
-        .frame(height: 26)
+        .frame(height: PickerLayout.headerHeight)
     }
 
     private var grid: some View {
@@ -174,7 +186,7 @@ struct SwitchView: View {
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: false) {
                         if isSpaceMode || prefs.verticalList {
-                            LazyVStack(spacing: 4) {
+                            LazyVStack(spacing: PickerLayout.listRowSpacing) {
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, w in
                                     listRow(window: w, index: idx)
                                         .id(w.id)
@@ -184,9 +196,9 @@ struct SwitchView: View {
                             .padding(.top, showHeader ? 10 : 14)
                             .padding(.bottom, 10)
                         } else {
-                            LazyVGrid(columns: gridColumns, spacing: 14) {
+                            LazyVGrid(columns: gridColumns, spacing: PickerLayout.gridSpacing) {
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, w in
-                                    tile(window: w, index: idx, list: list)
+                                    tile(window: w, index: idx)
                                         .id(w.id)
                                 }
                             }
@@ -278,7 +290,7 @@ struct SwitchView: View {
 
     private func pinButton(for window: WindowInfo) -> some View {
         let bid = window.bundleID
-        let isPinned = bid.map { prefs.pinnedBundleIDs.contains($0) } ?? false
+        let isPinned = window.isPinned(in: prefs.pinnedBundleIDs)
         return Button {
             guard let bid else { return }
             if isPinned { prefs.pinnedBundleIDs.remove(bid) }
@@ -337,12 +349,12 @@ struct SwitchView: View {
                                                 adaptive: prefs.autoResizePicker))
     }
 
-    private func tile(window: WindowInfo, index: Int, list: [WindowInfo]) -> some View {
+    private func tile(window: WindowInfo, index: Int) -> some View {
         let selected = index == model.selected
         let hovered = hoveredID == window.id
         let icon = appIcon(for: window)
 
-        return VStack(alignment: .leading, spacing: 7) {
+        return VStack(alignment: .leading, spacing: PickerLayout.tileTitleSpacing) {
             ZStack(alignment: .bottomLeading) {
                 ZStack {
                     Color.black.opacity(0.22)
@@ -365,7 +377,7 @@ struct SwitchView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: (prefs.showThumbnails ? prefs.thumbnailHeight : SwitchPreferences.compactThumbnailHeight)
-                    * SwitcherGridLayout.previewScale(count: list.count,
+                    * SwitcherGridLayout.previewScale(count: model.filteredWindows.count,
                                                       configured: prefs.gridColumns,
                                                       adaptive: prefs.autoResizePicker))
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -418,9 +430,10 @@ struct SwitchView: View {
                 }
                 Spacer(minLength: 0)
             }
+            .frame(height: PickerLayout.tileTitleHeight)
             .padding(.horizontal, 2)
         }
-        .padding(9)
+        .padding(PickerLayout.tilePadding)
         .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 9, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animationsEnabled: animationsEnabled))
         .contentShape(Rectangle())
         .onHover { handleHover($0, windowID: window.id, index: index) }
