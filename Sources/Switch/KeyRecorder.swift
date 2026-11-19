@@ -3,7 +3,8 @@ import SwiftUI
 
 struct KeyRecorderField: NSViewRepresentable {
     let initialBinding: HotkeyBinding
-    let onCapture: (HotkeyBinding) -> Void
+    /// Returns false when the binding is rejected, so the field keeps showing the saved one (#192).
+    let onCapture: (HotkeyBinding) -> Bool
     var accent: Color = .accentColor
     var placeholder: String = "—"
 
@@ -32,7 +33,7 @@ extension Notification.Name {
 }
 
 final class KeyRecorderNSView: NSView {
-    var onCapture: ((HotkeyBinding) -> Void)?
+    var onCapture: ((HotkeyBinding) -> Bool)?
     var accentNSColor: NSColor = .controlAccentColor { didSet { redraw() } }
     var placeholder: String = "—" { didSet { redraw() } }
     private let label = NSTextField(labelWithString: "")
@@ -122,7 +123,10 @@ final class KeyRecorderNSView: NSView {
     }
 
     private func teardownTap() {
-        if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: false) }
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
         if let src = runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), src, .commonModes) }
         eventTap = nil
         runLoopSource = nil
@@ -140,8 +144,7 @@ final class KeyRecorderNSView: NSView {
             // Bare Esc cancels; Esc with a modifier is a recordable combo (#116).
             if kc != 53 || !held.isEmpty {
                 let b = HotkeyBinding(keyCode: UInt16(kc), modifiersRaw: held.rawValue)
-                self.binding = b
-                self.onCapture?(b)
+                if self.onCapture?(b) == true { self.binding = b }
             }
             self.stopRecording()
         }
