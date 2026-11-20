@@ -311,10 +311,9 @@ struct SettingsView: View {
     }
 
     private var panelWidthDetail: String {
-        let base = prefs.verticalList
-            ? SwitchPreferences.defaultListPanelWidth
-            : SwitchPreferences.defaultGridPanelWidth
-        let points = Int((base * prefs.panelWidthScale).rounded())
+        let points = Int((prefs.verticalList
+            ? max(SwitchPreferences.minListPanelWidth, SwitchPreferences.defaultListPanelWidth * prefs.panelWidthScale)
+            : SwitchPreferences.defaultGridPanelWidth * prefs.panelWidthScale).rounded())
         let layout = prefs.verticalList ? "list" : "grid"
         return "Width of the picker, independent of thumbnail size. \(points)pt (\(layout))"
     }

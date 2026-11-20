@@ -21,6 +21,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let maxPanelWidthScale = 2.4  // covers the 300pt thumbnail maximum when migrating
     nonisolated static let defaultGridPanelWidth = 880.0
     nonisolated static let defaultListPanelWidth = 520.0
+    nonisolated static let minListPanelWidth = 460.0  // the default hint strip keeps its padding
     nonisolated static let defaultPickerActivationDelay = 130.0
     nonisolated static let compactThumbnailHeight = 72.0
 
