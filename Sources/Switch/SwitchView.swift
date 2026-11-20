@@ -352,41 +352,40 @@ struct SwitchView: View {
         let icon = appIcon(for: window)
 
         return VStack(alignment: .leading, spacing: PickerLayout.tileTitleSpacing) {
-            ZStack(alignment: .bottomLeading) {
-                ZStack {
-                    Color.black.opacity(0.22)
-                    if prefs.showThumbnails, let img = model.thumbnails[window.id] {
-                        Image(nsImage: img)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .padding(6)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .transition(.opacity)
-                    } else if let icon {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 56, height: 56)
-                            .opacity(0.55)
-                            .scaleEffect(selected ? 1.05 : 1.0)
-                            .animation(switcherAnimation(.spring(response: 0.20, dampingFraction: 0.82)), value: selected)
-                    }
+            ZStack {
+                Color.black.opacity(0.22)
+                if prefs.showThumbnails, let img = model.thumbnails[window.id] {
+                    Image(nsImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .padding(6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity)
+                } else if let icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 56, height: 56)
+                        .opacity(0.55)
+                        .scaleEffect(selected ? 1.05 : 1.0)
+                        .animation(switcherAnimation(.spring(response: 0.20, dampingFraction: 0.82)), value: selected)
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: prefs.showThumbnails ? prefs.thumbnailHeight : SwitchPreferences.compactThumbnailHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay(alignment: .topLeading) {
-                    if prefs.showStoplights && !window.isWindowless {
-                        stoplights(for: window).padding(7)
-                    }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: prefs.showThumbnails ? prefs.thumbnailHeight : SwitchPreferences.compactThumbnailHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(alignment: .topLeading) {
+                if prefs.showStoplights && !window.isWindowless {
+                    stoplights(for: window).padding(7)
                 }
-                .overlay(alignment: .topTrailing) {
-                    if !window.isWindowless && (window.isPinned(in: prefs.pinnedBundleIDs) || hovered) {
-                        pinButton(for: window).padding(7)
-                    }
+            }
+            .overlay(alignment: .topTrailing) {
+                if !window.isWindowless && (window.isPinned(in: prefs.pinnedBundleIDs) || hovered) {
+                    pinButton(for: window).padding(7)
                 }
-                .animation(switcherAnimation(.easeOut(duration: 0.18)), value: model.thumbnails[window.id] != nil)
-
+            }
+            .animation(switcherAnimation(.easeOut(duration: 0.18)), value: model.thumbnails[window.id] != nil)
+            .overlay(alignment: .bottomLeading) {
                 if let icon {
                     Image(nsImage: icon)
                         .resizable()
@@ -397,15 +396,8 @@ struct SwitchView: View {
                         .padding(7)
                         .animation(switcherAnimation(.spring(response: 0.20, dampingFraction: 0.82)), value: selected)
                 }
-
-                HStack(spacing: 0) {
-                    Spacer()
-                    VStack {
-                        Spacer()
-                        windowBadge(for: window).padding(7)
-                    }
-                }
             }
+            .overlay(alignment: .bottomTrailing) { windowBadge(for: window).padding(7) }
 
             HStack(spacing: 6) {
                 let titleFirst = prefs.showTitleFirst && !window.title.isEmpty
