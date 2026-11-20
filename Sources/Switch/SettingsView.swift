@@ -466,7 +466,7 @@ struct SettingsView: View {
     private var titleExclusionSection: some View {
         section("Excluded titles") {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Windows whose title contains any of these won't appear in the picker.")
+                Text("Windows whose title or app name contains any of these won't appear in the picker.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 if prefs.titleExclusions.isEmpty {
@@ -493,7 +493,7 @@ struct SettingsView: View {
                         }
                     }
                 }
-                TextField("Add title text, press Return", text: $newTitleExclusion)
+                TextField("Add title or app name, press Return", text: $newTitleExclusion)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11))
                     .frame(width: 260)
