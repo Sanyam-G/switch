@@ -34,7 +34,7 @@ struct SettingsView: View {
                 switch tab {
                 case .general:     generalTab
                 case .picker:      pickerTab
-                case .permissions: permissionsTab
+                case .permissions: PermissionsTabView()
                 case .appearance:  appearanceTab
                 case .about:       AboutView()
                 }
@@ -688,10 +688,6 @@ struct SettingsView: View {
             }
             .padding(24)
         }
-    }
-
-    private var permissionsTab: some View {
-        PermissionsTabView(accent: prefs.accent.color)
     }
 
     // MARK: - Building blocks

@@ -84,3 +84,14 @@ struct OnboardingView: View {
         )
     }
 }
+
+/// Settings' Permissions tab: the onboarding rows with their own polling model.
+struct PermissionsTabView: View {
+    @StateObject private var perms = OnboardingModel()
+
+    var body: some View {
+        ScrollView {
+            OnboardingView().environmentObject(perms).padding(24)
+        }
+    }
+}
