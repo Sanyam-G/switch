@@ -660,9 +660,9 @@ struct SettingsView: View {
                             .inert(!prefs.verticalList)
                         Divider().opacity(0.4)
                         toggleRow("Show preview",
-                                  "Window thumbnail at the trailing edge of each row.",
+                                  "Window thumbnail at the trailing edge of each row, here and in the Spaces picker.",
                                   $prefs.verticalShowPreview)
-                            .inert(!prefs.verticalList || !prefs.showThumbnails)
+                            .inert(!prefs.showThumbnails)
                         Divider().opacity(0.4)
                         toggleRow("Show stoplights",
                                   "Close/minimize/zoom buttons inside each row.",
@@ -681,9 +681,8 @@ struct SettingsView: View {
                                      value: $prefs.maxGridRows, in: 2...10)
                             .inert(prefs.verticalList)
                         Divider().opacity(0.4)
-                        intSliderRow("List rows", "Rows visible at once in the list view. \(prefs.maxListRows)",
+                        intSliderRow("List rows", "Rows visible at once in the list view and the Spaces picker. \(prefs.maxListRows)",
                                      value: $prefs.maxListRows, in: 4...20)
-                            .inert(!prefs.verticalList)
                         Divider().opacity(0.4)
                         sliderRow("Panel width", panelWidthDetail, value: $prefs.panelWidthScale,
                                   in: SwitchPreferences.minPanelWidthScale...SwitchPreferences.maxPanelWidthScale, step: 0.05)
