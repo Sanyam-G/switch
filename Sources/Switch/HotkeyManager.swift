@@ -361,18 +361,23 @@ final class HotkeyManager {
             }
 
             // Ahead of the hotkey match: a key can carry a modifier that isn't down, so plain Tab
-            // advances and every key is swallowed (#211). Check the session state too and let go.
+            // advances and every key is swallowed (#211). The session state is read now, not when
+            // the key was made, so a lagging tap sees a release still queued; recheck shortly instead.
             stateLock.lock()
             let heldBinding = armedSticky ? nil : armedBinding
             stateLock.unlock()
             if let heldBinding, kc != Self.kcEscape, kc != Self.kcReturn, kc != Self.kcKeypadEnter {
-                let released = !heldBinding.modifiersHeld(flags)
-                if released || !heldBinding.modifiersHeld(CGEventSource.flagsState(.combinedSessionState)) {
+                if !heldBinding.modifiersHeld(flags) {
                     clearArmed()
                     DispatchQueue.main.async { [weak self] in
-                        if released { self?.onCommit?(false) } else { self?.onCancel?() }
+                        self?.onCommit?(false)
                     }
                     return Unmanaged.passUnretained(event)
+                }
+                if !heldBinding.modifiersHeld(CGEventSource.flagsState(.combinedSessionState)) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                        self?.recoverIfReleaseWasMissed()
+                    }
                 }
             }
 
