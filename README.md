@@ -52,7 +52,7 @@ Prices from each app's site in November 2026. AltTab has many more settings, so 
 - Type to filter by app name or window title
 - 1-9 (or numpad) picks a tile
 - Optional Vim-style H J K L navigation, or home row keys A S D F G J K L ; to pick (either one turns off type to filter)
-- ⇧⌘W closes the selected window, ⇧⌘Q quits its app, ⇧⌘H hides it (plain ⌘W / ⌘Q / ⌘H in sticky mode or with type to filter off)
+- ⇧⌘W closes the selected window, ⇧⌘Q quits its app, ⇧⌘H hides it (plain ⌘W / ⌘Q / ⌘H in sticky mode or with type to filter off; ⌘H stays ⇧⌘H with Vim navigation)
 - ↵ commits, Esc cancels, ⌘, opens Settings
 
 ## Cross-Space

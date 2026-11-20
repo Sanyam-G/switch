@@ -424,7 +424,8 @@ final class HotkeyManager {
                     onMain { $0.onCloseSelectedApp?() }
                     return nil
                 }
-                if actionModifierMatches && key == "h" {
+                // Vim's H moves left, so ⌘H needs Shift there (#171 left H out of home row keys for the same reason).
+                if actionModifierMatches && key == "h" && (!vimNavigation || shift) {
                     onMain { $0.onHideSelected?() }
                     return nil
                 }

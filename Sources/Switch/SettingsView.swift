@@ -159,7 +159,7 @@ struct SettingsView: View {
                             .inert(prefs.disableMouse)
                         Divider().opacity(0.4)
                         toggleRow("Vim navigation",
-                                  "Use H J K L to move the selection. Turns off type to filter and home row keys.",
+                                  "Use H J K L to move the selection; ⇧⌘H hides. Turns off type to filter and home row keys.",
                                   $prefs.vimNavigation)
                         Divider().opacity(0.4)
                         toggleRow("Home row keys",
