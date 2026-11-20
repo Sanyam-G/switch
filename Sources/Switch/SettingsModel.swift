@@ -1,9 +1,7 @@
 import AppKit
 import SwiftUI
 import ServiceManagement
-#if canImport(Sparkle)
 import Sparkle
-#endif
 
 @MainActor
 final class SettingsModel: ObservableObject {
@@ -13,16 +11,12 @@ final class SettingsModel: ObservableObject {
 
     init() { refresh() }
 
-    #if canImport(Sparkle)
     private var updater: SPUUpdater? { AppDelegate.shared?.sparkleUpdater }
-    #endif
 
     func refresh() {
         // Registered but waiting for approval in Login Items still counts as on.
         launchAtLogin = [.enabled, .requiresApproval].contains(SMAppService.mainApp.status)
-        #if canImport(Sparkle)
         autoUpdateCheck = updater?.automaticallyChecksForUpdates ?? true
-        #endif
         bindings = HotkeyConfig.Slot.allCases.reduce(into: [:]) { $0[$1] = HotkeyConfig.shared[$1] }
     }
 
@@ -44,9 +38,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func setAutoUpdateCheck(_ enabled: Bool) {
-        #if canImport(Sparkle)
         updater?.automaticallyChecksForUpdates = enabled
-        #endif
         autoUpdateCheck = enabled
     }
 

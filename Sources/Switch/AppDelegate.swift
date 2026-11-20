@@ -1,9 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
-#if canImport(Sparkle)
 import Sparkle
-#endif
 
 extension Notification.Name {
     static let switchCheckForUpdates = Notification.Name("switch.checkForUpdates")
@@ -18,14 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppDelegate.shared = self
     }
 
-    #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,
         userDriverDelegate: self
     )
     var sparkleUpdater: SPUUpdater? { updaterController.updater }
-    #endif
     private var model: SwitchModel?
     private var hotkey: HotkeyManager?
     private var window: SwitcherWindow?
@@ -148,9 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(handleCheckForUpdates),
             name: .switchCheckForUpdates, object: nil
         )
-        #if canImport(Sparkle)
         _ = updaterController
-        #endif
         NotificationCenter.default.addObserver(
             forName: HotkeyConfig.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -258,14 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleCheckForUpdates() {
-        #if canImport(Sparkle)
         updaterController.checkForUpdates(nil)
-        #else
-        let alert = NSAlert()
-        alert.messageText = "Updates not configured"
-        alert.informativeText = "This build doesn't include Sparkle. Visit switch-dev.sanyamgarg.com to download the latest."
-        alert.runModal()
-        #endif
     }
 
     private func showOnboarding() {
@@ -300,7 +287,6 @@ extension AppDelegate: NSWindowDelegate {
     }
 }
 
-#if canImport(Sparkle)
 extension AppDelegate: SPUStandardUserDriverDelegate {
     // An accessory app's windows are invisible to app switchers; go regular while Sparkle's update UI is up.
     func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
@@ -312,4 +298,3 @@ extension AppDelegate: SPUStandardUserDriverDelegate {
         demoteIfNoWindows()
     }
 }
-#endif
