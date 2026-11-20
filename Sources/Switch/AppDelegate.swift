@@ -75,29 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 model.shiftStepBack()
             }
         }
-        // Tap-originated commits already cleared armed on the tap thread; clearing again here races a fresh arm.
-        hotkey.onCommit = { [weak self, weak model, weak window] quick in
-            self?.cancelPendingPresent()
-            model?.commit(stickyQuickTap: quick)
-            window?.dismiss()
-        }
-        model.commitAndDismiss = { [weak self, weak model, weak window] in
-            self?.cancelPendingPresent()
-            self?.hotkey?.clearShownArm()
-            model?.commit()
-            window?.dismiss()
-        }
-        hotkey.onCancel = { [weak self, weak model, weak window] in
-            self?.cancelPendingPresent()
-            model?.cancel()
-            window?.dismiss()
-        }
-        let cancelAndDismiss: () -> Void = { [weak self, weak model, weak window] in
-            self?.cancelPendingPresent()
-            self?.hotkey?.clearShownArm()
-            model?.cancel()
-            window?.dismiss()
-        }
+        hotkey.onCommit = { [weak self] quick in self?.finish(commit: true, stickyQuickTap: quick) }
+        model.commitAndDismiss = { [weak self] in self?.finish(commit: true) }
+        let cancelAndDismiss: () -> Void = { [weak self] in self?.finish(commit: false) }
+        hotkey.onCancel = cancelAndDismiss
         model.cancelAndDismiss = cancelAndDismiss
         hotkey.onCloseSelected = { present(); model.closeSelected() }
         hotkey.onCloseSelectedApp = { present(); model.closeSelectedApp() }
@@ -268,6 +249,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pending.cancel()
         pendingPresent = nil
         window.present()
+    }
+
+    /// Every way the picker closes. clearShownArm leaves alone an arm the tap made after this one,
+    /// so a stale close can't strand a fresh picker with nothing armed.
+    @MainActor private func finish(commit: Bool, stickyQuickTap: Bool = false) {
+        cancelPendingPresent()
+        hotkey?.clearShownArm()
+        if commit { model?.commit(stickyQuickTap: stickyQuickTap) } else { model?.cancel() }
+        window?.dismiss()
     }
 
     private func cancelPendingPresent() {
