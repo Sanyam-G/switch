@@ -138,7 +138,7 @@ final class KeyRecorderNSView: NSView {
         if type == .flagsChanged { return nil }
         guard type == .keyDown else { return Unmanaged.passUnretained(event) }
         let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
-        let held = event.flags.intersection(.recordableModifiers)
+        let held = event.flags.intersection(.primaryModifiers)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             // Bare Esc cancels; Esc with a modifier is a recordable combo (#116).

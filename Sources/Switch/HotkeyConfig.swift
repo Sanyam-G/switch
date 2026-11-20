@@ -5,7 +5,6 @@ import Foundation
 
 extension CGEventFlags {
     static let primaryModifiers: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
-    static let recordableModifiers: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
 }
 
 /// User-rebindable hotkey for arming the switcher.
@@ -49,7 +48,6 @@ struct HotkeyBinding: Codable, Equatable {
         var s = ""
         if cgFlags.contains(.maskControl) { s += "⌃" }
         if cgFlags.contains(.maskAlternate) { s += "⌥" }
-        if cgFlags.contains(.maskShift) { s += "⇧" }
         if cgFlags.contains(.maskCommand) { s += "⌘" }
         s += KeyName.string(for: keyCode)
         return s
@@ -158,8 +156,9 @@ enum HotkeyValidator {
 
     /// Returns nil if the combo is allowed; otherwise a short human reason.
     static func reject(keyCode: UInt16, flags: CGEventFlags) -> String? {
-        let cleaned = flags.intersection(.recordableModifiers)
-        if cleaned.intersection(.primaryModifiers).rawValue == 0 {
+        // Shift never takes part in matching, so ⌘⇧Z would fire on (and swallow) plain ⌘Z.
+        let cleaned = flags.intersection(.primaryModifiers)
+        if cleaned.isEmpty {
             return "Needs at least one modifier (⌘, ⌥, or ⌃)."
         }
         for (rk, rf) in reserved where rk == keyCode && rf == cleaned {
