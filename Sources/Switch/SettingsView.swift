@@ -49,7 +49,7 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 500, height: 460)
+        .frame(minWidth: 500, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
         .onAppear { model.refresh() }
     }
 
@@ -161,10 +161,6 @@ struct SettingsView: View {
                             .disabled(prefs.disableMouse)
                             .opacity(prefs.disableMouse ? 0.5 : 1)
                         Divider().opacity(0.4)
-                        toggleRow("Reduce motion",
-                                  "Turn off picker fade, selection movement, and other switcher animations.",
-                                  $prefs.disableAnimations)
-                        Divider().opacity(0.4)
                         toggleRow("Hide menu bar icon",
                                   "Keep Switch off the menu bar. Open Settings by pressing comma while the picker is open.",
                                   $prefs.hideMenuBarIcon)
@@ -203,83 +199,9 @@ struct SettingsView: View {
                                   "Leave out windows that are minimized to the Dock or belong to hidden apps.",
                                   $prefs.hideMinimizedWindows)
                         Divider().opacity(0.4)
-                        toggleRow("Show key hints",
-                                  "Label the first nine windows with the key that picks them.",
-                                  $prefs.showNumberKeyHints)
-                        Divider().opacity(0.4)
                         toggleRow("Include apps with no windows",
                                   "Show running Dock apps that don't currently have any windows. Picking one activates the app.",
                                   $prefs.includeWindowlessApps)
-                        Divider().opacity(0.4)
-                        toggleRow("Show thumbnails",
-                                  "Capture window previews. Turn off to run without Screen Recording.",
-                                  $prefs.showThumbnails)
-                        Divider().opacity(0.4)
-                        toggleRow("Show stoplights on thumbnails",
-                                  "Red/yellow/green buttons to close, minimize, or zoom each window. ⌘W closes the selected window either way.",
-                                  $prefs.showStoplights)
-                        Divider().opacity(0.4)
-                        toggleRow("Show hint strip",
-                                  "Keyboard shortcut hints at the bottom of the picker.",
-                                  $prefs.showHintStrip)
-                        Divider().opacity(0.4)
-                        toggleRow("Show window count",
-                                  "The number of windows in the top right of the picker.",
-                                  $prefs.showWindowCount)
-                        Divider().opacity(0.4)
-                        toggleRow("Show window title first",
-                                  "Put the window title ahead of the app name in each tile and row.",
-                                  $prefs.showTitleFirst)
-                    }
-                }
-
-                section("Vertical mode") {
-                    VStack(spacing: 0) {
-                        toggleRow("Vertical list",
-                                  "One window per row instead of a grid.",
-                                  $prefs.verticalList)
-                        Divider().opacity(0.4)
-                        toggleRow("Show top header",
-                                  "Filter text and window count at the top of the picker.",
-                                  $prefs.verticalShowHeader)
-                        Divider().opacity(0.4)
-                        toggleRow("Show preview",
-                                  "Window thumbnail at the trailing edge of each row.",
-                                  $prefs.verticalShowPreview)
-                        Divider().opacity(0.4)
-                        toggleRow("Show stoplights",
-                                  "Close/minimize/zoom buttons inside each row.",
-                                  $prefs.verticalShowStoplights)
-                    }
-                }
-
-                section("Sizing") {
-                    VStack(spacing: 0) {
-                        intSliderRow("Columns", "Number of columns in the grid view. \(prefs.gridColumns)",
-                                     value: $prefs.gridColumns, in: 3...6)
-                        Divider().opacity(0.4)
-                        intSliderRow("Grid rows", "Rows visible at once in the grid view. \(prefs.maxGridRows)",
-                                     value: $prefs.maxGridRows, in: 2...10)
-                        Divider().opacity(0.4)
-                        intSliderRow("List rows", "Rows visible at once in the list view. \(prefs.maxListRows)",
-                                     value: $prefs.maxListRows, in: 4...20)
-                        Divider().opacity(0.4)
-                        sliderRow("Panel width", panelWidthDetail, value: $prefs.panelWidthScale,
-                                  in: SwitchPreferences.minPanelWidthScale...SwitchPreferences.maxPanelWidthScale, step: 0.05)
-                        Divider().opacity(0.4)
-                        sliderRow("Thumbnail size", "Height of each window preview. \(Int(prefs.thumbnailHeight))pt",
-                                  value: $prefs.thumbnailHeight, in: 80...300, step: 5)
-                        Divider().opacity(0.4)
-                        sliderRow("App icon size", "Size of the app icon on each tile and list row. \(Int(prefs.appIconSize))pt",
-                                  value: $prefs.appIconSize, in: 20...48, step: 2)
-                        Divider().opacity(0.4)
-                        row(title: "Reset sizing",
-                            detail: "Restore panel width, columns, rows, thumbnail size, and app icon size.") {
-                            Button("Reset") {
-                                resetSizing()
-                            }
-                            .buttonStyle(.bordered)
-                        }
                     }
                 }
 
@@ -682,6 +604,88 @@ struct SettingsView: View {
                     }
                     .padding(14)
                     .background(SettingsRowBackground())
+                }
+
+                section("Picker") {
+                    VStack(spacing: 0) {
+                        toggleRow("Reduce motion",
+                                  "Turn off picker fade, selection movement, and other switcher animations.",
+                                  $prefs.disableAnimations)
+                        Divider().opacity(0.4)
+                        toggleRow("Show key hints",
+                                  "Label the first nine windows with the key that picks them.",
+                                  $prefs.showNumberKeyHints)
+                        Divider().opacity(0.4)
+                        toggleRow("Show thumbnails",
+                                  "Capture window previews. Turn off to run without Screen Recording.",
+                                  $prefs.showThumbnails)
+                        Divider().opacity(0.4)
+                        toggleRow("Show stoplights on thumbnails",
+                                  "Red/yellow/green buttons to close, minimize, or zoom each window. ⌘W closes the selected window either way.",
+                                  $prefs.showStoplights)
+                        Divider().opacity(0.4)
+                        toggleRow("Show hint strip",
+                                  "Keyboard shortcut hints at the bottom of the picker.",
+                                  $prefs.showHintStrip)
+                        Divider().opacity(0.4)
+                        toggleRow("Show window count",
+                                  "The number of windows in the top right of the picker.",
+                                  $prefs.showWindowCount)
+                        Divider().opacity(0.4)
+                        toggleRow("Show window title first",
+                                  "Put the window title ahead of the app name in each tile and row.",
+                                  $prefs.showTitleFirst)
+                    }
+                }
+
+                section("Vertical mode") {
+                    VStack(spacing: 0) {
+                        toggleRow("Vertical list",
+                                  "One window per row instead of a grid.",
+                                  $prefs.verticalList)
+                        Divider().opacity(0.4)
+                        toggleRow("Show top header",
+                                  "Filter text and window count at the top of the picker.",
+                                  $prefs.verticalShowHeader)
+                        Divider().opacity(0.4)
+                        toggleRow("Show preview",
+                                  "Window thumbnail at the trailing edge of each row.",
+                                  $prefs.verticalShowPreview)
+                        Divider().opacity(0.4)
+                        toggleRow("Show stoplights",
+                                  "Close/minimize/zoom buttons inside each row.",
+                                  $prefs.verticalShowStoplights)
+                    }
+                }
+
+                section("Sizing") {
+                    VStack(spacing: 0) {
+                        intSliderRow("Columns", "Number of columns in the grid view. \(prefs.gridColumns)",
+                                     value: $prefs.gridColumns, in: 3...6)
+                        Divider().opacity(0.4)
+                        intSliderRow("Grid rows", "Rows visible at once in the grid view. \(prefs.maxGridRows)",
+                                     value: $prefs.maxGridRows, in: 2...10)
+                        Divider().opacity(0.4)
+                        intSliderRow("List rows", "Rows visible at once in the list view. \(prefs.maxListRows)",
+                                     value: $prefs.maxListRows, in: 4...20)
+                        Divider().opacity(0.4)
+                        sliderRow("Panel width", panelWidthDetail, value: $prefs.panelWidthScale,
+                                  in: SwitchPreferences.minPanelWidthScale...SwitchPreferences.maxPanelWidthScale, step: 0.05)
+                        Divider().opacity(0.4)
+                        sliderRow("Thumbnail size", "Height of each window preview. \(Int(prefs.thumbnailHeight))pt",
+                                  value: $prefs.thumbnailHeight, in: 80...300, step: 5)
+                        Divider().opacity(0.4)
+                        sliderRow("App icon size", "Size of the app icon on each tile and list row. \(Int(prefs.appIconSize))pt",
+                                  value: $prefs.appIconSize, in: 20...48, step: 2)
+                        Divider().opacity(0.4)
+                        row(title: "Reset sizing",
+                            detail: "Restore panel width, columns, rows, thumbnail size, and app icon size.") {
+                            Button("Reset") {
+                                resetSizing()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
                 }
 
             }

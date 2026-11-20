@@ -26,15 +26,18 @@ final class SettingsWindow {
         }
 
         let host = NSHostingController(rootView: SettingsView())
+        host.sizingOptions = .minSize // resizable, SwiftUI only sets the floor (#209)
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 460),
-            styleMask: [.titled, .closable],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         win.title = "Switch Settings"
         win.contentViewController = host
+        win.setContentSize(NSSize(width: 500, height: 460))
         win.center()
+        win.setFrameAutosaveName("SwitchSettings")
         win.isReleasedWhenClosed = false
         win.delegate = SettingsWindowDelegate.shared
 
