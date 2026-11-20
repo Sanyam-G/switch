@@ -62,6 +62,12 @@ final class SwitchModel: ObservableObject {
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
     }
 
+    /// Shared with the panel sizer so it reserves the header only when the view draws one.
+    var showsHeader: Bool {
+        let prefs = SwitchPreferences.shared
+        return mode == .spaces || !prefs.verticalList || prefs.verticalShowHeader || !filterText.isEmpty
+    }
+
     private var selectedWindow: WindowInfo? {
         let list = filteredWindows
         return list.indices.contains(selected) ? list[selected] : nil
@@ -396,7 +402,8 @@ final class SwitchModel: ObservableObject {
         let list = filteredWindows
         guard !list.isEmpty else { return }
         let n = list.count
-        let cols = (SwitchPreferences.shared.verticalList || mode == .spaces) ? 1 : SwitchPreferences.shared.gridColumns
+        let cols = (SwitchPreferences.shared.verticalList || mode == .spaces) ? 1
+            : PickerLayout.gridColumns(configured: SwitchPreferences.shared.gridColumns, count: windows.count)
         let delta: Int
         switch direction {
         case .left:  delta = -1

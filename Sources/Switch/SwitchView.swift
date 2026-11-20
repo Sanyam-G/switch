@@ -1,10 +1,21 @@
 import SwiftUI
 
-/// Numbers the panel sizer must agree with, or whole-row sizing clips.
+/// Numbers the panel sizer shares with the view, or whole-row sizing clips.
 enum PickerLayout {
     static let headerHeight: CGFloat = 26
+    static let hintStripHeight: CGFloat = 31
     static let listRowSpacing: CGFloat = 4
+    static let listBottomPadding: CGFloat = 10
+    /// Without a header the list keeps a little more air at the top.
+    static func listTopPadding(showHeader: Bool) -> CGFloat { showHeader ? 10 : 14 }
+    /// Pinned on the row: two text lines need 32pt, a preview 50pt, plus 6pt above and below.
+    static func listRowHeight(preview: Bool, icon: CGFloat) -> CGFloat { max(preview ? 50 : 32, icon) + 12 }
     static let gridSpacing: CGFloat = 14
+    static let gridHorizontalPadding: CGFloat = 22
+    static let gridTopPadding: CGFloat = 4
+    static let gridBottomPadding: CGFloat = 12
+    /// Never more columns than windows (at least 3), so a short list keeps full-size tiles.
+    static func gridColumns(configured: Int, count: Int) -> Int { min(max(configured, 1), max(count, 3)) }
     static let tilePadding: CGFloat = 9
     static let tileTitleSpacing: CGFloat = 7
     static let tileTitleHeight: CGFloat = 16
@@ -96,9 +107,7 @@ struct SwitchView: View {
         return window.spaceLabel?.uppercased() ?? "OTHER SPACE"
     }
 
-    private var showHeader: Bool {
-        isSpaceMode || !prefs.verticalList || prefs.verticalShowHeader || !model.filterText.isEmpty
-    }
+    private var showHeader: Bool { model.showsHeader }
 
     private var isSpaceMode: Bool { model.mode == .spaces }
     private var animationsEnabled: Bool { !prefs.disableAnimations }
@@ -150,6 +159,11 @@ struct SwitchView: View {
                 hoveredID = nil
             }
         }
+        // A resize slides rows under a parked pointer; hover waits for real movement again.
+        .onChange(of: model.panelSize) {
+            openMouseLocation = NSEvent.mouseLocation
+            hasMouseMovedSinceOpen = false
+        }
     }
 
     private var header: some View {
@@ -190,8 +204,8 @@ struct SwitchView: View {
                                 }
                             }
                             .padding(.horizontal, 14)
-                            .padding(.top, showHeader ? 10 : 14)
-                            .padding(.bottom, 10)
+                            .padding(.top, PickerLayout.listTopPadding(showHeader: showHeader))
+                            .padding(.bottom, PickerLayout.listBottomPadding)
                         } else {
                             LazyVGrid(columns: gridColumns, spacing: PickerLayout.gridSpacing) {
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, w in
@@ -199,9 +213,9 @@ struct SwitchView: View {
                                         .id(w.id)
                                 }
                             }
-                            .padding(.horizontal, 22)
-                            .padding(.top, 4)
-                            .padding(.bottom, 12)
+                            .padding(.horizontal, PickerLayout.gridHorizontalPadding)
+                            .padding(.top, PickerLayout.gridTopPadding)
+                            .padding(.bottom, PickerLayout.gridBottomPadding)
                         }
                     }
                     .onChange(of: model.selected) { _, new in
@@ -246,7 +260,7 @@ struct SwitchView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 22)
-        .padding(.vertical, 8)
+        .frame(height: PickerLayout.hintStripHeight)
         .background(Color.black.opacity(0.18))
     }
 
@@ -332,7 +346,8 @@ struct SwitchView: View {
     }
 
     private var gridColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 14), count: prefs.gridColumns)
+        let n = PickerLayout.gridColumns(configured: prefs.gridColumns, count: model.windows.count)
+        return Array(repeating: GridItem(.flexible(), spacing: PickerLayout.gridSpacing), count: n)
     }
 
     private func tile(window: WindowInfo, index: Int) -> some View {
@@ -488,7 +503,7 @@ struct SwitchView: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .frame(height: PickerLayout.listRowHeight(preview: prefs.showThumbnails && prefs.verticalShowPreview, icon: prefs.appIconSize))
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 8, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animationsEnabled: animationsEnabled))
         .contentShape(Rectangle())
