@@ -621,8 +621,8 @@ final class HotkeyManager {
 
     // The character the key produces on the current layout, so ⌘W is the W key on AZERTY too (#149).
     private func layoutChar(from event: CGEvent, keeping: CGEventFlags = []) -> Character? {
-        // A key event's string is fixed when it's created, so clearing ⌥ on a copy still gives ç for C.
-        if event.flags.contains(.maskAlternate), let c = translatedChar(from: event, keeping: keeping) {
+        // A key event's string is fixed when it's created, so clearing ⌥ on a copy still gives ç for C, and ⌃H gives 0x08.
+        if !event.flags.intersection([.maskAlternate, .maskControl]).isEmpty, let c = translatedChar(from: event, keeping: keeping) {
             return c
         }
         guard let copy = event.copy() else { return nil }
