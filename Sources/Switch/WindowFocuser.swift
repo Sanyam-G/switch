@@ -216,30 +216,20 @@ enum AXHelpers {
             id += 1
             guard let el = _AXUIElementCreateWithRemoteToken(token as CFData)?.takeRetainedValue() else { continue }
             AXUIElementSetMessagingTimeout(el, 0.1)
-            guard windowID(of: el) == wid else { continue }
-            var role: CFTypeRef?
-            AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &role)
-            if role as? String == kAXWindowRole { return el }
+            if windowID(of: el) == wid, attribute(kAXRoleAttribute, of: el) as? String == kAXWindowRole { return el }
         }
         return nil
     }
 
     static func windowList(of appAX: AXUIElement) -> [AXUIElement] {
-        var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success else { return [] }
-        return ref as? [AXUIElement] ?? []
+        attribute(kAXWindowsAttribute, of: appAX) as? [AXUIElement] ?? []
     }
 
     /// AX position + size as a CGRect, or nil if either attribute is missing.
     /// Used to disambiguate windows when titles collide (e.g. Chrome).
     static func frame(of element: AXUIElement) -> CGRect? {
-        var posRef: CFTypeRef?
-        var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) == .success,
-              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success else {
-            return nil
-        }
-        guard let posObj = posRef, let sizeObj = sizeRef else { return nil }
+        guard let posObj = attribute(kAXPositionAttribute, of: element),
+              let sizeObj = attribute(kAXSizeAttribute, of: element) else { return nil }
         var origin = CGPoint.zero
         var size = CGSize.zero
         AXValueGetValue(posObj as! AXValue, .cgPoint, &origin)
