@@ -53,7 +53,11 @@ final class SwitchPreferences: ObservableObject {
             case .mint: return Color(red: 0.42, green: 0.80, blue: 0.69)
             case .peach: return Color(red: 0.98, green: 0.69, blue: 0.49)
             case .lavender: return Color(red: 0.66, green: 0.58, blue: 0.86)
-            case .monochrome: return Color(white: 0.86)
+            case .monochrome:
+                // Light grey vanishes on light material; dark grey there.
+                return Color(nsColor: NSColor(name: nil) {
+                    NSColor(white: $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.86 : 0.25, alpha: 1)
+                })
             case .crimson: return Color(red: 0.91, green: 0.13, blue: 0.22)
             case .orange: return Color(red: 1.00, green: 0.44, blue: 0.00)
             case .amber: return Color(red: 1.00, green: 0.72, blue: 0.00)
