@@ -47,8 +47,15 @@ enum WindowMRU {
             .max { $0.1 < $1.1 }?.0
     }
 
-    static func purge(keeping ids: Set<CGWindowID>) {
+    /// The last focused window anywhere, listed or not: a window opened since the last sweep counts.
+    static var mostRecentID: CGWindowID? {
         lock.lock(); defer { lock.unlock() }
-        stamps = stamps.filter { ids.contains($0.key) }
+        return stamps.max { $0.value < $1.value }?.key
+    }
+
+    /// Stamps newer than `since` survive: a window focused while the sweep ran isn't in its list yet.
+    static func purge(keeping ids: Set<CGWindowID>, since: Date) {
+        lock.lock(); defer { lock.unlock() }
+        stamps = stamps.filter { ids.contains($0.key) || $0.value >= since }
     }
 }

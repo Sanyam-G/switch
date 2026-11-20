@@ -126,7 +126,8 @@ final class SwitchModel: ObservableObject {
         if changed { windows = final }
 
         if initial {
-            armFrontWindowID = WindowMRU.mostRecent(in: snapshot.windows.allWindows)?.id
+            // Any window, not just the snapshot's: one opened since the last sweep is the real front.
+            armFrontWindowID = WindowMRU.mostRecentID ?? snapshot.windows.activeSpace.first?.id
             if mode == .spaces {
                 let reps = filteredWindows
                 if let current = reps.firstIndex(where: { !$0.isCrossSpace }), reps.count > 1 {
@@ -135,14 +136,14 @@ final class SwitchModel: ObservableObject {
                     selected = 0
                 }
             } else {
-                // Own windows aren't listed, so with Switch frontmost index 0 is already the previous window.
+                // Own windows aren't listed, so with Switch frontmost the most recent listed window is already the previous one.
                 // Only treat Switch as frontmost when it genuinely owns a visible key window (Settings/About/
                 // onboarding); the picker panel can't become key, so keyWindow != nil rules out the stale
                 // "still frontmost after closing a window" state behind #90.
-                let n = filteredWindows.count
-                selected = (stickySession || selfFront) ? 0
-                    : armReverse ? max(n - 1, 0)
-                    : (frontListed && n > 1 ? 1 : 0)
+                let list = filteredWindows
+                selected = (stickySession || selfFront) ? mruIndex(in: list, skipping: nil) ?? 0
+                    : armReverse ? max(list.count - 1, 0)
+                    : mruIndex(in: list, skipping: armFrontWindowID) ?? 0
             }
         } else if changed {
             let list = filteredWindows
@@ -330,10 +331,11 @@ final class SwitchModel: ObservableObject {
     }
 
     private func prewarmCache() {
+        let started = Date()
         WindowStore.shared.refresh { snap in
             let ws = snap.windows.allWindows
             let liveIDs = Set(ws.map { $0.id })
-            WindowMRU.purge(keeping: liveIDs)
+            WindowMRU.purge(keeping: liveIDs, since: started)
             Task.detached(priority: .utility) {
                 AXWindowCache.purgeDead()
             }
@@ -443,10 +445,12 @@ final class SwitchModel: ObservableObject {
         armFrontmostPID == ProcessInfo.processInfo.processIdentifier && armSelfHadKeyWindow
     }
 
-    // False when a filter (display, title, app, hidden) dropped the focused window: index 0 is then already the previous one.
-    private var frontListed: Bool {
-        guard let id = armFrontWindowID else { return true }
-        return filteredWindows.contains { $0.id == id }
+    /// The most recently used listed window other than `skip`, by id: pinned apps and static order
+    /// mean list position says nothing about recency. Unless Spaces are mixed, the current Space wins, like the list.
+    private func mruIndex(in list: [WindowInfo], skipping skip: CGWindowID?) -> Int? {
+        let order = WindowMRU.sorted(list, frontmost: nil).filter { $0.id != skip }
+        let target = SwitchPreferences.shared.mruMixSpaces ? order.first : order.first { !$0.isCrossSpace } ?? order.first
+        return target.flatMap { t in list.firstIndex { $0.id == t.id } }
     }
 
     // kCGWindowBounds has its origin at the top-left of the primary display; NSScreen at the bottom-left.
@@ -459,8 +463,9 @@ final class SwitchModel: ObservableObject {
     func commit(stickyQuickTap: Bool = false) {
         let list = filteredWindows
         // Sticky preselects the current window, so a quick tap flips to the previous one instead (#96).
-        if stickyQuickTap && mode != .spaces && selected == 0 && !selfFront && frontListed && list.count > 1 {
-            selected = 1
+        if stickyQuickTap, mode != .spaces, !selfFront, let front = armFrontWindowID,
+           selectedWindow?.id == front, let previous = mruIndex(in: list, skipping: front) {
+            selected = previous
         }
         if list.indices.contains(selected) {
             WindowFocuser.focus(list[selected])
