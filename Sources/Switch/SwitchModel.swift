@@ -3,14 +3,16 @@ import SwiftUI
 
 @MainActor
 final class SwitchModel: ObservableObject {
-    @Published var windows: [WindowInfo] = []
+    @Published var windows: [WindowInfo] = [] { didSet { refilter() } }
     @Published var selected: Int = 0
     @Published var mode: HotkeyManager.Mode = .allWindows
     @Published var visible: Bool = false
     @Published var thumbnails: [CGWindowID: NSImage] = [:]
     /// Bundle ID to the badge on that app's Dock icon, read once per arm (#92).
     @Published var dockBadges: [String: String] = [:]
-    @Published var filterText: String = ""
+    @Published var filterText: String = "" { didSet { refilter() } }
+    /// `windows` narrowed and ranked by `filterText`. Stored: the view reads it several times per pass.
+    private(set) var filteredWindows: [WindowInfo] = []
     @Published var panelSize = CGSize(width: 880, height: 560)
     /// Effective sticky for this invocation: global pref or a dedicated sticky binding (#131).
     @Published var stickySession = false
@@ -34,17 +36,30 @@ final class SwitchModel: ObservableObject {
     private var thumbnailTask: Task<Void, Never>?
     var pointerWindowID: CGWindowID?
 
-    var filteredWindows: [WindowInfo] {
-        let q = filterText.lowercased()
-        if q.isEmpty { return windows }
-        let scored: [(WindowInfo, Bool, Int)] = windows.compactMap { w in
-            let a = Self.fuzzyScore(pattern: q, target: w.appName.lowercased())
-            let t = Self.fuzzyScore(pattern: q, target: w.title.lowercased())
-            guard let s = [a, t].compactMap({ $0 }).max() else { return nil }
-            return (w, a != nil, s)
+    #if DEBUG
+    init() {
+        for (q, t) in [("memo", "メモ"), ("weixin", "微信"), ("cafe", "Café"), ("sa", "Safari")] {
+            assert(Self.fuzzyScore(pattern: Self.norm(q), target: Self.norm(t)) != nil, "\(q) should match \(t)")
         }
-        // App-name matches before title-only ones; titles change, app names are muscle memory (#205).
-        return scored.sorted { $0.1 != $1.1 ? $0.1 : $0.2 > $1.2 }.map { $0.0 }
+    }
+    #endif
+
+    private func refilter() {
+        let q = Self.norm(filterText)
+        guard !q.isEmpty else { filteredWindows = windows; return }
+        let scored: [(WindowInfo, Bool, Int)] = windows.compactMap { w in
+            if let a = Self.fuzzyScore(pattern: q, target: Self.norm(w.appName)) { return (w, true, a) }
+            return Self.fuzzyScore(pattern: q, target: Self.norm(w.title)).map { (w, false, $0) }
+        }
+        // App-name matches before title-only ones, each by its own score; titles change, app names are muscle memory (#205).
+        filteredWindows = scored.sorted { $0.1 != $1.1 ? $0.1 : $0.2 > $1.2 }.map { $0.0 }
+    }
+
+    /// The filter arrives as layout characters, so no IME composes it (#89). Romanize both sides instead:
+    /// "memo" finds メモ, "weixin" finds 微信, "cafe" finds Café. Kanji romanize with Mandarin readings.
+    private static func norm(_ s: String) -> String {
+        (s.applyingTransform(.toLatin, reverse: false) ?? s)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
     }
 
     private var selectedWindow: WindowInfo? {
