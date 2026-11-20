@@ -1,5 +1,7 @@
 import AppKit
+import Carbon.HIToolbox
 import Combine
+import IOKit
 import SwiftUI
 #if canImport(Sparkle)
 import Sparkle
@@ -181,7 +183,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // stops working until Switch quits" report). Clear it.
         armedWatchdog = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, let hotkey = self.hotkey, let model = self.model else { return }
+                guard let self else { return }
+                self.statusBar?.setWarning(Self.hotkeyWarning())
+                guard let hotkey = self.hotkey, let model = self.model else { return }
                 guard hotkey.isArmed else { return }
                 if !model.visible && self.pendingPresent == nil {
                     hotkey.clearArmed()
@@ -248,6 +252,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let thumbnailsEnabled = SwitchPreferences.storedShowThumbnails
         let screenCaptureOK = !thumbnailsEnabled || CGPreflightScreenCaptureAccess()
         return AXIsProcessTrusted() && screenCaptureOK
+    }
+
+    /// Shown in the menu bar when macOS keeps keys from reaching the tap (#198).
+    private static func hotkeyWarning() -> String? {
+        if !AXIsProcessTrusted() { return "Hotkeys off: Accessibility is not granted" }
+        guard IsSecureEventInputEnabled() else { return nil }
+        let root = IORegistryGetRootEntry(kIOMainPortDefault)
+        defer { IOObjectRelease(root) }
+        let users = IORegistryEntryCreateCFProperty(root, "IOConsoleUsers" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? [[String: Any]]
+        let pid = users?.lazy.compactMap { $0["kCGSSessionSecureInputPID"] as? Int }.first
+        let app = pid.flatMap { NSRunningApplication(processIdentifier: pid_t($0))?.localizedName } ?? "another app"
+        return "Hotkeys paused: Secure Input is on in \(app)"
     }
 
     private func schedulePresent(window: SwitcherWindow) {
