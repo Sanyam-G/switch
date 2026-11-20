@@ -272,7 +272,9 @@ final class SwitchModel: ObservableObject {
             let included = SwitchPreferences.shared.includedAppNames
             let extras = NSWorkspace.shared.runningApplications
                 .filter {
-                    ($0.activationPolicy == .regular || SwitchPreferences.isIncluded($0.localizedName ?? "", in: included))
+                    // Included names admit menu-bar apps, never faceless agents (.prohibited).
+                    ($0.activationPolicy == .regular
+                        || ($0.activationPolicy == .accessory && SwitchPreferences.isIncluded($0.localizedName ?? "", in: included)))
                         && !switchablePIDs.contains($0.processIdentifier)
                         && $0.bundleIdentifier.map(switchableBundles.contains) != true
                         && $0.bundleIdentifier != ownBundle
