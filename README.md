@@ -27,9 +27,10 @@ Notarized by Apple. macOS 14+, Apple silicon and Intel. Free.
 - Grid or vertical list
 - Extra hotkeys for the current Space only or the current display only
 - Close, quit or hide from inside the picker
+- Pin apps to the top of the picker
 - Hide apps, or windows by title, from the picker
 - Pass-through apps (a VM or remote desktop) keep the hotkeys while they're in front
-- Works with Stage Manager
+- Works with Stage Manager: off-stage windows stay listed
 - Updates itself
 
 ## How it compares
@@ -51,7 +52,6 @@ Prices from each app's site in November 2026. AltTab has many more settings, so 
 - Optional Vim-style H J K L navigation, or home row keys A S D F G J K L ; to pick (either one turns off type to filter)
 - ⇧⌘W closes the selected window, ⇧⌘Q quits its app, ⇧⌘H hides it (plain ⌘W / ⌘Q / ⌘H in sticky mode or with type to filter off)
 - ↵ commits, Esc cancels, ⌘, opens Settings
-- MRU ordering, picker pre-warms in the background
 
 ## Cross-Space
 
@@ -63,7 +63,7 @@ Settings → Appearance → Vertical list. Single-column layout with app icon, n
 
 ## Excluded apps
 
-Settings → Picker → Excluded apps. Hide windows from specific apps. Excluded titles does the same for windows by title.
+Settings → Picker → Excluded apps. Hide windows from specific apps. Excluded titles does the same for windows by title or app name.
 
 ## Sticky mode
 
@@ -75,7 +75,7 @@ Settings → Picker → Click only, on by default. Hovering leaves the selection
 
 ## Stage Manager
 
-With Stage Manager on, windows of apps that aren't on stage stay in the picker.
+With Stage Manager on, windows of apps that aren't on stage stay listed in the picker, and picking one brings its app onto the stage.
 
 ## Permissions
 
@@ -103,7 +103,7 @@ Or quit Switch and drag `Switch.app` from `/Applications` to the Trash.
 
 ## Contributing
 
-I'll take feature ideas from AI-generated PRs, but I won't merge them. Hand-written PRs are welcome.
+I'll take feature ideas from AI-generated PRs, but I won't merge them. Hand-written PRs are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) has the build steps.
 
 ## License
 
