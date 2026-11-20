@@ -44,25 +44,7 @@ final class SwitchPreferences: ObservableObject {
         var id: String { rawValue }
         static let soft: [AccentChoice] = [.system, .rose, .blue, .mint, .peach, .lavender, .monochrome]
         static let vivid: [AccentChoice] = [.crimson, .orange, .amber, .green, .cyan, .cobalt, .violet, .magenta]
-        var label: String {
-            switch self {
-            case .system: return "System"
-            case .rose: return "Rose"
-            case .blue: return "Blue"
-            case .mint: return "Mint"
-            case .peach: return "Peach"
-            case .lavender: return "Lavender"
-            case .monochrome: return "Mono"
-            case .crimson: return "Crimson"
-            case .orange: return "Orange"
-            case .amber: return "Amber"
-            case .green: return "Green"
-            case .cyan: return "Cyan"
-            case .cobalt: return "Cobalt"
-            case .violet: return "Violet"
-            case .magenta: return "Magenta"
-            }
-        }
+        var label: String { self == .monochrome ? "Mono" : rawValue.capitalized }
         var color: Color {
             switch self {
             case .system: return Color.accentColor
@@ -87,13 +69,7 @@ final class SwitchPreferences: ObservableObject {
     enum Appearance: String, CaseIterable, Identifiable {
         case system, light, dark
         var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .system: return "System"
-            case .light: return "Light"
-            case .dark: return "Dark"
-            }
-        }
+        var label: String { rawValue.capitalized }
         var nsAppearance: NSAppearance? {
             switch self {
             case .system: return nil
@@ -106,25 +82,13 @@ final class SwitchPreferences: ObservableObject {
     enum PickerDisplay: String, CaseIterable, Identifiable {
         case mouse, active, primary
         var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .mouse: return "Mouse"
-            case .active: return "Active"
-            case .primary: return "Primary"
-            }
-        }
+        var label: String { rawValue.capitalized }
     }
 
     enum BackgroundBlur: String, CaseIterable, Identifiable {
         case light, medium, heavy
         var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .light: return "Light"
-            case .medium: return "Medium"
-            case .heavy: return "Heavy"
-            }
-        }
+        var label: String { rawValue.capitalized }
         var material: Material {
             switch self {
             case .light: return .ultraThinMaterial

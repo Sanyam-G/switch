@@ -4,15 +4,7 @@ import SwiftUI
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case general, picker, permissions, appearance, about
     var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .general: return "General"
-        case .picker: return "Picker"
-        case .permissions: return "Permissions"
-        case .appearance: return "Appearance"
-        case .about: return "About"
-        }
-    }
+    var label: String { rawValue.capitalized }
 }
 
 struct SettingsRowBackground: View {
