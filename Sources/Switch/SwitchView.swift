@@ -64,8 +64,8 @@ struct SwitchView: View {
 
     @ViewBuilder
     private func windowBadge(for window: WindowInfo) -> some View {
-        if window.isMinimized || window.isHidden || window.isCrossSpace || window.isWindowless {
-            capsuleBadge(windowBadgeText(for: window))
+        if let text = window.badgeText {
+            capsuleBadge(text)
         }
     }
 
@@ -90,13 +90,6 @@ struct SwitchView: View {
                 .background(Color.black.opacity(0.55))
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
-    }
-
-    private func windowBadgeText(for window: WindowInfo) -> String {
-        if window.isMinimized { return "MINIMIZED" }
-        if window.isHidden { return "HIDDEN" }
-        if window.isWindowless { return "NO WINDOWS" }
-        return window.spaceLabel?.uppercased() ?? "OTHER SPACE"
     }
 
     private var showHeader: Bool { model.showsHeader }
@@ -581,5 +574,16 @@ private struct SelectionChrome: ViewModifier {
             )
             .animation(animated ? .spring(response: 0.22, dampingFraction: 0.85) : nil, value: selectedValue)
             .animation(animated ? .easeOut(duration: 0.10) : nil, value: hovered)
+    }
+}
+
+extension WindowInfo {
+    /// The state a tile or row shows as a badge, also read out to VoiceOver.
+    var badgeText: String? {
+        if isMinimized { return "MINIMIZED" }
+        if isHidden { return "HIDDEN" }
+        if isWindowless { return "NO WINDOWS" }
+        guard isCrossSpace else { return nil }
+        return spaceLabel?.uppercased() ?? "OTHER SPACE"
     }
 }

@@ -4,9 +4,9 @@ import SwiftUI
 @MainActor
 final class SwitchModel: ObservableObject {
     @Published var windows: [WindowInfo] = [] { didSet { refilter() } }
-    @Published var selected: Int = 0
+    @Published var selected: Int = 0 { didSet { announceSelection() } }
     @Published var mode: HotkeyManager.Mode = .allWindows
-    @Published var visible: Bool = false
+    @Published var visible: Bool = false { didSet { if visible && !oldValue { announcedID = nil; announceSelection() } } }
     @Published var thumbnails: [CGWindowID: NSImage] = [:]
     /// Bundle ID to the badge on that app's Dock icon, read once per arm (#92).
     @Published var dockBadges: [String: String] = [:]
@@ -69,6 +69,17 @@ final class SwitchModel: ObservableObject {
     var showsHeader: Bool {
         let prefs = SwitchPreferences.shared
         return mode == .spaces || !prefs.verticalList || prefs.verticalShowHeader || !filterText.isEmpty
+    }
+
+    // The panel never takes focus, so VoiceOver's cursor never reaches it: speak the selection instead.
+    // Once per window: the refresh timer reassigns the same selection.
+    private var announcedID: CGWindowID?
+    private func announceSelection() {
+        guard visible, NSWorkspace.shared.isVoiceOverEnabled, let w = selectedWindow, w.id != announcedID else { return }
+        announcedID = w.id
+        let text = [w.appName, w.title, w.badgeText?.lowercased()].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     private var selectedWindow: WindowInfo? {
