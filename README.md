@@ -29,7 +29,7 @@ Notarized by Apple. macOS 14+, Apple silicon and Intel. Free.
 - Close, quit or hide from inside the picker
 - Hide apps, or windows by title, from the picker
 - Pass-through apps (a VM or remote desktop) keep the hotkeys while they're in front
-- Works with Stage Manager
+- Lists windows of apps off the Stage Manager stage
 - Updates itself
 
 ## How it compares
@@ -77,7 +77,7 @@ Settings → Picker → Click only, on by default. Hovering leaves the selection
 
 ## Stage Manager
 
-With Stage Manager on, windows of apps that aren't on stage stay in the picker.
+With Stage Manager on, windows of apps off the stage are still listed. Picking one brings its app onto the stage. macOS may show the app's last-used window rather than the one you picked, since Stage Manager suspends off-stage apps.
 
 ## Permissions
 
