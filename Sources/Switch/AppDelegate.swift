@@ -298,9 +298,10 @@ extension AppDelegate: NSWindowDelegate {
 }
 
 extension AppDelegate: SPUStandardUserDriverDelegate {
-    // An accessory app's windows are invisible to app switchers; go regular while Sparkle's update UI is up.
+    // An accessory app's windows are invisible to app switchers; go regular while Sparkle's update UI is up,
+    // but only before the tap runs: an inactive .regular app's activate() is ignored, breaking switching.
     func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
-        NSApp.setActivationPolicy(.regular)
+        if !servicesStarted { NSApp.setActivationPolicy(.regular) }
         NSApp.activate(ignoringOtherApps: true)
     }
 
