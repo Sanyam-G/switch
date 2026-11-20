@@ -24,7 +24,7 @@ struct WindowInfo: Identifiable, Hashable {
 
 enum WindowEnumerator {
     typealias SpaceMetadata = (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>)
-    private typealias AXState = (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, titles: [CGWindowID: String])
+    private typealias AXState = (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, titles: [CGWindowID: String], overlays: Set<CGWindowID>)
 
     private static let skipApps: Set<String> = [
         "Window Server", "Dock", "SystemUIServer", "Control Center",
@@ -139,7 +139,7 @@ enum WindowEnumerator {
             $0.title.isEmpty && !ax.axBacked.contains($0.id) && axPIDs.contains($0.pid)
         }.map(\.id)) : []
         // Chromium's find bar is a titled borderless child window, AX subrole AXUnknown (#186).
-        let overlays = untitled.union(rawEverything.filter { w in
+        let overlays = untitled.union(ax.overlays).union(rawEverything.filter { w in
             chromiumBundles.contains(where: { w.bundleID?.hasPrefix($0) == true })
                 && AXWindowCache.element(for: w.id).map(isUnknownSubrole) == true
         }.map(\.id))
@@ -198,6 +198,7 @@ enum WindowEnumerator {
         var axBacked: Set<CGWindowID> = []
         var minimized: Set<CGWindowID> = []
         var titles: [CGWindowID: String] = [:]
+        var overlays: Set<CGWindowID> = []
         for pid in pids {
             for ax in AXHelpers.windowList(of: appElement(for: pid)) {
                 guard let id = AXHelpers.windowID(of: ax) else { continue }
@@ -207,6 +208,9 @@ enum WindowEnumerator {
                     let title = AXHelpers.title(of: ax)
                     if !title.isEmpty {
                         titles[id] = title
+                    } else if AXHelpers.attribute(kAXSubroleAttribute, of: ax) as? String == kAXSystemDialogSubrole {
+                        // An untitled companion panel AX does list, e.g. Rex's second terminal entry (#204).
+                        overlays.insert(id)
                     }
                 }
                 var minRef: CFTypeRef?
@@ -216,7 +220,7 @@ enum WindowEnumerator {
                 }
             }
         }
-        return (axBacked, minimized, titles)
+        return (axBacked, minimized, titles, overlays)
     }
 
     // A destroyed window's element answers invalidUIElement; a suspended off-stage one doesn't.
