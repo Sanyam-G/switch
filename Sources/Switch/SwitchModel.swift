@@ -459,7 +459,7 @@ final class SwitchModel: ObservableObject {
             selected = 1
         }
         if list.indices.contains(selected) {
-            WindowFocuser.focus(list[selected])
+            WindowFocuser.focus(list[selected], bringHere: mode != .spaces)
             // Warm the cache once the Space transition settles so an immediate
             // re-invoke doesn't arm from a pre-switch snapshot (3s prewarm gap).
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {

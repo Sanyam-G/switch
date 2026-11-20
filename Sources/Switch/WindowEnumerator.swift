@@ -23,7 +23,7 @@ struct WindowInfo: Identifiable, Hashable {
 }
 
 enum WindowEnumerator {
-    private typealias SpaceMetadata = (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>)
+    typealias SpaceMetadata = (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>)
     private typealias AXState = (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, titles: [CGWindowID: String])
 
     private static let skipApps: Set<String> = [
@@ -378,7 +378,7 @@ enum WindowEnumerator {
     }
 
     /// Builds a `spaceID → "Desktop N" / "Fullscreen"` map by walking CGS's managed-display spaces in order.
-    private static func spaceMetadata(cid: CGSConnectionID) -> SpaceMetadata {
+    static func spaceMetadata(cid: CGSConnectionID) -> SpaceMetadata {
         guard let displays = CGSCopyManagedDisplaySpaces(cid)?.takeRetainedValue() as? [[String: Any]] else { return ([:], [], []) }
         var labels: [Int: (label: String, isFullscreen: Bool)] = [:]
         var order: [Int] = []
