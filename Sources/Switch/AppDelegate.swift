@@ -117,20 +117,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SwitchPreferences.shared.$appearance
             .sink { NSApp.appearance = $0.nsAppearance }
             .store(in: &cancellables)
-        func resizeOnChange<T>(_ publisher: Published<T>.Publisher) {
-            publisher.dropFirst()
-                .sink { [weak window] _ in window?.applyContentSize() }
-                .store(in: &cancellables)
-        }
-        resizeOnChange(SwitchPreferences.shared.$verticalList)
-        resizeOnChange(SwitchPreferences.shared.$thumbnailHeight)
-        resizeOnChange(SwitchPreferences.shared.$maxListRows)
-        resizeOnChange(SwitchPreferences.shared.$maxGridRows)
-        resizeOnChange(SwitchPreferences.shared.$panelWidthScale)
+        // present() sizes the panel, so settings changes need no resize here.
         SwitchPreferences.shared.$showThumbnails
             .dropFirst()
-            .sink { [weak self, weak window] enabled in
-                window?.applyContentSize()
+            .sink { [weak self] enabled in
                 if enabled && CGPreflightScreenCaptureAccess() == false {
                     self?.showOnboarding()
                 }
