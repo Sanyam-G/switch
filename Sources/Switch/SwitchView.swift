@@ -246,19 +246,27 @@ struct SwitchView: View {
         .transition(.scale(scale: 0.98).combined(with: .opacity))
     }
 
+    // A narrow panel drops the optional hints rather than clip the strip.
     private var hintStrip: some View {
-        HStack(spacing: 18) {
-            hint("↵", isSpaceMode ? "switch space" : "switch")
-            hint(navKey, "navigate")
-            if prefs.shiftTapReverses { hint("⇧", "reverse") }
-            if !isSpaceMode { hint(closeKey, "close") }
-            if prefs.typeToFilter { hint("type", "filter") }
-            hint("esc", "cancel")
-            Spacer(minLength: 0)
+        ViewThatFits(in: .horizontal) {
+            hintRow(optional: true)
+            hintRow(optional: false)
         }
         .padding(.horizontal, 22)
         .frame(height: PickerLayout.hintStripHeight)
         .background(Color.black.opacity(0.18))
+    }
+
+    private func hintRow(optional: Bool) -> some View {
+        HStack(spacing: 18) {
+            hint("↵", isSpaceMode ? "switch space" : "switch")
+            hint(navKey, "navigate")
+            if optional && prefs.shiftTapReverses { hint("⇧", "reverse") }
+            if !isSpaceMode { hint(closeKey, "close") }
+            if optional && prefs.typeToFilter { hint("type", "filter") }
+            hint("esc", "cancel")
+            Spacer(minLength: 0)
+        }
     }
 
     private var navKey: String {
