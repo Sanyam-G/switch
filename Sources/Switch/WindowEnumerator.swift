@@ -172,25 +172,15 @@ enum WindowEnumerator {
     // Apps set their badge on NSDockTile, and only the Dock's own AX tree exposes it (#92).
     static func dockBadges() -> [String: String] {
         guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return [:] }
-        let list = children(of: appElement(for: dock.processIdentifier)).first { attribute(kAXRoleAttribute, of: $0) as? String == kAXListRole }
+        let list = AXHelpers.children(of: appElement(for: dock.processIdentifier)).first { AXHelpers.attribute(kAXRoleAttribute, of: $0) as? String == kAXListRole }
         var badges: [String: String] = [:]
-        for item in list.map(children) ?? [] {
-            guard let badge = attribute("AXStatusLabel", of: item) as? String, !badge.isEmpty,
-                  let url = attribute(kAXURLAttribute, of: item) as? URL,
+        for item in list.map(AXHelpers.children) ?? [] {
+            guard let badge = AXHelpers.attribute("AXStatusLabel", of: item) as? String, !badge.isEmpty,
+                  let url = AXHelpers.attribute(kAXURLAttribute, of: item) as? URL,
                   let bundleID = Bundle(url: url)?.bundleIdentifier else { continue }
             badges[bundleID] = badge
         }
         return badges
-    }
-
-    private static func attribute(_ name: String, of element: AXUIElement) -> CFTypeRef? {
-        var ref: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, name as CFString, &ref)
-        return ref
-    }
-
-    private static func children(of element: AXUIElement) -> [AXUIElement] {
-        attribute(kAXChildrenAttribute, of: element) as? [AXUIElement] ?? []
     }
 
     private static var stageManagerEnabled: Bool {

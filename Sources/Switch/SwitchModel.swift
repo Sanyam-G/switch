@@ -267,19 +267,15 @@ final class SwitchModel: ObservableObject {
         close(target)
     }
 
+    // Only this window, never a sibling. If no AX element resolves (cross-Space
+    // Chromium, a windowless row), do nothing and keep the row.
     func close(_ target: WindowInfo) {
-        guard mode != .spaces else { return }
-        WindowCloser.close(target)
+        guard mode != .spaces, AXHelpers.press(kAXCloseButtonAttribute, of: target) else { return }
         removeFromPicker { $0.id == target.id }
     }
 
     func closeWindow(withWindowID id: CGWindowID) {
-        guard mode != .spaces else { return }
-        guard let target = windows.first(where: { $0.id == id }) else { return }
-        // Only the clicked window, like middle-clicking a browser tab. If no AX element
-        // resolves (e.g. cross-Space Chromium window), do nothing rather than quit the app.
-        guard WindowCloser.closeExact(target) else { return }
-        removeFromPicker { $0.id == target.id }
+        windows.first { $0.id == id }.map(close)
     }
 
     private func removeFromPicker(_ shouldRemove: (WindowInfo) -> Bool) {
