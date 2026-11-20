@@ -194,7 +194,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Relaunching while already running reopens Settings and restores the menu bar icon if it was dragged off.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         statusBar?.setHidden(UserDefaults.standard.bool(forKey: SwitchPreferences.hideMenuBarIconKey))
-        if OnboardingModel.requiredGranted {
+        // Accessibility alone runs Switch (#198); Settings → Permissions covers Screen Recording.
+        if AXIsProcessTrusted() {
             SettingsWindow.shared.show()
         } else {
             showOnboarding()
