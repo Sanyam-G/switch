@@ -122,10 +122,16 @@ struct SettingsView: View {
                 }
 
                 section("Switch") {
-                    row(title: "Quit Switch",
-                        detail: "Relaunch any time from Spotlight or your Applications folder.") {
-                        Button("Quit") { NSApp.terminate(nil) }
-                            .controlSize(.small)
+                    VStack(spacing: 0) {
+                        toggleRow("Hide menu bar icon",
+                                  "Open Settings with ⌘, in the picker, or by opening Switch again.",
+                                  $prefs.hideMenuBarIcon)
+                        Divider().opacity(0.4)
+                        row(title: "Quit Switch",
+                            detail: "Relaunch any time from Spotlight or your Applications folder.") {
+                            Button("Quit") { NSApp.terminate(nil) }
+                                .controlSize(.small)
+                        }
                     }
                 }
             }
@@ -149,12 +155,7 @@ struct SettingsView: View {
                         toggleRow("Click only",
                                   "Ignore mouse hover while the picker is open. Click a window to pick it.",
                                   $prefs.clickOnly)
-                            .disabled(prefs.disableMouse)
-                            .opacity(prefs.disableMouse ? 0.5 : 1)
-                        Divider().opacity(0.4)
-                        toggleRow("Hide menu bar icon",
-                                  "Keep Switch off the menu bar. Open Settings by pressing comma while the picker is open.",
-                                  $prefs.hideMenuBarIcon)
+                            .inert(prefs.disableMouse)
                         Divider().opacity(0.4)
                         toggleRow("Vim navigation",
                                   "Use H J K L to move the selection. Turns off type to filter and home row keys.",
@@ -199,6 +200,13 @@ struct SettingsView: View {
                 advancedSection
 
                 crossSpaceSection
+
+                appListSection(
+                    "Pinned apps",
+                    caption: "These apps' windows stay at the top of the picker.",
+                    emptyText: "Pin an app from the picker.",
+                    apps: $prefs.pinnedBundleIDs
+                )
 
                 appListSection(
                     "Excluded apps",
@@ -629,14 +637,17 @@ struct SettingsView: View {
                         toggleRow("Show top header",
                                   "Filter text and window count at the top of the picker.",
                                   $prefs.verticalShowHeader)
+                            .inert(!prefs.verticalList)
                         Divider().opacity(0.4)
                         toggleRow("Show preview",
                                   "Window thumbnail at the trailing edge of each row.",
                                   $prefs.verticalShowPreview)
+                            .inert(!prefs.verticalList || !prefs.showThumbnails)
                         Divider().opacity(0.4)
                         toggleRow("Show stoplights",
                                   "Close/minimize/zoom buttons inside each row.",
                                   $prefs.verticalShowStoplights)
+                            .inert(!prefs.verticalList || !prefs.showStoplights)
                     }
                 }
 
@@ -644,18 +655,22 @@ struct SettingsView: View {
                     VStack(spacing: 0) {
                         intSliderRow("Columns", "Number of columns in the grid view. \(prefs.gridColumns)",
                                      value: $prefs.gridColumns, in: 3...6)
+                            .inert(prefs.verticalList)
                         Divider().opacity(0.4)
                         intSliderRow("Grid rows", "Rows visible at once in the grid view. \(prefs.maxGridRows)",
                                      value: $prefs.maxGridRows, in: 2...10)
+                            .inert(prefs.verticalList)
                         Divider().opacity(0.4)
                         intSliderRow("List rows", "Rows visible at once in the list view. \(prefs.maxListRows)",
                                      value: $prefs.maxListRows, in: 4...20)
+                            .inert(!prefs.verticalList)
                         Divider().opacity(0.4)
                         sliderRow("Panel width", panelWidthDetail, value: $prefs.panelWidthScale,
                                   in: SwitchPreferences.minPanelWidthScale...SwitchPreferences.maxPanelWidthScale, step: 0.05)
                         Divider().opacity(0.4)
                         sliderRow("Thumbnail size", "Height of each window preview. \(Int(prefs.thumbnailHeight))pt",
                                   value: $prefs.thumbnailHeight, in: 80...300, step: 5)
+                            .inert(prefs.verticalList || !prefs.showThumbnails)
                         Divider().opacity(0.4)
                         sliderRow("App icon size", "Size of the app icon on each tile and list row. \(Int(prefs.appIconSize))pt",
                                   value: $prefs.appIconSize, in: 20...48, step: 2)
@@ -840,4 +855,9 @@ private struct AppOrderDropDelegate: DropDelegate {
         current = nil
         return true
     }
+}
+
+private extension View {
+    /// Greys out a setting that has no effect in the current configuration.
+    func inert(_ off: Bool) -> some View { disabled(off).opacity(off ? 0.5 : 1) }
 }
