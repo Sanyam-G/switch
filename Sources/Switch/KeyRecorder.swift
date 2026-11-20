@@ -1,12 +1,13 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 struct KeyRecorderField: NSViewRepresentable {
     let initialBinding: HotkeyBinding
     /// Returns false when the binding is rejected, so the field keeps showing the saved one (#192).
     let onCapture: (HotkeyBinding) -> Bool
-    var accent: Color = .accentColor
-    var placeholder: String = "—"
+    var accent: Color
+    var placeholder: String
 
     func makeNSView(context: Context) -> KeyRecorderNSView {
         let v = KeyRecorderNSView()
@@ -142,7 +143,7 @@ final class KeyRecorderNSView: NSView {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             // Bare Esc cancels; Esc with a modifier is a recordable combo (#116).
-            if kc != 53 || !held.isEmpty {
+            if kc != CGKeyCode(kVK_Escape) || !held.isEmpty {
                 let b = HotkeyBinding(keyCode: UInt16(kc), modifiersRaw: held.rawValue)
                 if self.onCapture?(b) == true { self.binding = b }
             }

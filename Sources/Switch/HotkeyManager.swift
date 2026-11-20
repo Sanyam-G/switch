@@ -219,11 +219,7 @@ final class HotkeyManager {
     }
 
     private func refreshLayoutData() {
-        var data: Data?
-        if let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
-           let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) {
-            data = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
-        }
+        let data = KeyName.layoutData()
         let type = UInt32(LMGetKbdType())
         stateLock.lock()
         layoutData = data
@@ -646,19 +642,8 @@ final class HotkeyManager {
         guard let layout else { return nil }
         let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let shifted = keeping.contains(.maskShift) && event.flags.contains(.maskShift)
-        var deadKeyState: UInt32 = 0
-        var length = 0
-        var buffer = [UniChar](repeating: 0, count: 4)
-        let status = layout.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> OSStatus in
-            guard let base = raw.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return -1 }
-            return UCKeyTranslate(
-                base, code, UInt16(kUCKeyActionDown), shifted ? UInt32(shiftKey >> 8) : 0,
-                type, OptionBits(kUCKeyTranslateNoDeadKeysBit),
-                &deadKeyState, 4, &length, &buffer
-            )
-        }
-        guard status == noErr, length > 0 else { return nil }
-        return String(utf16CodeUnits: buffer, count: length).lowercased().first
+        return KeyName.translate(layout, code: code, action: kUCKeyActionDown,
+                                 modifiers: shifted ? UInt32(shiftKey >> 8) : 0, kbdType: type)?.lowercased().first
     }
 
     private func arrowDirection(for kc: CGKeyCode) -> Direction? {
