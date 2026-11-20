@@ -94,7 +94,8 @@ final class HotkeyManager {
     /// False when Accessibility isn't granted yet, so the caller retries instead of treating hotkeys as running.
     @discardableResult
     func start() -> Bool {
-        if !ensureAccessibility() { return false }
+        // No prompt: start() is polled, and onboarding's Open Settings already prompts.
+        guard AXIsProcessTrusted() else { return false }
         startTapThread()
         installWakeObserver()
         installFrontmostObserver()
@@ -282,13 +283,6 @@ final class HotkeyManager {
         stateLock.unlock()
         if let tap, CGEvent.tapIsEnabled(tap: tap) { return }
         reload()
-    }
-
-    @discardableResult
-    private func ensureAccessibility() -> Bool {
-        let key = "AXTrustedCheckOptionPrompt" as CFString
-        let opts = [key: true] as CFDictionary
-        return AXIsProcessTrustedWithOptions(opts)
     }
 
     private func installTap() {

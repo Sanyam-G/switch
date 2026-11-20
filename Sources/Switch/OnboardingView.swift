@@ -14,7 +14,7 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Switch")
                         .font(.system(size: 16, weight: .semibold))
-                    Text(model.requiresScreenCapture ? "Two permissions before you can switch windows." : "One permission before you can switch windows.")
+                    Text("One permission before you can switch windows.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -30,7 +30,7 @@ struct OnboardingView: View {
                 )
                 row(
                     name: "Screen Recording",
-                    detail: model.requiresScreenCapture ? "Captures live thumbnails of your windows." : "Optional while thumbnails are disabled.",
+                    detail: "Optional: live thumbnails of your windows.",
                     granted: model.screenCapture,
                     open: model.openScreenCapture
                 )

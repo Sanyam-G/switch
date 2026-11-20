@@ -131,8 +131,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 window?.applyContentSize()
                 if enabled && CGPreflightScreenCaptureAccess() == false {
                     self?.showOnboarding()
-                } else if self?.requiredPermissionsGranted == true {
-                    self?.startServicesIfNeeded()
                 }
             }
             .store(in: &cancellables)
@@ -163,20 +161,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hotkey?.reload()
         }
 
-        // Show onboarding if any permission is missing; otherwise install the tap.
-        if !requiredPermissionsGranted {
-            showOnboarding()
-        } else {
-            startServicesIfNeeded()
-        }
+        // Hotkeys need only Accessibility; a missing or reset Screen Recording grant just loses thumbnails (#198).
+        if !requiredPermissionsGranted { showOnboarding() }
+        startServicesIfNeeded()
 
-        // Background poll: as soon as both are granted, install the tap.
+        // Background poll: as soon as Accessibility is granted, install the tap.
         permsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
             guard let self else { return }
             if self.servicesStarted {
                 timer.invalidate()
                 self.permsTimer = nil
-            } else if self.requiredPermissionsGranted {
+            } else {
                 self.startServicesIfNeeded()
             }
         }
