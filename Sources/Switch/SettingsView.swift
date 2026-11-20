@@ -630,6 +630,7 @@ struct SettingsView: View {
                         toggleRow("Show stoplights on thumbnails",
                                   "Red/yellow/green buttons to close, minimize, or zoom each window. ⌘W closes the selected window either way.",
                                   $prefs.showStoplights)
+                            .inert(prefs.disableMouse)
                         Divider().opacity(0.4)
                         toggleRow("Show hint strip",
                                   "Keyboard shortcut hints at the bottom of the picker.",
@@ -668,7 +669,7 @@ struct SettingsView: View {
                         toggleRow("Show stoplights",
                                   "Close/minimize/zoom buttons inside each row.",
                                   $prefs.verticalShowStoplights)
-                            .inert(!prefs.verticalList || !prefs.showStoplights)
+                            .inert(!prefs.verticalList || !prefs.showStoplights || prefs.disableMouse)
                     }
                 }
 
