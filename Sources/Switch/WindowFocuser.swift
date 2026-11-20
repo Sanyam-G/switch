@@ -163,6 +163,13 @@ enum AXHelpers {
         attribute(kAXChildrenAttribute, of: element) as? [AXUIElement] ?? []
     }
 
+    /// App element with a short timeout, so one hung app can't stall a sweep or the main thread.
+    static func appElement(for pid: pid_t) -> AXUIElement {
+        let el = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(el, 0.25)
+        return el
+    }
+
     static func title(of element: AXUIElement) -> String {
         attribute(kAXTitleAttribute, of: element) as? String ?? ""
     }

@@ -153,7 +153,7 @@ enum WindowEnumerator {
         // Chromium's find bar is a titled borderless child window, AX subrole AXUnknown (#186).
         let overlays = untitled.union(ax.overlays).union(rawEverything.filter { w in
             chromiumBundles.contains(where: { w.bundleID?.hasPrefix($0) == true })
-                && AXWindowCache.element(for: w.id).map(isUnknownSubrole) == true
+                && AXWindowCache.element(for: w.id).flatMap { AXHelpers.attribute(kAXSubroleAttribute, of: $0) as? String } == kAXUnknownSubrole
         }.map(\.id))
         let onScreen = rawOnScreen.filter { !overlays.contains($0.id) }
         let everything = rawEverything.filter { !overlays.contains($0.id) }
@@ -184,7 +184,7 @@ enum WindowEnumerator {
     // Apps set their badge on NSDockTile, and only the Dock's own AX tree exposes it (#92).
     static func dockBadges() -> [String: String] {
         guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return [:] }
-        let list = AXHelpers.children(of: appElement(for: dock.processIdentifier)).first { AXHelpers.attribute(kAXRoleAttribute, of: $0) as? String == kAXListRole }
+        let list = AXHelpers.children(of: AXHelpers.appElement(for: dock.processIdentifier)).first { AXHelpers.attribute(kAXRoleAttribute, of: $0) as? String == kAXListRole }
         var badges: [String: String] = [:]
         for item in list.map(AXHelpers.children) ?? [] {
             guard let badge = AXHelpers.attribute("AXStatusLabel", of: item) as? String, !badge.isEmpty,
@@ -195,12 +195,6 @@ enum WindowEnumerator {
         return badges
     }
 
-    private static func appElement(for pid: pid_t) -> AXUIElement {
-        let el = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(el, 0.25)
-        return el
-    }
-
     // AX-backed windows, minimized window IDs, and AX titles for the given processes; an orderedOut leftover appears in neither.
     private static func axWindowState(for pids: Set<pid_t>, needingTitles needsTitle: Set<CGWindowID>) -> AXState {
         var axBacked: Set<CGWindowID> = []
@@ -208,7 +202,7 @@ enum WindowEnumerator {
         var titles: [CGWindowID: String] = [:]
         var overlays: Set<CGWindowID> = []
         for pid in pids {
-            for ax in AXHelpers.windowList(of: appElement(for: pid)) {
+            for ax in AXHelpers.windowList(of: AXHelpers.appElement(for: pid)) {
                 guard let id = AXHelpers.windowID(of: ax) else { continue }
                 axBacked.insert(id)
                 AXWindowCache.store(ax, for: id)
@@ -221,9 +215,7 @@ enum WindowEnumerator {
                         overlays.insert(id)
                     }
                 }
-                var minRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
-                   let isMin = minRef as? Bool, isMin {
+                if AXHelpers.attribute(kAXMinimizedAttribute, of: ax) as? Bool == true {
                     minimized.insert(id)
                 }
             }
@@ -235,12 +227,6 @@ enum WindowEnumerator {
     private static func isLiveElement(_ element: AXUIElement) -> Bool {
         var role: CFTypeRef?
         return AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) != .invalidUIElement
-    }
-
-    private static func isUnknownSubrole(_ element: AXUIElement) -> Bool {
-        var subrole: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
-        return subrole as? String == kAXUnknownSubrole
     }
 
     private static func backfillTitles(_ windows: [WindowInfo], from titles: [CGWindowID: String]) -> [WindowInfo] {
