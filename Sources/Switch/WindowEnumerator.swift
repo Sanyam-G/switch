@@ -156,7 +156,8 @@ enum WindowEnumerator {
         let annotatedAll = annotateAndPrune(marked, ax: ax, axPIDs: axPIDs, cid: cid, metadata: metadata, stageManager: stageManager, titlesReliable: titlesReliable)
         // After annotateAndPrune on purpose: ghost detection keys on the CG title (#111).
         let titledActive = backfillTitles(active, from: ax.titles)
-        let titledAll = backfillTitles(annotatedAll, from: ax.titles)
+        let fullscreenDupes = fullscreenDuplicates(annotatedAll, axBacked: ax.axBacked)
+        let titledAll = backfillTitles(annotatedAll, from: ax.titles).filter { !fullscreenDupes.contains($0.id) }
         let onScreenIDs = Set(onScreen.map(\.id))
         housekeepGhostState(
             onScreen: onScreenIDs,
@@ -165,7 +166,7 @@ enum WindowEnumerator {
         )
         let cross = titledAll.filter { !activeIDs.contains($0.id) }
         let reps = spaceRepresentatives(from: titledAll, cid: cid, metadata: metadata)
-        return FullSnapshot(activeSpace: titledActive, crossSpace: cross, spaceRepresentatives: reps)
+        return FullSnapshot(activeSpace: titledActive.filter { !fullscreenDupes.contains($0.id) }, crossSpace: cross, spaceRepresentatives: reps)
     }
 
     private static var stageManagerEnabled: Bool {
@@ -223,6 +224,27 @@ enum WindowEnumerator {
             out.title = title
             return out
         }
+    }
+
+    // A fullscreen game can stack a second full-width window of its own on its Space,
+    // listed as a second "Fullscreen" row (#207). Keep the AX-backed, titled, larger one;
+    // split-view halves and auxiliary panels differ in width and stay.
+    private static func fullscreenDuplicates(_ windows: [WindowInfo], axBacked: Set<CGWindowID>) -> Set<CGWindowID> {
+        let groups = Dictionary(grouping: windows.filter(\.isFullscreenSpace)) { "\($0.pid):\($0.spaceID ?? -1)" }
+        var drop: Set<CGWindowID> = []
+        for group in groups.values where group.count > 1 {
+            let rank = { (w: WindowInfo) in (axBacked.contains(w.id) ? 1 : 0, w.title.isEmpty ? 0 : 1, w.bounds.width * w.bounds.height) }
+            var kept: [CGRect] = []
+            for w in group.sorted(by: { rank($0) > rank($1) }) {
+                let b = w.bounds
+                let stacked = kept.contains { k in
+                    abs(k.width - b.width) <= 1
+                        && (k.insetBy(dx: -1, dy: -1).contains(b) || b.insetBy(dx: -1, dy: -1).contains(k))
+                }
+                if stacked { drop.insert(w.id) } else { kept.append(b) }
+            }
+        }
+        return drop
     }
 
     private static func spaces(of id: CGWindowID, cid: CGSConnectionID) -> [Int] {
