@@ -1,5 +1,7 @@
 import AppKit
+import Carbon.HIToolbox
 import Combine
+import IOKit
 import SwiftUI
 #if canImport(Sparkle)
 import Sparkle
@@ -73,29 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 model.shiftStepBack()
             }
         }
-        // Tap-originated commits already cleared armed on the tap thread; clearing again here races a fresh arm.
-        hotkey.onCommit = { [weak self, weak model, weak window] quick in
-            self?.cancelPendingPresent()
-            model?.commit(stickyQuickTap: quick)
-            window?.dismiss()
-        }
-        model.commitAndDismiss = { [weak self, weak model, weak window] in
-            self?.cancelPendingPresent()
-            self?.hotkey?.clearArmed()
-            model?.commit()
-            window?.dismiss()
-        }
-        hotkey.onCancel = { [weak self, weak model, weak window] in
-            self?.cancelPendingPresent()
-            model?.cancel()
-            window?.dismiss()
-        }
-        let cancelAndDismiss: () -> Void = { [weak self, weak model, weak window] in
-            self?.cancelPendingPresent()
-            self?.hotkey?.clearArmed()
-            model?.cancel()
-            window?.dismiss()
-        }
+        hotkey.onCommit = { [weak self] quick in self?.finish(commit: true, stickyQuickTap: quick) }
+        model.commitAndDismiss = { [weak self] in self?.finish(commit: true) }
+        let cancelAndDismiss: () -> Void = { [weak self] in self?.finish(commit: false) }
+        hotkey.onCancel = cancelAndDismiss
         model.cancelAndDismiss = cancelAndDismiss
         hotkey.onCloseSelected = { present(); model.closeSelected() }
         hotkey.onCloseSelectedApp = { present(); model.closeSelectedApp() }
@@ -115,24 +98,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SwitchPreferences.shared.$appearance
             .sink { NSApp.appearance = $0.nsAppearance }
             .store(in: &cancellables)
-        func resizeOnChange<T>(_ publisher: Published<T>.Publisher) {
-            publisher.dropFirst()
-                .sink { [weak window] _ in window?.applyContentSize() }
-                .store(in: &cancellables)
-        }
-        resizeOnChange(SwitchPreferences.shared.$verticalList)
-        resizeOnChange(SwitchPreferences.shared.$thumbnailHeight)
-        resizeOnChange(SwitchPreferences.shared.$maxListRows)
-        resizeOnChange(SwitchPreferences.shared.$maxGridRows)
-        resizeOnChange(SwitchPreferences.shared.$panelWidthScale)
+        // present() sizes the panel, so settings changes need no resize here.
         SwitchPreferences.shared.$showThumbnails
             .dropFirst()
-            .sink { [weak self, weak window] enabled in
-                window?.applyContentSize()
+            .sink { [weak self] enabled in
                 if enabled && CGPreflightScreenCaptureAccess() == false {
                     self?.showOnboarding()
-                } else if self?.requiredPermissionsGranted == true {
-                    self?.startServicesIfNeeded()
                 }
             }
             .store(in: &cancellables)
@@ -157,40 +128,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if canImport(Sparkle)
         _ = updaterController
         #endif
-        NotificationCenter.default.addObserver(
-            forName: HotkeyConfig.didChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.hotkey?.reload()
-        }
 
-        // Show onboarding if any permission is missing; otherwise install the tap.
-        if !requiredPermissionsGranted {
-            showOnboarding()
-        } else {
-            startServicesIfNeeded()
-        }
+        // Hotkeys need only Accessibility; a missing or reset Screen Recording grant just loses thumbnails (#198).
+        if !requiredPermissionsGranted { showOnboarding() }
+        startServicesIfNeeded()
 
-        // Background poll: as soon as both are granted, install the tap.
+        // Background poll: as soon as Accessibility is granted, install the tap.
         permsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
             guard let self else { return }
             if self.servicesStarted {
                 timer.invalidate()
                 self.permsTimer = nil
-            } else if self.requiredPermissionsGranted {
+            } else {
                 self.startServicesIfNeeded()
             }
         }
 
-        // Watchdog: armed with no panel visible and none pending means the tap
-        // is consuming keystrokes for a picker that doesn't exist (the "keyboard
-        // stops working until Switch quits" report). Clear it.
+        // Watchdog: armed with no panel visible means the tap is consuming keystrokes
+        // for a picker that doesn't exist (the "keyboard stops working until Switch
+        // quits" report). Clear it. model.arm sets visible before scheduling the present.
         armedWatchdog = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, let hotkey = self.hotkey, let model = self.model else { return }
+                guard let self else { return }
+                self.statusBar?.setWarning(Self.hotkeyWarning())
+                guard let hotkey = self.hotkey, let model = self.model else { return }
                 guard hotkey.isArmed else { return }
-                if !model.visible && self.pendingPresent == nil {
-                    hotkey.clearArmed()
-                } else if model.visible {
+                if !model.visible {
+                    hotkey.clearShownArm()
+                } else {
                     hotkey.recoverIfReleaseWasMissed()
                 }
             }
@@ -208,6 +173,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: .switchRecorderEnded, object: nil, queue: .main
         ) { [weak self] _ in
             self?.hotkey?.setSuspended(false)
+        }
+
+        // Nothing releases ⌘ across sleep, lock or a user switch: on return the watchdog would commit the
+        // stale selection, and a sticky picker would keep eating keys (#211).
+        let ws = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
+                     NSWorkspace.sessionDidResignActiveNotification] {
+            ws.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { cancelAndDismiss() }
+            }
+        }
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screenIsLocked"), object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { cancelAndDismiss() }
         }
 
         // A click in another app while the picker floats (sticky mode) should
@@ -240,6 +220,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return AXIsProcessTrusted() && screenCaptureOK
     }
 
+    /// Shown in the menu bar when macOS keeps keys from reaching the tap (#198).
+    private static func hotkeyWarning() -> String? {
+        if !AXIsProcessTrusted() { return "Hotkeys off: Accessibility is not granted" }
+        guard IsSecureEventInputEnabled() else { return nil }
+        let root = IORegistryGetRootEntry(kIOMainPortDefault)
+        defer { IOObjectRelease(root) }
+        let users = IORegistryEntryCreateCFProperty(root, "IOConsoleUsers" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? [[String: Any]]
+        let pid = users?.lazy.compactMap { $0["kCGSSessionSecureInputPID"] as? Int }.first
+        let app = pid.flatMap { NSRunningApplication(processIdentifier: pid_t($0))?.localizedName } ?? "another app"
+        return "Hotkeys paused: Secure Input is on in \(app)"
+    }
+
     private func schedulePresent(window: SwitcherWindow) {
         pendingPresent?.cancel()
         let work = DispatchWorkItem { [weak self, weak window] in
@@ -256,6 +249,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pending.cancel()
         pendingPresent = nil
         window.present()
+    }
+
+    /// Every way the picker closes. clearShownArm leaves alone an arm the tap made after this one,
+    /// so a stale close can't strand a fresh picker with nothing armed.
+    @MainActor private func finish(commit: Bool, stickyQuickTap: Bool = false) {
+        cancelPendingPresent()
+        hotkey?.clearShownArm()
+        if commit { model?.commit(stickyQuickTap: stickyQuickTap) } else { model?.cancel() }
+        window?.dismiss()
     }
 
     private func cancelPendingPresent() {

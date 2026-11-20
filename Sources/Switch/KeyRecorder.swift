@@ -1,12 +1,13 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 struct KeyRecorderField: NSViewRepresentable {
     let initialBinding: HotkeyBinding
     /// Returns false when the binding is rejected, so the field keeps showing the saved one (#192).
     let onCapture: (HotkeyBinding) -> Bool
-    var accent: Color = .accentColor
-    var placeholder: String = "—"
+    var accent: Color
+    var placeholder: String
 
     func makeNSView(context: Context) -> KeyRecorderNSView {
         let v = KeyRecorderNSView()
@@ -83,14 +84,15 @@ final class KeyRecorderNSView: NSView {
         if window == nil { stopRecording() }
     }
 
-    deinit { teardownTap() }
+    // Through stopRecording so Ended is posted; otherwise the hotkeys stay suspended.
+    deinit { stopRecording() }
 
     // NSEvent local monitors never see Cmd+Tab (system app switcher grabs it upstream).
-    // Session tap at head fires first, swallows.
+    // Session tap at head fires first, swallows. keyDown only: modifier edges must reach everyone else (#211).
     private func startRecording() {
         recording = true
         window?.makeFirstResponder(self)
-        let mask = CGEventMask((1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue))
+        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
         let info = Unmanaged.passUnretained(self).toOpaque()
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
                                           options: .defaultTap, eventsOfInterest: mask,
@@ -135,14 +137,13 @@ final class KeyRecorderNSView: NSView {
     }
 
     fileprivate func capture(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
-        if type == .flagsChanged { return nil }
         guard type == .keyDown else { return Unmanaged.passUnretained(event) }
         let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
-        let held = event.flags.intersection(.recordableModifiers)
+        let held = event.flags.intersection(.primaryModifiers)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             // Bare Esc cancels; Esc with a modifier is a recordable combo (#116).
-            if kc != 53 || !held.isEmpty {
+            if kc != CGKeyCode(kVK_Escape) || !held.isEmpty {
                 let b = HotkeyBinding(keyCode: UInt16(kc), modifiersRaw: held.rawValue)
                 if self.onCapture?(b) == true { self.binding = b }
             }
