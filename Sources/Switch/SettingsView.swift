@@ -42,7 +42,6 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 500, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
-        .onAppear { model.refresh() }
     }
 
     private var tabBar: some View {
@@ -201,9 +200,19 @@ struct SettingsView: View {
 
                 crossSpaceSection
 
-                blacklistSection
+                appListSection(
+                    "Excluded apps",
+                    caption: "Windows from these apps won't appear in the picker.",
+                    emptyText: "Nothing excluded.",
+                    apps: $prefs.blacklist
+                )
 
-                passthroughSection
+                appListSection(
+                    "Pass-through apps",
+                    caption: "Switch's hotkeys go to these apps while they're frontmost, e.g. a virtual machine or remote desktop.",
+                    emptyText: "No pass-through apps.",
+                    apps: $prefs.passthroughApps
+                )
 
                 titleExclusionSection
             }
@@ -347,7 +356,7 @@ struct SettingsView: View {
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.tertiary)
                 .font(.system(size: 11))
-            if let icon = iconForApp(named: name) {
+            if let icon = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name })?.icon {
                 Image(nsImage: icon).resizable().frame(width: 18, height: 18)
             }
             Text(name).font(.system(size: 12))
@@ -367,13 +376,6 @@ struct SettingsView: View {
         let ranked = prefs.appOrder.filter { names.contains($0) }
         let unranked = names.subtracting(ranked).sorted { $0.lowercased() < $1.lowercased() }
         return ranked + unranked
-    }
-
-    private func iconForApp(named name: String) -> NSImage? {
-        if let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) {
-            return app.icon
-        }
-        return nil
     }
 
     @State private var newTitleExclusion = ""
@@ -424,24 +426,6 @@ struct SettingsView: View {
         }
     }
 
-    private var blacklistSection: some View {
-        appListSection(
-            "Excluded apps",
-            caption: "Windows from these apps won't appear in the picker.",
-            emptyText: "Nothing excluded.",
-            apps: $prefs.blacklist
-        )
-    }
-
-    private var passthroughSection: some View {
-        appListSection(
-            "Pass-through apps",
-            caption: "Switch's hotkeys go to these apps while they're frontmost, e.g. a virtual machine or remote desktop.",
-            emptyText: "No pass-through apps.",
-            apps: $prefs.passthroughApps
-        )
-    }
-
     private func appListSection(_ title: String, caption: String, emptyText: String, apps: Binding<Set<String>>) -> some View {
         section(title) {
             VStack(alignment: .leading, spacing: 10) {
@@ -461,7 +445,7 @@ struct SettingsView: View {
                     }
                 }
                 Menu {
-                    ForEach(addableApps(), id: \.bundleIdentifier) { app in
+                    ForEach(addableApps(excluding: apps.wrappedValue), id: \.bundleIdentifier) { app in
                         Button {
                             if let bid = app.bundleIdentifier {
                                 apps.wrappedValue.insert(bid)
@@ -511,12 +495,13 @@ struct SettingsView: View {
         .padding(.horizontal, 6)
     }
 
-    private func addableApps() -> [NSRunningApplication] {
+    /// Apps with a window open that aren't in the list yet, one entry per bundle ID.
+    private func addableApps(excluding taken: Set<String>) -> [NSRunningApplication] {
         let pids = Set(openWindows.map(\.pid))
-        let ownBundle = Bundle.main.bundleIdentifier
+        var seen = taken
+        if let own = Bundle.main.bundleIdentifier { seen.insert(own) }
         return NSWorkspace.shared.runningApplications
-            .filter { pids.contains($0.processIdentifier) }
-            .filter { $0.bundleIdentifier != ownBundle }
+            .filter { app in pids.contains(app.processIdentifier) && (app.bundleIdentifier.map { seen.insert($0).inserted } ?? false) }
             .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
     }
 
