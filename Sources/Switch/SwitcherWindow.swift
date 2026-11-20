@@ -137,7 +137,8 @@ private enum SwitcherPanelSize {
             minHeight: 260,
             screen: screen
         )
-        return NSSize(width: CGFloat(SwitchPreferences.defaultListPanelWidth) * widthScale, height: height)
+        // Floor: the default hint strip (411pt) keeps its padding and narrow rows keep room for text.
+        return NSSize(width: max(460, CGFloat(SwitchPreferences.defaultListPanelWidth) * widthScale), height: height)
     }
 
     private static func gridSize(count: Int, header: CGFloat, widthScale: CGFloat, screen: NSScreen?) -> NSSize {
