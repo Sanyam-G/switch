@@ -393,9 +393,9 @@ struct SettingsView: View {
 
     private var titleExclusionSection: some View {
         stringListSection("Excluded titles",
-                          caption: "Windows whose title or app name contains any of these won't appear in the picker.",
+                          caption: "Windows whose title contains any of these won't appear in the picker. Untitled windows match their app name.",
                           emptyText: "Nothing excluded.",
-                          placeholder: "Add title or app name, press Return",
+                          placeholder: "Add title text, press Return",
                           items: $prefs.titleExclusions, draft: $newTitleExclusion)
     }
 

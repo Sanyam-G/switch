@@ -206,10 +206,11 @@ final class SwitchModel: ObservableObject {
         }
         let exclusions = SwitchPreferences.shared.titleExclusions.map { $0.lowercased() }
         if !exclusions.isEmpty {
-            // App name too: off-Space windows AX doesn't list keep an empty title, and the row shows the app name (#210).
+            // Untitled windows match the app name the row shows: off-Space windows AX doesn't list (#210).
+            // Titled windows match the title only, so existing entries never hide a whole app.
             drop { w in
                 let t = w.title.lowercased(), a = w.appName.lowercased()
-                return exclusions.contains { t.contains($0) || a.contains($0) }
+                return exclusions.contains { t.isEmpty ? a.contains($0) : t.contains($0) }
             }
         }
         if mode == .currentApp, let f = armFrontmostPID {
