@@ -86,8 +86,6 @@ final class HotkeyConfig {
     private let lock = NSLock()
     private var cache: [Slot: HotkeyBinding] = [:]
 
-    static let didChangeNotification = Notification.Name("com.sanyamgarg.switch.hotkeyConfigDidChange")
-
     // Seed the default arming hotkeys once so a fresh install gets them; after that nil means disabled.
     private init() {
         if !defaults.bool(forKey: seededKey) {
@@ -110,7 +108,6 @@ final class HotkeyConfig {
             lock.lock()
             cache[slot] = newValue
             lock.unlock()
-            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
         }
     }
 
@@ -126,7 +123,6 @@ final class HotkeyConfig {
             }
         }
         lock.unlock()
-        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
     private func load(_ slot: Slot) -> HotkeyBinding? {

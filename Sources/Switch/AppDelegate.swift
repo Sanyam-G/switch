@@ -157,11 +157,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if canImport(Sparkle)
         _ = updaterController
         #endif
-        NotificationCenter.default.addObserver(
-            forName: HotkeyConfig.didChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.hotkey?.reload()
-        }
 
         // Hotkeys need only Accessibility; a missing or reset Screen Recording grant just loses thumbnails (#198).
         if !requiredPermissionsGranted { showOnboarding() }
