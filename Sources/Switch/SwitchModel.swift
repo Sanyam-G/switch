@@ -471,9 +471,9 @@ final class SwitchModel: ObservableObject {
     /// mean list position says nothing about recency. Unless Spaces are mixed, the current Space wins, like the list.
     private func mruIndex(in list: [WindowInfo], skipping skip: CGWindowID?) -> Int? {
         let order = WindowMRU.sorted(list, frontmost: nil).filter { $0.id != skip }
-        // Hidden and minimized current-Space windows list after the visible ones, so they lose here too.
+        // Only visible windows lead; hidden, minimized and cross-Space ones share the next block, windowless apps come last.
         let target = SwitchPreferences.shared.mruMixSpaces ? order.first
-            : order.first { !$0.isCrossSpace && !$0.isHidden && !$0.isMinimized } ?? order.first { !$0.isCrossSpace } ?? order.first
+            : order.first { !$0.isCrossSpace && !$0.isHidden && !$0.isMinimized && !$0.isWindowless } ?? order.first
         return target.flatMap { t in list.firstIndex { $0.id == t.id } }
     }
 
