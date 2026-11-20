@@ -154,7 +154,11 @@ enum WindowFocuser {
 
 enum AppCloser {
     static func close(_ window: WindowInfo) {
-        NSRunningApplication(processIdentifier: window.pid)?.terminate()
+        let app = NSRunningApplication(processIdentifier: window.pid)
+        // A Steam row quits Steam, not the helper that owns its windows (#206).
+        let host = app?.bundleIdentifier == window.bundleID ? nil
+            : window.bundleID.flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }
+        (host ?? app)?.terminate()
     }
 }
 

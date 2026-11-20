@@ -47,6 +47,11 @@ enum WindowEnumerator {
         "com.microsoft.edgemac", "company.thebrowser.Browser", "com.vivaldi.Vivaldi"
     ]
 
+    // Steam draws its windows from its CEF browser process, an LSUIElement helper (#206).
+    private static let hostedHelpers: [String: String] = [
+        "com.valvesoftware.steam.helper": "com.valvesoftware.steam"
+    ]
+
     private static func isHelperProcess(_ name: String) -> Bool {
         for s in helperSuffixes where name.hasSuffix(s) { return true }
         return false
@@ -387,8 +392,12 @@ enum WindowEnumerator {
             guard let id = d[kCGWindowNumber as String] as? CGWindowID else { continue }
             guard let pid = d[kCGWindowOwnerPID as String] as? pid_t else { continue }
             if skipApps.contains(appName) { continue }
-            if isHelperProcess(appName) { continue }
-            if blockedPIDs.contains(pid) { continue }
+            let app = NSRunningApplication(processIdentifier: pid)
+            let host = app?.bundleIdentifier.flatMap { hostedHelpers[$0] }
+                .flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }
+            if host == nil && (isHelperProcess(appName) || app?.activationPolicy != .regular) { continue }
+            let owner = host ?? app
+            if blockedPIDs.contains(owner?.processIdentifier ?? pid) { continue }
             let title = d[kCGWindowName as String] as? String ?? ""
             let boundsDict = d[kCGWindowBounds as String] as? [String: CGFloat] ?? [:]
             let bounds = CGRect(
@@ -402,8 +411,6 @@ enum WindowEnumerator {
                 && !(stageManager && (!title.isEmpty || AXWindowCache.element(for: id) != nil)) { continue }
             if title.isEmpty && titlesReliable
                 && (bounds.width < 400 || bounds.height < 300) { continue }
-            let app = NSRunningApplication(processIdentifier: pid)
-            if app == nil || app?.activationPolicy != .regular { continue }
             if alpha <= 0 && app?.isHidden != true { continue }
             // Dedupe by CGWindowID only; it's already unique per window.
             // The earlier (pid, title, bounds) dedupe was collapsing multiple
@@ -413,11 +420,11 @@ enum WindowEnumerator {
             out.append(WindowInfo(
                 id: id,
                 pid: pid,
-                appName: appName,
+                appName: host?.localizedName ?? appName,
                 bounds: bounds,
                 title: title,
                 isHidden: app?.isHidden == true,
-                bundleID: app?.bundleIdentifier
+                bundleID: owner?.bundleIdentifier
             ))
         }
         return out
