@@ -63,7 +63,7 @@ Settings → Appearance → Vertical list. Single-column layout with app icon, n
 
 ## Excluded apps
 
-Settings → Picker → Excluded apps. Hide windows from specific apps. Excluded titles does the same for windows by title or app name.
+Settings → Picker → Excluded apps. Hide windows from specific apps. Excluded titles does the same for windows by title (untitled windows match their app name).
 
 Menu bar apps are left out. Settings → Picker → Always include apps lists their windows anyway, matched by app name.
 
