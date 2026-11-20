@@ -499,12 +499,13 @@ final class SwitchModel: ObservableObject {
         return target.flatMap { t in list.firstIndex { $0.id == t.id } }
     }
 
-    // listable: a layer-0 window of real-window size, so the enumerator would list it once it sweeps.
+    // listable: a layer-0 window the enumerator would list once it sweeps (100×80 if titled, else 400×300).
     private static func cgInfo(of id: CGWindowID) -> (pid: pid_t, listable: Bool)? {
         guard let d = (CGWindowListCopyWindowInfo(.optionIncludingWindow, id) as? [[String: Any]])?.first,
               let pid = d[kCGWindowOwnerPID as String] as? pid_t else { return nil }
         let bounds = (d[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) } ?? .zero
-        return (pid, d[kCGWindowLayer as String] as? Int == 0 && bounds.width >= 400 && bounds.height >= 300)
+        let min: CGSize = (d[kCGWindowName as String] as? String ?? "").isEmpty ? CGSize(width: 400, height: 300) : CGSize(width: 100, height: 80)
+        return (pid, d[kCGWindowLayer as String] as? Int == 0 && bounds.width >= min.width && bounds.height >= min.height)
     }
 
     // kCGWindowBounds has its origin at the top-left of the primary display; NSScreen at the bottom-left.
