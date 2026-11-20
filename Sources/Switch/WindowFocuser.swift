@@ -106,19 +106,17 @@ enum WindowFocuser {
     /// title matches the target window. The menu bar stays AX-accessible even
     /// when the app hides off-Space windows from enumeration (Chromium), and
     /// the app's own handler does makeKeyAndOrderFront, so macOS performs the
-    /// Space switch natively. Only a unique match counts: two "New Tab" items
+    /// Space switch natively. Only a unique match is pressed: two "New Tab" items
     /// can't be told apart, and the wrong one switches to the wrong window.
-    @discardableResult
-    static func focusViaWindowMenu(_ window: WindowInfo) -> Bool {
+    private static func focusViaWindowMenu(_ window: WindowInfo) {
         guard !window.title.isEmpty,
-              let bar = AXHelpers.attribute(kAXMenuBarAttribute, of: AXUIElementCreateApplication(window.pid)) else { return false }
+              let bar = AXHelpers.attribute(kAXMenuBarAttribute, of: AXUIElementCreateApplication(window.pid)) else { return }
         // Window/Help only; Chrome's History menu matches closed windows by title and pressing one reopens it (#115).
         let hits = AXHelpers.children(of: bar as! AXUIElement).suffix(2)
             .flatMap(AXHelpers.children(of:))  // submenus
             .flatMap(AXHelpers.children(of:))  // items
             .filter { AXHelpers.title(of: $0) == window.title }
-        guard hits.count == 1 else { return false }
-        return AXUIElementPerformAction(hits[0], kAXPressAction as CFString) == .success
+        if hits.count == 1 { AXUIElementPerformAction(hits[0], kAXPressAction as CFString) }
     }
 
     /// Direct CGWindowID match via private SPI, then AXWindowCache (Chromium
