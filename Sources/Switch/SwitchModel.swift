@@ -152,7 +152,11 @@ final class SwitchModel: ObservableObject {
             // The front app's newest window, listed or not: one opened since the last sweep is the real front.
             // Other apps' stamps don't count: an accessory panel (Raycast) or a background window isn't where the user is.
             let front = armFrontmostPID
-            armFrontWindowID = WindowMRU.mostRecentID.flatMap { Self.ownerPID(of: $0) == front ? $0 : nil }
+            // An unlisted alert, panel or overlay of the front app isn't one: its listed parent is the front.
+            let listed = Set(snapshot.windows.allWindows.map(\.id))
+            armFrontWindowID = WindowMRU.mostRecentID.flatMap { id in
+                Self.cgInfo(of: id).flatMap { $0.pid == front && ($0.listable || listed.contains(id)) ? id : nil }
+            }
                 ?? front.flatMap { p in WindowMRU.mostRecent(in: snapshot.windows.allWindows.filter { $0.pid == p }) }?.id
                 // Unstamped front-app windows, by bundle too for Steam's helper (#206); a windowless front app leaves it nil.
                 ?? snapshot.windows.activeSpace.first { front == nil || $0.pid == front || ($0.bundleID != nil && $0.bundleID == armFrontmostBundleID) }?.id
@@ -479,9 +483,12 @@ final class SwitchModel: ObservableObject {
         return target.flatMap { t in list.firstIndex { $0.id == t.id } }
     }
 
-    private static func ownerPID(of id: CGWindowID) -> pid_t? {
-        let info = CGWindowListCopyWindowInfo(.optionIncludingWindow, id) as? [[String: Any]]
-        return info?.first?[kCGWindowOwnerPID as String] as? pid_t
+    // listable: a layer-0 window of real-window size, so the enumerator would list it once it sweeps.
+    private static func cgInfo(of id: CGWindowID) -> (pid: pid_t, listable: Bool)? {
+        guard let d = (CGWindowListCopyWindowInfo(.optionIncludingWindow, id) as? [[String: Any]])?.first,
+              let pid = d[kCGWindowOwnerPID as String] as? pid_t else { return nil }
+        let bounds = (d[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) } ?? .zero
+        return (pid, d[kCGWindowLayer as String] as? Int == 0 && bounds.width >= 400 && bounds.height >= 300)
     }
 
     // kCGWindowBounds has its origin at the top-left of the primary display; NSScreen at the bottom-left.
