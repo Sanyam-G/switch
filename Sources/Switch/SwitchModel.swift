@@ -202,6 +202,11 @@ final class SwitchModel: ObservableObject {
             drop { !$0.bounds.intersects(display) }
         }
         let activeFront = WindowMRU.mostRecent(in: active) ?? active.first
+        // Right after a cross-Space switch the cached snapshot still lists the
+        // focused window as cross-Space; pin the frontmost app's MRU window from
+        // either list so rows don't reshuffle under the selection when the fresh
+        // sweep lands (#stale-arm reorder).
+        let appFront = armFrontmostPID.flatMap { p in WindowMRU.mostRecent(in: (active + cross).filter { $0.pid == p }) }
         let ws: [WindowInfo]
         if SwitchPreferences.shared.staticOrder {
             let order = SwitchPreferences.shared.appOrder
@@ -216,13 +221,12 @@ final class SwitchModel: ObservableObject {
             }
             ws = active.sorted(by: stable) + cross.sorted(by: stable)
         } else if SwitchPreferences.shared.mruMixSpaces {
-            // Right after a cross-Space switch the cached snapshot still lists the
-            // focused window as cross-Space; pin the frontmost app's MRU window from
-            // either list so rows don't reshuffle under the selection when the fresh
-            // sweep lands (#stale-arm reorder).
-            let all = active + cross
-            let front = armFrontmostPID.flatMap { p in WindowMRU.mostRecent(in: all.filter { $0.pid == p }) } ?? activeFront
-            ws = WindowMRU.sorted(all, frontmost: front)
+            ws = WindowMRU.sorted(active + cross, frontmost: appFront ?? activeFront)
+        } else if var front = appFront, front.isCrossSpace, let i = cross.firstIndex(of: front) {
+            // Same stale snapshot, unmixed: the focused window leads the current Space's rows.
+            cross.remove(at: i)
+            front.isCrossSpace = false
+            ws = WindowMRU.sorted(active, frontmost: front) + WindowMRU.sorted(cross, frontmost: nil)
         } else {
             ws = WindowMRU.sorted(active, frontmost: activeFront) + WindowMRU.sorted(cross, frontmost: nil)
         }
