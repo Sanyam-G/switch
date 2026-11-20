@@ -83,14 +83,15 @@ final class KeyRecorderNSView: NSView {
         if window == nil { stopRecording() }
     }
 
-    deinit { teardownTap() }
+    // Through stopRecording so Ended is posted; otherwise the hotkeys stay suspended.
+    deinit { stopRecording() }
 
     // NSEvent local monitors never see Cmd+Tab (system app switcher grabs it upstream).
-    // Session tap at head fires first, swallows.
+    // Session tap at head fires first, swallows. keyDown only: modifier edges must reach everyone else (#211).
     private func startRecording() {
         recording = true
         window?.makeFirstResponder(self)
-        let mask = CGEventMask((1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue))
+        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
         let info = Unmanaged.passUnretained(self).toOpaque()
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
                                           options: .defaultTap, eventsOfInterest: mask,
@@ -135,7 +136,6 @@ final class KeyRecorderNSView: NSView {
     }
 
     fileprivate func capture(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
-        if type == .flagsChanged { return nil }
         guard type == .keyDown else { return Unmanaged.passUnretained(event) }
         let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
         let held = event.flags.intersection(.primaryModifiers)
