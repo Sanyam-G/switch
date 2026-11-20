@@ -149,8 +149,12 @@ final class SwitchModel: ObservableObject {
         if changed { windows = final }
 
         if initial {
-            // Any window, not just the snapshot's: one opened since the last sweep is the real front.
-            armFrontWindowID = WindowMRU.mostRecentID ?? snapshot.windows.activeSpace.first?.id
+            // The front app's newest window, listed or not: one opened since the last sweep is the real front.
+            // Other apps' stamps don't count: an accessory panel (Raycast) or a background window isn't where the user is.
+            let front = armFrontmostPID
+            armFrontWindowID = WindowMRU.mostRecentID.flatMap { Self.ownerPID(of: $0) == front ? $0 : nil }
+                ?? front.flatMap { p in WindowMRU.mostRecent(in: snapshot.windows.allWindows.filter { $0.pid == p }) }?.id
+                ?? snapshot.windows.activeSpace.first?.id
             if mode == .spaces {
                 let reps = filteredWindows
                 if let current = reps.firstIndex(where: { !$0.isCrossSpace }), reps.count > 1 {
@@ -468,6 +472,11 @@ final class SwitchModel: ObservableObject {
         let order = WindowMRU.sorted(list, frontmost: nil).filter { $0.id != skip }
         let target = SwitchPreferences.shared.mruMixSpaces ? order.first : order.first { !$0.isCrossSpace } ?? order.first
         return target.flatMap { t in list.firstIndex { $0.id == t.id } }
+    }
+
+    private static func ownerPID(of id: CGWindowID) -> pid_t? {
+        let info = CGWindowListCopyWindowInfo(.optionIncludingWindow, id) as? [[String: Any]]
+        return info?.first?[kCGWindowOwnerPID as String] as? pid_t
     }
 
     // kCGWindowBounds has its origin at the top-left of the primary display; NSScreen at the bottom-left.
