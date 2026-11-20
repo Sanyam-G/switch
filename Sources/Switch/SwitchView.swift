@@ -218,7 +218,8 @@ struct SwitchView: View {
                             .padding(.bottom, PickerLayout.gridBottomPadding)
                         }
                     }
-                    .onChange(of: model.selected) { _, new in
+                    // Initial too: the ScrollView is rebuilt each arm in the same update that sets the selection.
+                    .onChange(of: model.selected, initial: true) { _, new in
                         // Skip auto-scroll when selection came from mouse hover;
                         // user is already looking at where they're pointing.
                         if lastSelectionFromMouse {
@@ -228,7 +229,8 @@ struct SwitchView: View {
                         let cur = model.filteredWindows
                         guard cur.indices.contains(new) else { return }
                         withAnimation(switcherAnimation(.easeInOut(duration: 0.22))) {
-                            proxy.scrollTo(cur[new].id, anchor: .center)
+                            // nil anchor: the least scroll that shows the whole row.
+                            proxy.scrollTo(cur[new].id, anchor: nil)
                         }
                     }
                 }
