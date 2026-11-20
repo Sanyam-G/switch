@@ -56,6 +56,9 @@ final class HotkeyManager {
     private var armedBinding: HotkeyBinding?
     private var armedSticky = false
     private var armedAt: Date?
+    /// Bumped per arm. shownArmGen is the last one main received, so main never clears an arm it hasn't seen.
+    private var armGen = 0
+    private var shownArmGen = 0
     private var advanced = false
     private var lastShift = false
     /// Shift's press stepped back and nothing else followed yet, so a key now makes it a chord to undo (#199).
@@ -564,6 +567,7 @@ final class HotkeyManager {
         stateLock.lock()
         let isFirst = armed == nil
         if isFirst {
+            armGen &+= 1
             armed = style.mode
             armedBinding = binding
             armedSticky = effective.sticky
@@ -572,9 +576,18 @@ final class HotkeyManager {
         } else {
             advanced = true
         }
+        let gen = armGen
         stateLock.unlock()
         DispatchQueue.main.async { [weak self] in
-            if isFirst { self?.onArm?(effective) } else { self?.onAdvance?(shift, isRepeat) }
+            guard let self else { return }
+            if isFirst {
+                self.stateLock.lock()
+                self.shownArmGen = gen
+                self.stateLock.unlock()
+                self.onArm?(effective)
+            } else {
+                self.onAdvance?(shift, isRepeat)
+            }
         }
     }
 
@@ -594,9 +607,16 @@ final class HotkeyManager {
         shiftRepeating = false
     }
 
-    func clearArmed() {
+    private func clearArmed() {
         stateLock.lock()
         clearArmedLocked()
+        stateLock.unlock()
+    }
+
+    /// Main thread. Clears the arm main has shown, never a newer one whose onArm is still queued.
+    func clearShownArm() {
+        stateLock.lock()
+        if armGen == shownArmGen { clearArmedLocked() }
         stateLock.unlock()
     }
 

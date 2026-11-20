@@ -83,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.commitAndDismiss = { [weak self, weak model, weak window] in
             self?.cancelPendingPresent()
-            self?.hotkey?.clearArmed()
+            self?.hotkey?.clearShownArm()
             model?.commit()
             window?.dismiss()
         }
@@ -94,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let cancelAndDismiss: () -> Void = { [weak self, weak model, weak window] in
             self?.cancelPendingPresent()
-            self?.hotkey?.clearArmed()
+            self?.hotkey?.clearShownArm()
             model?.cancel()
             window?.dismiss()
         }
@@ -178,18 +178,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Watchdog: armed with no panel visible and none pending means the tap
-        // is consuming keystrokes for a picker that doesn't exist (the "keyboard
-        // stops working until Switch quits" report). Clear it.
+        // Watchdog: armed with no panel visible means the tap is consuming keystrokes
+        // for a picker that doesn't exist (the "keyboard stops working until Switch
+        // quits" report). Clear it. model.arm sets visible before scheduling the present.
         armedWatchdog = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.statusBar?.setWarning(Self.hotkeyWarning())
                 guard let hotkey = self.hotkey, let model = self.model else { return }
                 guard hotkey.isArmed else { return }
-                if !model.visible && self.pendingPresent == nil {
-                    hotkey.clearArmed()
-                } else if model.visible {
+                if !model.visible {
+                    hotkey.clearShownArm()
+                } else {
                     hotkey.recoverIfReleaseWasMissed()
                 }
             }
