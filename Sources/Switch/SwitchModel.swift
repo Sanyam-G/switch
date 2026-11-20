@@ -243,8 +243,10 @@ final class SwitchModel: ObservableObject {
             ws = active.sorted(by: stable) + cross.sorted(by: stable)
         } else if SwitchPreferences.shared.mruMixSpaces {
             ws = WindowMRU.sorted(active + cross, frontmost: appFront ?? activeFront)
-        } else if var front = appFront, front.isCrossSpace, let i = cross.firstIndex(of: front) {
+        } else if var front = appFront, front.isCrossSpace, let i = cross.firstIndex(of: front),
+                  WindowEnumerator.isOnCurrentSpace(front.id) {
             // Same stale snapshot, unmixed: the focused window leads the current Space's rows.
+            // Live check: a frontmost app whose only window really is elsewhere stays cross-Space.
             cross.remove(at: i)
             front.isCrossSpace = false
             ws = WindowMRU.sorted(active, frontmost: front) + WindowMRU.sorted(cross, frontmost: nil)

@@ -264,6 +264,13 @@ enum WindowEnumerator {
         CGSCopySpacesForWindows(cid, 7, [NSNumber(value: id)] as CFArray)?.takeRetainedValue() as? [Int] ?? []
     }
 
+    /// Live, unlike a snapshot's isCrossSpace.
+    static func isOnCurrentSpace(_ id: CGWindowID) -> Bool {
+        let cid = CGSMainConnectionID()
+        let current = spaceMetadata(cid: cid).currentSpaces
+        return spaces(of: id, cid: cid).contains(where: current.contains)
+    }
+
     private static func annotateSpace(_ w: inout WindowInfo, spaces: [Int], metadata: SpaceMetadata) {
         guard let sid = spaces.first else { return }
         let info = metadata.labels[sid]
