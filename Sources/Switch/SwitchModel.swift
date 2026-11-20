@@ -338,9 +338,9 @@ final class SwitchModel: ObservableObject {
         WindowStore.shared.refresh { snap in
             let ws = snap.windows.allWindows
             let liveIDs = Set(ws.map { $0.id })
-            WindowMRU.purge(keeping: liveIDs)
+            // By the live CG list, not the snapshot: a window one sweep skips keeps its MRU place.
             Task.detached(priority: .utility) {
-                AXWindowCache.purgeDead()
+                WindowMRU.purge(keeping: AXWindowCache.purgeDead())
             }
             guard SwitchPreferences.shared.showThumbnails else { return }
             Task {
