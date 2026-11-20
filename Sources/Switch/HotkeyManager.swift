@@ -330,6 +330,8 @@ final class HotkeyManager {
             let tap = self.tap
             stateLock.unlock()
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            // A release while the tap was off never reached us (#211).
+            recoverIfReleaseWasMissed()
             return Unmanaged.passUnretained(event)
         }
 
@@ -355,6 +357,22 @@ final class HotkeyManager {
             if undoShiftStep {
                 DispatchQueue.main.async { [weak self] in
                     self?.onShiftStep?(true)
+                }
+            }
+
+            // Ahead of the hotkey match: a key can carry a modifier that isn't down, so plain Tab
+            // advances and every key is swallowed (#211). Check the session state too and let go.
+            stateLock.lock()
+            let heldBinding = armedSticky ? nil : armedBinding
+            stateLock.unlock()
+            if let heldBinding, kc != Self.kcEscape, kc != Self.kcReturn, kc != Self.kcKeypadEnter {
+                let released = !heldBinding.modifiersHeld(flags)
+                if released || !heldBinding.modifiersHeld(CGEventSource.flagsState(.combinedSessionState)) {
+                    clearArmed()
+                    DispatchQueue.main.async { [weak self] in
+                        if released { self?.onCommit?(false) } else { self?.onCancel?() }
+                    }
+                    return Unmanaged.passUnretained(event)
                 }
             }
 
@@ -410,13 +428,6 @@ final class HotkeyManager {
                         self?.onCommit?(false)
                     }
                     return nil
-                }
-                if !sticky && !(activeBinding?.modifiersHeld(flags) ?? false) {
-                    clearArmed()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onCommit?(false)
-                    }
-                    return Unmanaged.passUnretained(event)
                 }
                 if typeToFilter && kc == Self.kcDelete {
                     DispatchQueue.main.async { [weak self] in
