@@ -252,8 +252,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A failed start leaves servicesStarted false so the permission poll tries again.
         guard !servicesStarted, hotkey?.start() == true else { return }
         servicesStarted = true
-        // The tap is live now; onboarding went .regular only while it couldn't be.
-        if onboardingWindow != nil { NSApp.setActivationPolicy(.accessory) }
+        // The tap is live now; onboarding or Sparkle went .regular only while it couldn't be, whatever window is still up.
+        NSApp.setActivationPolicy(.accessory)
         WindowStore.shared.refresh()
         MainActor.assumeIsolated { model?.startPrewarm() }
         focusTracker?.start()
