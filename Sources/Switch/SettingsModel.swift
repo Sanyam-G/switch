@@ -18,7 +18,8 @@ final class SettingsModel: ObservableObject {
     #endif
 
     func refresh() {
-        launchAtLogin = SMAppService.mainApp.status == .enabled
+        // Registered but waiting for approval in Login Items still counts as on.
+        launchAtLogin = [.enabled, .requiresApproval].contains(SMAppService.mainApp.status)
         #if canImport(Sparkle)
         autoUpdateCheck = updater?.automaticallyChecksForUpdates ?? true
         #endif
@@ -29,6 +30,9 @@ final class SettingsModel: ObservableObject {
         do {
             if enabled {
                 try SMAppService.mainApp.register()
+                if SMAppService.mainApp.status == .requiresApproval {
+                    SMAppService.openSystemSettingsLoginItems()
+                }
             } else {
                 try SMAppService.mainApp.unregister()
             }
