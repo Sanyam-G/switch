@@ -54,11 +54,7 @@ final class StatusBarController {
         }
     }
 
-    @objc private func openSettings() {
-        MainActor.assumeIsolated { SettingsWindow.shared.show() }
-    }
+    @objc private func openSettings() { SettingsWindow.shared.show() }
 
-    @objc private func openAbout() {
-        MainActor.assumeIsolated { AboutWindow.shared.show() }
-    }
+    @objc private func openAbout() { AboutWindow.shared.show() }
 }
