@@ -21,6 +21,8 @@ final class SwitchModel: ObservableObject {
     private var armDisplayFrame: CGRect?
     private var armFrontWindowID: CGWindowID?
     private var armReverse = false
+    /// Each listed window's position in the snapshot's z-order, for ranking unstamped windows by recency.
+    private var zOrder: [CGWindowID: Int] = [:]
 
     /// Set by AppDelegate so the view can request a commit + window dismiss from a click or a direct pick.
     var commitAndDismiss: (() -> Void)?
@@ -133,6 +135,7 @@ final class SwitchModel: ObservableObject {
 
     private func apply(snapshot: WindowStore.Snapshot, initial: Bool) {
         let previousSelectedID = initial ? nil : selectedWindow?.id
+        zOrder = Dictionary(snapshot.windows.allWindows.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
 
         let final: [WindowInfo]
         if mode == .spaces {
@@ -476,7 +479,9 @@ final class SwitchModel: ObservableObject {
     /// The most recently used listed window other than `skip`, by id: pinned apps and static order
     /// mean list position says nothing about recency. Unless Spaces are mixed, the current Space wins, like the list.
     private func mruIndex(in list: [WindowInfo], skipping skip: CGWindowID?) -> Int? {
-        let order = WindowMRU.sorted(list, frontmost: nil).filter { $0.id != skip }
+        // Unstamped windows (all of them right after launch) fall back to z-order, not pinned or static position.
+        let byZ = list.enumerated().sorted { (zOrder[$0.element.id] ?? Int.max, $0.offset) < (zOrder[$1.element.id] ?? Int.max, $1.offset) }.map(\.element)
+        let order = WindowMRU.sorted(byZ, frontmost: nil).filter { $0.id != skip }
         // Only visible windows lead; hidden, minimized and cross-Space ones share the next block, windowless apps come last.
         let target = SwitchPreferences.shared.mruMixSpaces ? order.first
             : order.first { !$0.isCrossSpace && !$0.isHidden && !$0.isMinimized && !$0.isWindowless } ?? order.first
