@@ -776,7 +776,7 @@ struct SettingsView: View {
                     .frame(width: 100, alignment: .leading)
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(rows, id: \.1) { sub in
-                        hotkeyBindingRow(label: sub.0, slot: sub.1)
+                        hotkeyBindingRow(row: label, label: sub.0, slot: sub.1)
                     }
                 }
                 Spacer()
@@ -790,7 +790,7 @@ struct SettingsView: View {
         }
     }
 
-    private func hotkeyBindingRow(label: String, slot: HotkeyConfig.Slot) -> some View {
+    private func hotkeyBindingRow(row: String, label: String, slot: HotkeyConfig.Slot) -> some View {
         HStack(spacing: 8) {
             Text(label)
                 .font(.system(size: 11))
@@ -800,7 +800,8 @@ struct SettingsView: View {
                 initialBinding: model.bindings[slot] ?? HotkeyBinding(keyCode: 0, modifiersRaw: 0),
                 onCapture: { applyHotkey($0, to: slot) },
                 accent: prefs.accent.color,
-                placeholder: "Not set"
+                placeholder: "Not set",
+                accessibilityName: "\(row) \(label) shortcut"
             )
             .frame(width: 150, height: 28)
             if model.bindings[slot] != nil {

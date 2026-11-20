@@ -8,6 +8,7 @@ struct KeyRecorderField: NSViewRepresentable {
     let onCapture: (HotkeyBinding) -> Bool
     var accent: Color
     var placeholder: String
+    var accessibilityName: String
 
     func makeNSView(context: Context) -> KeyRecorderNSView {
         let v = KeyRecorderNSView()
@@ -15,6 +16,7 @@ struct KeyRecorderField: NSViewRepresentable {
         v.onCapture = onCapture
         v.accentNSColor = NSColor(accent)
         v.placeholder = placeholder
+        v.setAccessibilityLabel(accessibilityName)
         return v
     }
 
@@ -58,6 +60,7 @@ final class KeyRecorderNSView: NSView {
         label.alignment = .center
         label.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.setAccessibilityElement(false)
         addSubview(label)
         NSLayoutConstraint.activate([
             label.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -72,6 +75,30 @@ final class KeyRecorderNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         if recording { stopRecording() } else { startRecording() }
+    }
+
+    // Space or Return starts recording, like pressing a button, for Full Keyboard Access.
+    override func keyDown(with event: NSEvent) {
+        let plain = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function, .capsLock]).isEmpty
+        if !recording, plain, [kVK_Space, kVK_Return, kVK_ANSI_KeypadEnter].contains(Int(event.keyCode)) {
+            startRecording()
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
+    }
+
+    override var focusRingMaskBounds: NSRect { bounds }
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityValue() -> Any? { label.stringValue }
+    override func accessibilityPerformPress() -> Bool {
+        if recording { stopRecording() } else { startRecording() }
+        return true
     }
 
     override func resignFirstResponder() -> Bool {
