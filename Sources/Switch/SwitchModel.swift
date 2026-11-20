@@ -154,7 +154,8 @@ final class SwitchModel: ObservableObject {
             let front = armFrontmostPID
             armFrontWindowID = WindowMRU.mostRecentID.flatMap { Self.ownerPID(of: $0) == front ? $0 : nil }
                 ?? front.flatMap { p in WindowMRU.mostRecent(in: snapshot.windows.allWindows.filter { $0.pid == p }) }?.id
-                ?? snapshot.windows.activeSpace.first?.id
+                // Unstamped front-app windows, by bundle too for Steam's helper (#206); a windowless front app leaves it nil.
+                ?? snapshot.windows.activeSpace.first { front == nil || $0.pid == front || ($0.bundleID != nil && $0.bundleID == armFrontmostBundleID) }?.id
             if mode == .spaces {
                 let reps = filteredWindows
                 if let current = reps.firstIndex(where: { !$0.isCrossSpace }), reps.count > 1 {
