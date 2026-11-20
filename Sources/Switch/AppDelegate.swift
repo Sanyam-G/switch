@@ -34,9 +34,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingWindow: NSWindow?
     private var focusTracker: FocusTracker?
     private var servicesStarted = false
-    #if DEBUG
-    private let debugHarness = DebugFocusHarness()
-    #endif
     private var permsTimer: Timer?
     private var armedWatchdog: Timer?
     private var clickAwayMonitor: Any?
@@ -46,9 +43,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.5)
-        #if DEBUG
-        debugHarness.start()
-        #endif
 
         let model = SwitchModel()
         let window = SwitcherWindow(model: model)
