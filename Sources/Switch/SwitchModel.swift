@@ -193,7 +193,9 @@ final class SwitchModel: ObservableObject {
             }
         }
         if mode == .currentApp, let f = armFrontmostPID {
-            drop { $0.pid != f }
+            // Steam's windows carry its helper's pid but Steam's bundle ID (#206).
+            let bundle = NSRunningApplication(processIdentifier: f)?.bundleIdentifier
+            drop { $0.pid != f && ($0.bundleID == nil || $0.bundleID != bundle) }
         }
         if !SwitchPreferences.shared.showCrossSpace || currentSpaceOnly {
             cross = cross.filter { !$0.isCrossSpace }
@@ -233,8 +235,11 @@ final class SwitchModel: ObservableObject {
         var final = ws
         if SwitchPreferences.shared.includeWindowlessApps && mode == .allWindows {
             let switchablePIDs = full.allPIDs
-            // Steam's windows are listed under its helper's pid (#206).
-            let switchableBundles = Set(full.allWindows.compactMap(\.bundleID))
+            // Steam's windows are listed under its helper's pid (#206). Only such hosted
+            // bundles count, so a second, windowless instance of an app still shows.
+            let switchableBundles = Set(full.allWindows
+                .filter { NSRunningApplication(processIdentifier: $0.pid)?.bundleIdentifier != $0.bundleID }
+                .compactMap(\.bundleID))
             let ownBundle = Bundle.main.bundleIdentifier
             let blacklist = SwitchPreferences.shared.blacklist
             let extras = NSWorkspace.shared.runningApplications
