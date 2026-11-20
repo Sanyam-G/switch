@@ -398,7 +398,10 @@ final class HotkeyManager {
             if armedMode != nil {
                 let key = layoutChar(from: event)
                 let (homeRow, vimNavigation, typeToFilter) = SwitchPreferences.storedInputModes()
-                let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
+                // ⌃⌘Q (Lock Screen) isn't ⌘Q: no primary modifiers beyond ⌘ and the binding's own.
+                let extraModifiers = flags.intersection(.primaryModifiers)
+                    .subtracting((activeBinding?.cgFlags ?? []).union(.maskCommand))
+                let actionModifierMatches = cmd && extraModifiers.isEmpty && (sticky || !typeToFilter || shift)
                 if kc == Self.kcEscape {
                     clearArmed()
                     onMain { $0.onCancel?() }
