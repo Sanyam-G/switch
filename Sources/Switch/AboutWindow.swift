@@ -9,39 +9,30 @@ final class AboutWindow {
 
     func show() {
         // Stays .accessory, same reason as SettingsWindow.
-        if let existing = window {
-            NSApp.activate()
-            existing.makeKeyAndOrderFront(nil)
-            existing.orderFrontRegardless()
-            return
+        if window == nil {
+            let host = NSHostingController(rootView: AboutView())
+            let win = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 380, height: 360),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            win.title = "About Switch"
+            win.contentMinSize = NSSize(width: 380, height: 360)
+            win.contentViewController = host
+            win.center()
+            win.isReleasedWhenClosed = false
+            win.delegate = AboutWindowDelegate.shared
+            window = win
         }
-        let host = NSHostingController(rootView: AboutView())
-        let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 360),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        win.title = "About Switch"
-        win.contentMinSize = NSSize(width: 380, height: 360)
-        win.contentViewController = host
-        win.center()
-        win.isReleasedWhenClosed = false
-        win.level = .floating
-        win.delegate = AboutWindowDelegate.shared
-        window = win
         NSApp.activate()
-        win.makeKeyAndOrderFront(nil)
-        win.orderFrontRegardless()
+        window?.makeKeyAndOrderFront(nil)
+        window?.orderFrontRegardless()
     }
 
     func handleClose() {
         window = nil
-        if !SettingsWindow.shared.isVisible {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                NSApp.setActivationPolicy(.accessory)
-            }
-        }
+        demoteIfNoWindows()
     }
 }
 
@@ -49,9 +40,6 @@ private final class AboutWindowDelegate: NSObject, NSWindowDelegate {
     static let shared = AboutWindowDelegate()
     func windowWillClose(_ notification: Notification) {
         Task { @MainActor in AboutWindow.shared.handleClose() }
-    }
-    func windowDidBecomeKey(_ notification: Notification) {
-        if let win = notification.object as? NSWindow { win.level = .floating }
     }
 }
 
@@ -91,7 +79,6 @@ struct AboutView: View {
             }
 
             Button {
-                AboutWindow.shared.dropLevelForDialog()
                 NotificationCenter.default.post(name: .switchCheckForUpdates, object: nil)
             } label: {
                 Text("Check for Updates")
@@ -127,10 +114,6 @@ private struct AboutPill: View {
             .foregroundStyle(.primary)
             .clipShape(Capsule())
     }
-}
-
-extension AboutWindow {
-    func dropLevelForDialog() { window?.level = .normal }
 }
 
 enum BuildInfo {

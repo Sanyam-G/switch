@@ -4,15 +4,7 @@ import SwiftUI
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case general, picker, permissions, appearance, about
     var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .general: return "General"
-        case .picker: return "Picker"
-        case .permissions: return "Permissions"
-        case .appearance: return "Appearance"
-        case .about: return "About"
-        }
-    }
+    var label: String { rawValue.capitalized }
 }
 
 struct SettingsRowBackground: View {
@@ -42,7 +34,7 @@ struct SettingsView: View {
                 switch tab {
                 case .general:     generalTab
                 case .picker:      pickerTab
-                case .permissions: permissionsTab
+                case .permissions: PermissionsTabView()
                 case .appearance:  appearanceTab
                 case .about:       AboutView()
                 }
@@ -50,7 +42,6 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 500, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
-        .onAppear { model.refresh() }
     }
 
     private var tabBar: some View {
@@ -131,10 +122,16 @@ struct SettingsView: View {
                 }
 
                 section("Switch") {
-                    row(title: "Quit Switch",
-                        detail: "Relaunch any time from Spotlight or your Applications folder.") {
-                        Button("Quit") { NSApp.terminate(nil) }
-                            .controlSize(.small)
+                    VStack(spacing: 0) {
+                        toggleRow("Hide menu bar icon",
+                                  "Open Settings with ⌘, in the picker, or by opening Switch again.",
+                                  $prefs.hideMenuBarIcon)
+                        Divider().opacity(0.4)
+                        row(title: "Quit Switch",
+                            detail: "Relaunch any time from Spotlight or your Applications folder.") {
+                            Button("Quit") { NSApp.terminate(nil) }
+                                .controlSize(.small)
+                        }
                     }
                 }
             }
@@ -158,12 +155,7 @@ struct SettingsView: View {
                         toggleRow("Click only",
                                   "Ignore mouse hover while the picker is open. Click a window to pick it.",
                                   $prefs.clickOnly)
-                            .disabled(prefs.disableMouse)
-                            .opacity(prefs.disableMouse ? 0.5 : 1)
-                        Divider().opacity(0.4)
-                        toggleRow("Hide menu bar icon",
-                                  "Keep Switch off the menu bar. Open Settings by pressing comma while the picker is open.",
-                                  $prefs.hideMenuBarIcon)
+                            .inert(prefs.disableMouse)
                         Divider().opacity(0.4)
                         toggleRow("Vim navigation",
                                   "Use H J K L to move the selection. Turns off type to filter and home row keys.",
@@ -209,9 +201,26 @@ struct SettingsView: View {
 
                 crossSpaceSection
 
-                blacklistSection
+                appListSection(
+                    "Pinned apps",
+                    caption: "These apps' windows stay at the top of the picker.",
+                    emptyText: "Pin an app from the picker.",
+                    apps: $prefs.pinnedBundleIDs
+                )
 
-                passthroughSection
+                appListSection(
+                    "Excluded apps",
+                    caption: "Windows from these apps won't appear in the picker.",
+                    emptyText: "Nothing excluded.",
+                    apps: $prefs.blacklist
+                )
+
+                appListSection(
+                    "Pass-through apps",
+                    caption: "Switch's hotkeys go to these apps while they're frontmost, e.g. a virtual machine or remote desktop.",
+                    emptyText: "No pass-through apps.",
+                    apps: $prefs.passthroughApps
+                )
 
                 titleExclusionSection
 
@@ -341,7 +350,8 @@ struct SettingsView: View {
                                 item: name,
                                 current: $draggedApp,
                                 apps: apps,
-                                commit: { prefs.appOrder = $0 }
+                                // Keep the rank of apps with no window open right now.
+                                commit: { order in prefs.appOrder = order + prefs.appOrder.filter { !order.contains($0) } }
                             ))
                     }
                 }
@@ -356,7 +366,7 @@ struct SettingsView: View {
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.tertiary)
                 .font(.system(size: 11))
-            if let icon = iconForApp(named: name) {
+            if let icon = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name })?.icon {
                 Image(nsImage: icon).resizable().frame(width: 18, height: 18)
             }
             Text(name).font(.system(size: 12))
@@ -376,13 +386,6 @@ struct SettingsView: View {
         let ranked = prefs.appOrder.filter { names.contains($0) }
         let unranked = names.subtracting(ranked).sorted { $0.lowercased() < $1.lowercased() }
         return ranked + unranked
-    }
-
-    private func iconForApp(named name: String) -> NSImage? {
-        if let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) {
-            return app.icon
-        }
-        return nil
     }
 
     @State private var newTitleExclusion = ""
@@ -451,24 +454,6 @@ struct SettingsView: View {
         }
     }
 
-    private var blacklistSection: some View {
-        appListSection(
-            "Excluded apps",
-            caption: "Windows from these apps won't appear in the picker.",
-            emptyText: "Nothing excluded.",
-            apps: $prefs.blacklist
-        )
-    }
-
-    private var passthroughSection: some View {
-        appListSection(
-            "Pass-through apps",
-            caption: "Switch's hotkeys go to these apps while they're frontmost, e.g. a virtual machine or remote desktop.",
-            emptyText: "No pass-through apps.",
-            apps: $prefs.passthroughApps
-        )
-    }
-
     private func appListSection(_ title: String, caption: String, emptyText: String, apps: Binding<Set<String>>) -> some View {
         section(title) {
             VStack(alignment: .leading, spacing: 10) {
@@ -488,7 +473,7 @@ struct SettingsView: View {
                     }
                 }
                 Menu {
-                    ForEach(addableApps(), id: \.bundleIdentifier) { app in
+                    ForEach(addableApps(excluding: apps.wrappedValue), id: \.bundleIdentifier) { app in
                         Button {
                             if let bid = app.bundleIdentifier {
                                 apps.wrappedValue.insert(bid)
@@ -538,12 +523,13 @@ struct SettingsView: View {
         .padding(.horizontal, 6)
     }
 
-    private func addableApps() -> [NSRunningApplication] {
+    /// Apps with a window open that aren't in the list yet, one entry per bundle ID.
+    private func addableApps(excluding taken: Set<String>) -> [NSRunningApplication] {
         let pids = Set(openWindows.map(\.pid))
-        let ownBundle = Bundle.main.bundleIdentifier
+        var seen = taken
+        if let own = Bundle.main.bundleIdentifier { seen.insert(own) }
         return NSWorkspace.shared.runningApplications
-            .filter { pids.contains($0.processIdentifier) }
-            .filter { $0.bundleIdentifier != ownBundle }
+            .filter { app in pids.contains(app.processIdentifier) && (app.bundleIdentifier.map { seen.insert($0).inserted } ?? false) }
             .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
     }
 
@@ -671,14 +657,17 @@ struct SettingsView: View {
                         toggleRow("Show top header",
                                   "Filter text and window count at the top of the picker.",
                                   $prefs.verticalShowHeader)
+                            .inert(!prefs.verticalList)
                         Divider().opacity(0.4)
                         toggleRow("Show preview",
                                   "Window thumbnail at the trailing edge of each row.",
                                   $prefs.verticalShowPreview)
+                            .inert(!prefs.verticalList || !prefs.showThumbnails)
                         Divider().opacity(0.4)
                         toggleRow("Show stoplights",
                                   "Close/minimize/zoom buttons inside each row.",
                                   $prefs.verticalShowStoplights)
+                            .inert(!prefs.verticalList || !prefs.showStoplights)
                     }
                 }
 
@@ -686,18 +675,22 @@ struct SettingsView: View {
                     VStack(spacing: 0) {
                         intSliderRow("Columns", "Number of columns in the grid view. \(prefs.gridColumns)",
                                      value: $prefs.gridColumns, in: 3...6)
+                            .inert(prefs.verticalList)
                         Divider().opacity(0.4)
                         intSliderRow("Grid rows", "Rows visible at once in the grid view. \(prefs.maxGridRows)",
                                      value: $prefs.maxGridRows, in: 2...10)
+                            .inert(prefs.verticalList)
                         Divider().opacity(0.4)
                         intSliderRow("List rows", "Rows visible at once in the list view. \(prefs.maxListRows)",
                                      value: $prefs.maxListRows, in: 4...20)
+                            .inert(!prefs.verticalList)
                         Divider().opacity(0.4)
                         sliderRow("Panel width", panelWidthDetail, value: $prefs.panelWidthScale,
                                   in: SwitchPreferences.minPanelWidthScale...SwitchPreferences.maxPanelWidthScale, step: 0.05)
                         Divider().opacity(0.4)
                         sliderRow("Thumbnail size", "Height of each window preview. \(Int(prefs.thumbnailHeight))pt",
                                   value: $prefs.thumbnailHeight, in: 80...300, step: 5)
+                            .inert(prefs.verticalList || !prefs.showThumbnails)
                         Divider().opacity(0.4)
                         sliderRow("App icon size", "Size of the app icon on each tile and list row. \(Int(prefs.appIconSize))pt",
                                   value: $prefs.appIconSize, in: 20...48, step: 2)
@@ -715,10 +708,6 @@ struct SettingsView: View {
             }
             .padding(24)
         }
-    }
-
-    private var permissionsTab: some View {
-        PermissionsTabView(accent: prefs.accent.color)
     }
 
     // MARK: - Building blocks
@@ -886,4 +875,9 @@ private struct AppOrderDropDelegate: DropDelegate {
         current = nil
         return true
     }
+}
+
+private extension View {
+    /// Greys out a setting that has no effect in the current configuration.
+    func inert(_ off: Bool) -> some View { disabled(off).opacity(off ? 0.5 : 1) }
 }

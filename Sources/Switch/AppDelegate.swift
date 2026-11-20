@@ -3,9 +3,7 @@ import Carbon.HIToolbox
 import Combine
 import IOKit
 import SwiftUI
-#if canImport(Sparkle)
 import Sparkle
-#endif
 
 extension Notification.Name {
     static let switchCheckForUpdates = Notification.Name("switch.checkForUpdates")
@@ -20,14 +18,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppDelegate.shared = self
     }
 
-    #if canImport(Sparkle)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,
         userDriverDelegate: self
     )
     var sparkleUpdater: SPUUpdater? { updaterController.updater }
-    #endif
     private var model: SwitchModel?
     private var hotkey: HotkeyManager?
     private var window: SwitcherWindow?
@@ -36,9 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingWindow: NSWindow?
     private var focusTracker: FocusTracker?
     private var servicesStarted = false
-    #if DEBUG
-    private let debugHarness = DebugFocusHarness()
-    #endif
     private var permsTimer: Timer?
     private var armedWatchdog: Timer?
     private var clickAwayMonitor: Any?
@@ -48,9 +41,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.5)
-        #if DEBUG
-        debugHarness.start()
-        #endif
 
         let model = SwitchModel()
         let window = SwitcherWindow(model: model)
@@ -125,12 +115,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(handleCheckForUpdates),
             name: .switchCheckForUpdates, object: nil
         )
-        #if canImport(Sparkle)
         _ = updaterController
-        #endif
 
         // Hotkeys need only Accessibility; a missing or reset Screen Recording grant just loses thumbnails (#198).
-        if !requiredPermissionsGranted { showOnboarding() }
+        if !OnboardingModel.requiredGranted { showOnboarding() }
         startServicesIfNeeded()
 
         // Background poll: as soon as Accessibility is granted, install the tap.
@@ -206,18 +194,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Relaunching while already running reopens Settings and restores the menu bar icon if it was dragged off.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         statusBar?.setHidden(UserDefaults.standard.bool(forKey: SwitchPreferences.hideMenuBarIconKey))
-        if requiredPermissionsGranted {
+        if OnboardingModel.requiredGranted {
             SettingsWindow.shared.show()
         } else {
             showOnboarding()
         }
         return true
-    }
-
-    private var requiredPermissionsGranted: Bool {
-        let thumbnailsEnabled = SwitchPreferences.storedShowThumbnails
-        let screenCaptureOK = !thumbnailsEnabled || CGPreflightScreenCaptureAccess()
-        return AXIsProcessTrusted() && screenCaptureOK
     }
 
     /// Shown in the menu bar when macOS keeps keys from reaching the tap (#198).
@@ -275,14 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleCheckForUpdates() {
-        #if canImport(Sparkle)
         updaterController.checkForUpdates(nil)
-        #else
-        let alert = NSAlert()
-        alert.messageText = "Updates not configured"
-        alert.informativeText = "This build doesn't include Sparkle. Visit switch-dev.sanyamgarg.com to download the latest."
-        alert.runModal()
-        #endif
     }
 
     private func showOnboarding() {
@@ -313,12 +288,10 @@ extension AppDelegate: NSWindowDelegate {
         guard let win = notification.object as? NSWindow, win == onboardingWindow else { return }
         onboardingModel?.stopPolling()
         onboardingWindow = nil
-        let settingsOpen = MainActor.assumeIsolated { SettingsWindow.shared.isVisible }
-        if !settingsOpen { NSApp.setActivationPolicy(.accessory) }
+        demoteIfNoWindows()
     }
 }
 
-#if canImport(Sparkle)
 extension AppDelegate: SPUStandardUserDriverDelegate {
     // An accessory app's windows are invisible to app switchers; go regular while Sparkle's update UI is up.
     func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
@@ -327,8 +300,6 @@ extension AppDelegate: SPUStandardUserDriverDelegate {
     }
 
     func standardUserDriverWillFinishUpdateSession() {
-        let settingsOpen = MainActor.assumeIsolated { SettingsWindow.shared.isVisible }
-        if !settingsOpen { NSApp.setActivationPolicy(.accessory) }
+        demoteIfNoWindows()
     }
 }
-#endif

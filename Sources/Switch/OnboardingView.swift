@@ -14,7 +14,7 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Switch")
                         .font(.system(size: 16, weight: .semibold))
-                    Text("One permission before you can switch windows.")
+                    Text(model.requiresScreenCapture ? "Accessibility is required; Screen Recording adds thumbnails." : "One permission before you can switch windows.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -82,5 +82,16 @@ struct OnboardingView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
         )
+    }
+}
+
+/// Settings' Permissions tab: the onboarding rows with their own polling model.
+struct PermissionsTabView: View {
+    @StateObject private var perms = OnboardingModel()
+
+    var body: some View {
+        ScrollView {
+            OnboardingView().environmentObject(perms).padding(24)
+        }
     }
 }

@@ -27,6 +27,7 @@ Notarized by Apple. macOS 14+, Apple silicon and Intel. Free.
 - Grid or vertical list
 - Extra hotkeys for the current Space only or the current display only
 - Close, quit or hide from inside the picker
+- Pin apps to the top of the picker
 - Hide apps, or windows by title, from the picker
 - Pass-through apps (a VM or remote desktop) keep the hotkeys while they're in front
 - Lists windows of apps off the Stage Manager stage
@@ -51,7 +52,6 @@ Prices from each app's site in November 2026. AltTab has many more settings, so 
 - Optional Vim-style H J K L navigation, or home row keys A S D F G J K L ; to pick (either one turns off type to filter)
 - ⇧⌘W closes the selected window, ⇧⌘Q quits its app, ⇧⌘H hides it (plain ⌘W / ⌘Q / ⌘H in sticky mode or with type to filter off)
 - ↵ commits, Esc cancels, ⌘, opens Settings
-- MRU ordering, picker pre-warms in the background
 
 ## Cross-Space
 
@@ -63,7 +63,7 @@ Settings → Appearance → Vertical list. Single-column layout with app icon, n
 
 ## Excluded apps
 
-Settings → Picker → Excluded apps. Hide windows from specific apps. Excluded titles does the same for windows by title.
+Settings → Picker → Excluded apps. Hide windows from specific apps. Excluded titles does the same for windows by title or app name.
 
 Menu bar apps are left out. Settings → Picker → Always include apps lists their windows anyway, matched by app name.
 
@@ -105,7 +105,7 @@ Or quit Switch and drag `Switch.app` from `/Applications` to the Trash.
 
 ## Contributing
 
-I'll take feature ideas from AI-generated PRs, but I won't merge them. Hand-written PRs are welcome.
+I'll take feature ideas from AI-generated PRs, but I won't merge them. Hand-written PRs are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) has the build steps.
 
 ## License
 
