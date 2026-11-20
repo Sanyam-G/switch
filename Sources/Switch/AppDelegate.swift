@@ -131,7 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 window?.applyContentSize()
                 if enabled && CGPreflightScreenCaptureAccess() == false {
                     self?.showOnboarding()
-                } else if self?.requiredPermissionsGranted == true {
+                } else if AXIsProcessTrusted() {
                     self?.startServicesIfNeeded()
                 }
             }
@@ -163,20 +163,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hotkey?.reload()
         }
 
-        // Show onboarding if any permission is missing; otherwise install the tap.
-        if !requiredPermissionsGranted {
-            showOnboarding()
-        } else {
-            startServicesIfNeeded()
-        }
+        // The tap needs only Accessibility; Screen Recording just adds thumbnails (#198).
+        if AXIsProcessTrusted() { startServicesIfNeeded() }
+        if !OnboardingModel.requiredGranted { showOnboarding() }
 
-        // Background poll: as soon as both are granted, install the tap.
+        // Background poll: as soon as Accessibility is granted, install the tap.
         permsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
             guard let self else { return }
             if self.servicesStarted {
                 timer.invalidate()
                 self.permsTimer = nil
-            } else if self.requiredPermissionsGranted {
+            } else if AXIsProcessTrusted() {
                 self.startServicesIfNeeded()
             }
         }
@@ -226,18 +223,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Relaunching while already running reopens Settings and restores the menu bar icon if it was dragged off.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         statusBar?.setHidden(UserDefaults.standard.bool(forKey: SwitchPreferences.hideMenuBarIconKey))
-        if requiredPermissionsGranted {
+        if OnboardingModel.requiredGranted {
             SettingsWindow.shared.show()
         } else {
             showOnboarding()
         }
         return true
-    }
-
-    private var requiredPermissionsGranted: Bool {
-        let thumbnailsEnabled = SwitchPreferences.storedShowThumbnails
-        let screenCaptureOK = !thumbnailsEnabled || CGPreflightScreenCaptureAccess()
-        return AXIsProcessTrusted() && screenCaptureOK
     }
 
     private func schedulePresent(window: SwitcherWindow) {

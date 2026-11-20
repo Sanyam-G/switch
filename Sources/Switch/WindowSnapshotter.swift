@@ -31,6 +31,8 @@ actor WindowSnapshotter {
 
     func snapshot(for id: CGWindowID, force: Bool = false) async -> NSImage? {
         if !force, let img = cache[id] { return img }
+        // Services start without Screen Recording now (#198); skip captures that would come back blank.
+        guard CGPreflightScreenCaptureAccess() else { return nil }
         if inFlight.contains(id) { return nil }
         inFlight.insert(id)
         defer { inFlight.remove(id) }

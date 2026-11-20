@@ -14,7 +14,7 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Switch")
                         .font(.system(size: 16, weight: .semibold))
-                    Text(model.requiresScreenCapture ? "Two permissions before you can switch windows." : "One permission before you can switch windows.")
+                    Text(model.requiresScreenCapture ? "Accessibility is required; Screen Recording adds thumbnails." : "One permission before you can switch windows.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
