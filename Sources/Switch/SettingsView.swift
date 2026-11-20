@@ -61,6 +61,7 @@ struct SettingsView: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(tab == t ? .isSelected : [])
             }
             Spacer()
         }
@@ -256,7 +257,7 @@ struct SettingsView: View {
                 Divider().opacity(0.4)
                 row(title: "Show picker on",
                     detail: "Mouse: the screen under the cursor. Active: the screen with the focused window. Primary: your main display.") {
-                    Picker("", selection: $prefs.pickerDisplay) {
+                    Picker("Show picker on", selection: $prefs.pickerDisplay) {
                         ForEach(SwitchPreferences.PickerDisplay.allCases) { d in
                             Text(d.label).tag(d)
                         }
@@ -579,7 +580,7 @@ struct SettingsView: View {
 
                 section("Theme") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Picker("", selection: $prefs.appearance) {
+                        Picker("Theme", selection: $prefs.appearance) {
                             ForEach(SwitchPreferences.Appearance.allCases) { a in
                                 Text(a.label).tag(a)
                             }
@@ -596,7 +597,7 @@ struct SettingsView: View {
 
                 section("Background") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Picker("", selection: $prefs.backgroundBlur) {
+                        Picker("Background", selection: $prefs.backgroundBlur) {
                             ForEach(SwitchPreferences.BackgroundBlur.allCases) { b in
                                 Text(b.label).tag(b)
                             }
@@ -713,7 +714,8 @@ struct SettingsView: View {
 
     private func sliderRow(_ title: String, _ detail: String, value: Binding<Double>, in range: ClosedRange<Double>, step: Double) -> some View {
         row(title: title, detail: detail) {
-            Slider(value: value, in: range, step: step)
+            Slider(value: value, in: range, step: step) { Text(title) }
+                .labelsHidden()
                 .frame(width: 140)
                 .tint(prefs.accent.color)
         }
@@ -759,7 +761,7 @@ struct SettingsView: View {
 
     private func toggleRow(_ title: String, _ detail: String, _ isOn: Binding<Bool>) -> some View {
         row(title: title, detail: detail) {
-            Toggle("", isOn: isOn)
+            Toggle(title, isOn: isOn)
                 .labelsHidden().toggleStyle(.switch)
                 .tint(prefs.accent.color)
         }
@@ -829,6 +831,8 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
         .help(choice.label)
+        .accessibilityLabel(choice.label)
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 
     @discardableResult
