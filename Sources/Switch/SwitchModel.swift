@@ -218,12 +218,15 @@ final class SwitchModel: ObservableObject {
         var final = ws
         if SwitchPreferences.shared.includeWindowlessApps && mode == .allWindows {
             let switchablePIDs = full.allPIDs
+            // Steam's windows are listed under its helper's pid (#206).
+            let switchableBundles = Set(full.allWindows.compactMap(\.bundleID))
             let ownBundle = Bundle.main.bundleIdentifier
             let blacklist = SwitchPreferences.shared.blacklist
             let extras = NSWorkspace.shared.runningApplications
                 .filter {
                     $0.activationPolicy == .regular
                         && !switchablePIDs.contains($0.processIdentifier)
+                        && $0.bundleIdentifier.map(switchableBundles.contains) != true
                         && $0.bundleIdentifier != ownBundle
                         && $0.bundleIdentifier.map(blacklist.contains) != true
                 }

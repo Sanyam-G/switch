@@ -497,7 +497,9 @@ struct SwitchView: View {
     private func appIcon(for window: WindowInfo) -> NSImage? {
         let key = window.bundleID ?? "pid:\(window.pid)"
         if let cached = Self.iconCache[key] { return cached }
-        guard let icon = NSRunningApplication(processIdentifier: window.pid)?.icon else { return nil }
+        // By bundle first: Steam's windows belong to its icon-less helper (#206).
+        let app = window.bundleID.flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }
+        guard let icon = (app ?? NSRunningApplication(processIdentifier: window.pid))?.icon else { return nil }
         if Self.iconCache.count > 256 { Self.iconCache.removeAll() }
         Self.iconCache[key] = icon
         return icon
