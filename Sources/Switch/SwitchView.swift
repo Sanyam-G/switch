@@ -31,31 +31,27 @@ struct SwitchView: View {
     @State private var openMouseLocation: CGPoint = .zero
     @State private var hasMouseMovedSinceOpen = false
     @State private var lastSelectionFromMouse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private func handleHover(_ isHovering: Bool, windowID: CGWindowID, index: Int) {
         guard !prefs.disableMouse else { return }
-        if isHovering {
-            model.pointerWindowID = windowID
-        } else if model.pointerWindowID == windowID {
-            model.pointerWindowID = nil
+        guard isHovering else {
+            if model.pointerWindowID == windowID { model.pointerWindowID = nil }
+            if hoveredID == windowID { hoveredID = nil }
+            return
         }
-        if isHovering {
-            // Ignore hover until cursor has actually moved 10pt+ since panel opened.
-            // Otherwise a static cursor parked over a tile hijacks the default selection.
-            if !hasMouseMovedSinceOpen {
-                let loc = NSEvent.mouseLocation
-                let dx = loc.x - openMouseLocation.x
-                let dy = loc.y - openMouseLocation.y
-                if hypot(dx, dy) < 10 { return }
-                hasMouseMovedSinceOpen = true
-            }
-            hoveredID = windowID
-            if !prefs.clickOnly && model.selected != index {
-                lastSelectionFromMouse = true
-                model.selected = index
-            }
-        } else if hoveredID == windowID {
-            hoveredID = nil
+        model.pointerWindowID = windowID
+        // Ignore hover until cursor has actually moved 10pt+ since panel opened.
+        // Otherwise a static cursor parked over a tile hijacks the default selection.
+        if !hasMouseMovedSinceOpen {
+            let loc = NSEvent.mouseLocation
+            if hypot(loc.x - openMouseLocation.x, loc.y - openMouseLocation.y) < 10 { return }
+            hasMouseMovedSinceOpen = true
+        }
+        hoveredID = windowID
+        if !prefs.clickOnly && model.selected != index {
+            lastSelectionFromMouse = true
+            model.selected = index
         }
     }
 
@@ -64,10 +60,6 @@ struct SwitchView: View {
         lastSelectionFromMouse = true
         model.selected = index
         model.commitAndDismiss?()
-    }
-
-    private func isPinned(_ window: WindowInfo) -> Bool {
-        window.isPinned(in: prefs.pinnedBundleIDs)
     }
 
     @ViewBuilder
@@ -110,7 +102,7 @@ struct SwitchView: View {
     private var showHeader: Bool { model.showsHeader }
 
     private var isSpaceMode: Bool { model.mode == .spaces }
-    private var animationsEnabled: Bool { !prefs.disableAnimations }
+    private var animationsEnabled: Bool { !prefs.disableAnimations && !reduceMotion }
 
     private var panelAnimation: Animation? {
         guard animationsEnabled else { return nil }
@@ -279,13 +271,13 @@ struct SwitchView: View {
 
     private func stoplights(for window: WindowInfo) -> some View {
         HStack(spacing: 4) {
-            stoplight(color: Color(red: 1.0, green: 0.36, blue: 0.34), symbol: "xmark") {
+            stoplight(color: Color(red: 1.0, green: 0.36, blue: 0.34), symbol: "xmark", label: "Close window") {
                 model.close(window)
             }
-            stoplight(color: Color(red: 1.0, green: 0.74, blue: 0.20), symbol: "minus") {
+            stoplight(color: Color(red: 1.0, green: 0.74, blue: 0.20), symbol: "minus", label: "Minimize") {
                 WindowMinimizer.minimize(window)
             }
-            stoplight(color: Color(red: 0.30, green: 0.78, blue: 0.34), symbol: "plus") {
+            stoplight(color: Color(red: 0.30, green: 0.78, blue: 0.34), symbol: "plus", label: "Zoom") {
                 WindowZoomer.zoom(window)
             }
         }
@@ -308,11 +300,12 @@ struct SwitchView: View {
                 .background(Circle().fill(Color.black.opacity(0.35)))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isPinned ? "Unpin app" : "Pin app")
         .opacity(prefs.disableMouse ? 0 : 1)
         .allowsHitTesting(!prefs.disableMouse)
     }
 
-    private func stoplight(color: Color, symbol: String, action: @escaping () -> Void) -> some View {
+    private func stoplight(color: Color, symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             ZStack {
                 Circle()
@@ -325,6 +318,7 @@ struct SwitchView: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     private func hint(_ key: String, _ label: String) -> some View {
@@ -337,7 +331,7 @@ struct SwitchView: View {
                 .padding(.vertical, 1)
                 .background(
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color.white.opacity(0.10))
+                        .fill(Color.primary.opacity(0.10))
                 )
             Text(label)
                 .font(.system(size: 11))
@@ -387,7 +381,7 @@ struct SwitchView: View {
                     }
                 }
                 .overlay(alignment: .topTrailing) {
-                    if !window.isWindowless && (isPinned(window) || hovered) {
+                    if !window.isWindowless && (window.isPinned(in: prefs.pinnedBundleIDs) || hovered) {
                         pinButton(for: window).padding(7)
                     }
                 }
@@ -435,10 +429,13 @@ struct SwitchView: View {
             .padding(.horizontal, 2)
         }
         .padding(PickerLayout.tilePadding)
-        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 9, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animationsEnabled: animationsEnabled))
+        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 9, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animated: animationsEnabled))
         .contentShape(Rectangle())
         .onHover { handleHover($0, windowID: window.id, index: index) }
         .onTapGesture { handleTap(index: index) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { handleTap(index: index) }
     }
 
     private func listRow(window: WindowInfo, index: Int) -> some View {
@@ -478,7 +475,7 @@ struct SwitchView: View {
                 stoplights(for: window)
                     .opacity(hovered ? 1 : 0.45)
             }
-            if !isSpaceMode && !window.isWindowless && (isPinned(window) || hovered) {
+            if !isSpaceMode && !window.isWindowless && (window.isPinned(in: prefs.pinnedBundleIDs) || hovered) {
                 pinButton(for: window)
                     .opacity(hovered ? 1 : 0.8)
             }
@@ -507,10 +504,13 @@ struct SwitchView: View {
         .padding(.horizontal, 10)
         .frame(height: PickerLayout.listRowHeight(preview: prefs.showThumbnails && prefs.verticalShowPreview, icon: prefs.appIconSize))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 8, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animationsEnabled: animationsEnabled))
+        .modifier(SelectionChrome(selected: selected, hovered: hovered, cornerRadius: 8, accent: prefs.accent.color, namespace: selectionNS, selectedValue: model.selected, animated: animationsEnabled))
         .contentShape(Rectangle())
         .onHover { handleHover($0, windowID: window.id, index: index) }
         .onTapGesture { handleTap(index: index) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { handleTap(index: index) }
     }
 
     @ViewBuilder
@@ -549,11 +549,7 @@ private struct SelectionChrome: ViewModifier {
     let accent: Color
     let namespace: Namespace.ID
     let selectedValue: Int
-    let animationsEnabled: Bool
-
-    private func selectionAnimation(_ animation: Animation) -> Animation? {
-        animationsEnabled ? animation : nil
-    }
+    let animated: Bool
 
     func body(content: Content) -> some View {
         content
@@ -562,7 +558,7 @@ private struct SelectionChrome: ViewModifier {
                 ZStack {
                     if hovered && !selected {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
+                            .fill(Color.primary.opacity(0.06))
                     }
                     if selected {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -580,7 +576,7 @@ private struct SelectionChrome: ViewModifier {
                     }
                 }
             )
-            .animation(selectionAnimation(.spring(response: 0.22, dampingFraction: 0.85)), value: selectedValue)
-            .animation(selectionAnimation(.easeOut(duration: 0.10)), value: hovered)
+            .animation(animated ? .spring(response: 0.22, dampingFraction: 0.85) : nil, value: selectedValue)
+            .animation(animated ? .easeOut(duration: 0.10) : nil, value: hovered)
     }
 }
