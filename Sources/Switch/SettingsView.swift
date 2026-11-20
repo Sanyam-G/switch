@@ -525,11 +525,12 @@ struct SettingsView: View {
 
     /// Apps with a window open that aren't in the list yet, one entry per bundle ID.
     private func addableApps(excluding taken: Set<String>) -> [NSRunningApplication] {
-        let pids = Set(openWindows.map(\.pid))
+        // By bundle ID, not pid: Steam's windows belong to its helper's pid (#206).
+        let bids = Set(openWindows.compactMap(\.bundleID))
         var seen = taken
         if let own = Bundle.main.bundleIdentifier { seen.insert(own) }
         return NSWorkspace.shared.runningApplications
-            .filter { app in pids.contains(app.processIdentifier) && (app.bundleIdentifier.map { seen.insert($0).inserted } ?? false) }
+            .filter { app in app.bundleIdentifier.map { bids.contains($0) && seen.insert($0).inserted } ?? false }
             .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
     }
 
