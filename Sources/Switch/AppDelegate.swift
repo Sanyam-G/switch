@@ -118,8 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = updaterController
 
         // Hotkeys need only Accessibility; a missing or reset Screen Recording grant just loses thumbnails (#198).
-        if !OnboardingModel.requiredGranted { showOnboarding() }
         startServicesIfNeeded()
+        if !OnboardingModel.requiredGranted { showOnboarding() }
 
         // Background poll: as soon as Accessibility is granted, install the tap.
         permsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
@@ -251,6 +251,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A failed start leaves servicesStarted false so the permission poll tries again.
         guard !servicesStarted, hotkey?.start() == true else { return }
         servicesStarted = true
+        // The tap is live now; onboarding went .regular only while it couldn't be.
+        if onboardingWindow != nil { NSApp.setActivationPolicy(.accessory) }
         WindowStore.shared.refresh()
         MainActor.assumeIsolated { model?.startPrewarm() }
         focusTracker?.start()
@@ -277,9 +279,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             win.delegate = self
             onboardingWindow = win
         }
-        NSApp.setActivationPolicy(.regular)
+        // .regular (Dock, ⌘-Tab) only before the tap runs: an inactive .regular app's activate() is ignored, breaking switching.
+        if !servicesStarted { NSApp.setActivationPolicy(.regular) }
         NSApp.activate(ignoringOtherApps: true)
         onboardingWindow?.makeKeyAndOrderFront(nil)
+        onboardingWindow?.orderFrontRegardless()
     }
 }
 
