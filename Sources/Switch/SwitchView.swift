@@ -267,10 +267,10 @@ struct SwitchView: View {
                 model.close(window)
             }
             stoplight(color: Color(red: 1.0, green: 0.74, blue: 0.20), symbol: "minus") {
-                WindowMinimizer.minimize(window)
+                AXHelpers.press(kAXMinimizeButtonAttribute, of: window)
             }
             stoplight(color: Color(red: 0.30, green: 0.78, blue: 0.34), symbol: "plus") {
-                WindowZoomer.zoom(window)
+                AXHelpers.press(kAXZoomButtonAttribute, of: window)
             }
         }
         .opacity(prefs.disableMouse ? 0 : 1)

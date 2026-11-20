@@ -193,7 +193,9 @@ final class SwitchModel: ObservableObject {
             }
         }
         if mode == .currentApp, let f = armFrontmostPID {
-            drop { $0.pid != f }
+            // Steam's windows carry its helper's pid but Steam's bundle ID (#206).
+            let bundle = NSRunningApplication(processIdentifier: f)?.bundleIdentifier
+            drop { $0.pid != f && ($0.bundleID == nil || $0.bundleID != bundle) }
         }
         if !SwitchPreferences.shared.showCrossSpace || currentSpaceOnly {
             cross = cross.filter { !$0.isCrossSpace }
@@ -202,6 +204,11 @@ final class SwitchModel: ObservableObject {
             drop { !$0.bounds.intersects(display) }
         }
         let activeFront = WindowMRU.mostRecent(in: active) ?? active.first
+        // Right after a cross-Space switch the cached snapshot still lists the
+        // focused window as cross-Space; pin the frontmost app's MRU window from
+        // either list so rows don't reshuffle under the selection when the fresh
+        // sweep lands (#stale-arm reorder).
+        let appFront = armFrontmostPID.flatMap { p in WindowMRU.mostRecent(in: (active + cross).filter { $0.pid == p }) }
         let ws: [WindowInfo]
         if SwitchPreferences.shared.staticOrder {
             let order = SwitchPreferences.shared.appOrder
@@ -216,26 +223,29 @@ final class SwitchModel: ObservableObject {
             }
             ws = active.sorted(by: stable) + cross.sorted(by: stable)
         } else if SwitchPreferences.shared.mruMixSpaces {
-            // Right after a cross-Space switch the cached snapshot still lists the
-            // focused window as cross-Space; pin the frontmost app's MRU window from
-            // either list so rows don't reshuffle under the selection when the fresh
-            // sweep lands (#stale-arm reorder).
-            let all = active + cross
-            let front = armFrontmostPID.flatMap { p in WindowMRU.mostRecent(in: all.filter { $0.pid == p }) } ?? activeFront
-            ws = WindowMRU.sorted(all, frontmost: front)
+            ws = WindowMRU.sorted(active + cross, frontmost: appFront ?? activeFront)
+        } else if var front = appFront, front.isCrossSpace, let i = cross.firstIndex(of: front) {
+            // Same stale snapshot, unmixed: the focused window leads the current Space's rows.
+            cross.remove(at: i)
+            front.isCrossSpace = false
+            ws = WindowMRU.sorted(active, frontmost: front) + WindowMRU.sorted(cross, frontmost: nil)
         } else {
             ws = WindowMRU.sorted(active, frontmost: activeFront) + WindowMRU.sorted(cross, frontmost: nil)
         }
         var final = ws
         if SwitchPreferences.shared.includeWindowlessApps && mode == .allWindows {
             let switchablePIDs = full.allPIDs
-            // Steam's windows are listed under its helper's pid (#206).
-            let switchableBundles = Set(full.allWindows.compactMap(\.bundleID))
+            // Steam's windows are listed under its helper's pid (#206). Only such hosted
+            // bundles count, so a second, windowless instance of an app still shows.
+            let switchableBundles = Set(full.allWindows
+                .filter { NSRunningApplication(processIdentifier: $0.pid)?.bundleIdentifier != $0.bundleID }
+                .compactMap(\.bundleID))
             let ownBundle = Bundle.main.bundleIdentifier
             let blacklist = SwitchPreferences.shared.blacklist
+            let included = SwitchPreferences.shared.includedAppNames
             let extras = NSWorkspace.shared.runningApplications
                 .filter {
-                    $0.activationPolicy == .regular
+                    ($0.activationPolicy == .regular || SwitchPreferences.isIncluded($0.localizedName ?? "", in: included))
                         && !switchablePIDs.contains($0.processIdentifier)
                         && $0.bundleIdentifier.map(switchableBundles.contains) != true
                         && $0.bundleIdentifier != ownBundle
@@ -267,19 +277,15 @@ final class SwitchModel: ObservableObject {
         close(target)
     }
 
+    // Only this window, never a sibling. If no AX element resolves (cross-Space
+    // Chromium, a windowless row), do nothing and keep the row.
     func close(_ target: WindowInfo) {
-        guard mode != .spaces else { return }
-        WindowCloser.close(target)
+        guard mode != .spaces, AXHelpers.press(kAXCloseButtonAttribute, of: target) else { return }
         removeFromPicker { $0.id == target.id }
     }
 
     func closeWindow(withWindowID id: CGWindowID) {
-        guard mode != .spaces else { return }
-        guard let target = windows.first(where: { $0.id == id }) else { return }
-        // Only the clicked window, like middle-clicking a browser tab. If no AX element
-        // resolves (e.g. cross-Space Chromium window), do nothing rather than quit the app.
-        guard WindowCloser.closeExact(target) else { return }
-        removeFromPicker { $0.id == target.id }
+        windows.first { $0.id == id }.map(close)
     }
 
     private func removeFromPicker(_ shouldRemove: (WindowInfo) -> Bool) {
@@ -333,9 +339,9 @@ final class SwitchModel: ObservableObject {
         WindowStore.shared.refresh { snap in
             let ws = snap.windows.allWindows
             let liveIDs = Set(ws.map { $0.id })
-            WindowMRU.purge(keeping: liveIDs)
+            // By the live CG list, not the snapshot: a window one sweep skips keeps its MRU place.
             Task.detached(priority: .utility) {
-                AXWindowCache.purgeDead()
+                WindowMRU.purge(keeping: AXWindowCache.purgeDead())
             }
             guard SwitchPreferences.shared.showThumbnails else { return }
             Task {
@@ -463,7 +469,7 @@ final class SwitchModel: ObservableObject {
             selected = 1
         }
         if list.indices.contains(selected) {
-            WindowFocuser.focus(list[selected])
+            WindowFocuser.focus(list[selected], bringHere: mode != .spaces)
             // Warm the cache once the Space transition settles so an immediate
             // re-invoke doesn't arm from a pre-switch snapshot (3s prewarm gap).
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {

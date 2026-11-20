@@ -23,8 +23,8 @@ struct WindowInfo: Identifiable, Hashable {
 }
 
 enum WindowEnumerator {
-    private typealias SpaceMetadata = (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>)
-    private typealias AXState = (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, titles: [CGWindowID: String])
+    typealias SpaceMetadata = (labels: [Int: (label: String, isFullscreen: Bool)], order: [Int], currentSpaces: Set<Int>)
+    private typealias AXState = (axBacked: Set<CGWindowID>, minimized: Set<CGWindowID>, titles: [CGWindowID: String], overlays: Set<CGWindowID>)
 
     private static let skipApps: Set<String> = [
         "Window Server", "Dock", "SystemUIServer", "Control Center",
@@ -53,8 +53,22 @@ enum WindowEnumerator {
     ]
 
     private static func isHelperProcess(_ name: String) -> Bool {
-        for s in helperSuffixes where name.hasSuffix(s) { return true }
-        return false
+        helperSuffixes.contains { name.hasSuffix($0) }
+    }
+
+    // Read once per sweep, not once per CGWindowList pass.
+    private struct Sweep {
+        // Without Screen Recording every CG title is empty, so emptiness is no ghost signal (#106).
+        let titlesReliable = CGPreflightScreenCaptureAccess()
+        let stageManager = UserDefaults(suiteName: "com.apple.WindowManager")?.bool(forKey: "GloballyEnabled") ?? false
+        let includedAppNames = UserDefaults.standard.stringArray(forKey: SwitchPreferences.includedAppNamesKey) ?? []
+        let blockedPIDs: Set<pid_t> = {
+            let blacklist = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.blacklistKey) ?? [])
+            guard !blacklist.isEmpty else { return [] }
+            return Set(NSWorkspace.shared.runningApplications
+                .filter { $0.bundleIdentifier.map(blacklist.contains) == true }
+                .map(\.processIdentifier))
+        }()
     }
 
     struct FullSnapshot {
@@ -122,16 +136,15 @@ enum WindowEnumerator {
     }
 
     static func fullSnapshot() -> FullSnapshot {
-        let rawOnScreen = enumerate(option: [.optionOnScreenOnly, .excludeDesktopElements])
-        let rawEverything = enumerate(option: [.optionAll, .excludeDesktopElements])
+        let sweep = Sweep()
+        let rawOnScreen = enumerate(option: [.optionOnScreenOnly, .excludeDesktopElements], sweep)
+        let rawEverything = enumerate(option: [.optionAll, .excludeDesktopElements], sweep)
         let pids = Set(rawEverything.map(\.pid)).union(rawOnScreen.map(\.pid))
         let needsTitle = Set((rawOnScreen + rawEverything).filter(\.title.isEmpty).map(\.id))
         let ax = axWindowState(for: pids, needingTitles: needsTitle)
         let cid = CGSMainConnectionID()
         let metadata = spaceMetadata(cid: cid)
-        let stageManager = stageManagerEnabled
-        // Without Screen Recording every CG title is empty, so emptiness is no ghost signal (#106).
-        let titlesReliable = CGPreflightScreenCaptureAccess()
+        let titlesReliable = sweep.titlesReliable
         // An untitled on-screen window AX doesn't list, from an app whose other windows AX does list,
         // is an overlay: Notes' find highlight (#152), in-process border windows (#154).
         let axPIDs = Set(rawEverything.filter { ax.axBacked.contains($0.id) }.map(\.pid))
@@ -139,9 +152,9 @@ enum WindowEnumerator {
             $0.title.isEmpty && !ax.axBacked.contains($0.id) && axPIDs.contains($0.pid)
         }.map(\.id)) : []
         // Chromium's find bar is a titled borderless child window, AX subrole AXUnknown (#186).
-        let overlays = untitled.union(rawEverything.filter { w in
+        let overlays = untitled.union(ax.overlays).union(rawEverything.filter { w in
             chromiumBundles.contains(where: { w.bundleID?.hasPrefix($0) == true })
-                && AXWindowCache.element(for: w.id).map(isUnknownSubrole) == true
+                && AXWindowCache.element(for: w.id).flatMap { AXHelpers.attribute(kAXSubroleAttribute, of: $0) as? String } == kAXUnknownSubrole
         }.map(\.id))
         let onScreen = rawOnScreen.filter { !overlays.contains($0.id) }
         let everything = rawEverything.filter { !overlays.contains($0.id) }
@@ -153,7 +166,7 @@ enum WindowEnumerator {
             out.isCrossSpace = !activeIDs.contains(w.id)
             return out
         }
-        let annotatedAll = annotateAndPrune(marked, ax: ax, axPIDs: axPIDs, cid: cid, metadata: metadata, stageManager: stageManager, titlesReliable: titlesReliable)
+        let annotatedAll = annotateAndPrune(marked, ax: ax, axPIDs: axPIDs, cid: cid, metadata: metadata, stageManager: sweep.stageManager, titlesReliable: titlesReliable)
         // After annotateAndPrune on purpose: ghost detection keys on the CG title (#111).
         let titledActive = backfillTitles(active, from: ax.titles)
         let fullscreenDupes = fullscreenDuplicates(annotatedAll, axBacked: ax.axBacked)
@@ -165,42 +178,22 @@ enum WindowEnumerator {
             axBacked: ax.axBacked
         )
         let cross = titledAll.filter { !activeIDs.contains($0.id) }
-        let reps = spaceRepresentatives(from: titledAll, cid: cid, metadata: metadata)
+        let reps = spaceRepresentatives(from: titledAll, metadata: metadata)
         return FullSnapshot(activeSpace: titledActive.filter { !fullscreenDupes.contains($0.id) }, crossSpace: cross, spaceRepresentatives: reps)
     }
 
     // Apps set their badge on NSDockTile, and only the Dock's own AX tree exposes it (#92).
     static func dockBadges() -> [String: String] {
         guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return [:] }
-        let list = children(of: appElement(for: dock.processIdentifier)).first { attribute(kAXRoleAttribute, of: $0) as? String == kAXListRole }
+        let list = AXHelpers.children(of: AXHelpers.appElement(for: dock.processIdentifier)).first { AXHelpers.attribute(kAXRoleAttribute, of: $0) as? String == kAXListRole }
         var badges: [String: String] = [:]
-        for item in list.map(children) ?? [] {
-            guard let badge = attribute("AXStatusLabel", of: item) as? String, !badge.isEmpty,
-                  let url = attribute(kAXURLAttribute, of: item) as? URL,
+        for item in list.map(AXHelpers.children) ?? [] {
+            guard let badge = AXHelpers.attribute("AXStatusLabel", of: item) as? String, !badge.isEmpty,
+                  let url = AXHelpers.attribute(kAXURLAttribute, of: item) as? URL,
                   let bundleID = Bundle(url: url)?.bundleIdentifier else { continue }
             badges[bundleID] = badge
         }
         return badges
-    }
-
-    private static func attribute(_ name: String, of element: AXUIElement) -> CFTypeRef? {
-        var ref: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, name as CFString, &ref)
-        return ref
-    }
-
-    private static func children(of element: AXUIElement) -> [AXUIElement] {
-        attribute(kAXChildrenAttribute, of: element) as? [AXUIElement] ?? []
-    }
-
-    private static var stageManagerEnabled: Bool {
-        UserDefaults(suiteName: "com.apple.WindowManager")?.bool(forKey: "GloballyEnabled") ?? false
-    }
-
-    private static func appElement(for pid: pid_t) -> AXUIElement {
-        let el = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(el, 0.25)
-        return el
     }
 
     // AX-backed windows, minimized window IDs, and AX titles for the given processes; an orderedOut leftover appears in neither.
@@ -208,8 +201,9 @@ enum WindowEnumerator {
         var axBacked: Set<CGWindowID> = []
         var minimized: Set<CGWindowID> = []
         var titles: [CGWindowID: String] = [:]
+        var overlays: Set<CGWindowID> = []
         for pid in pids {
-            for ax in AXHelpers.windowList(of: appElement(for: pid)) {
+            for ax in AXHelpers.windowList(of: AXHelpers.appElement(for: pid)) {
                 guard let id = AXHelpers.windowID(of: ax) else { continue }
                 axBacked.insert(id)
                 AXWindowCache.store(ax, for: id)
@@ -217,28 +211,23 @@ enum WindowEnumerator {
                     let title = AXHelpers.title(of: ax)
                     if !title.isEmpty {
                         titles[id] = title
+                    } else if AXHelpers.attribute(kAXSubroleAttribute, of: ax) as? String == kAXSystemDialogSubrole {
+                        // An untitled companion panel AX does list, e.g. Rex's second terminal entry (#204).
+                        overlays.insert(id)
                     }
                 }
-                var minRef: CFTypeRef?
-                if AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minRef) == .success,
-                   let isMin = minRef as? Bool, isMin {
+                if AXHelpers.attribute(kAXMinimizedAttribute, of: ax) as? Bool == true {
                     minimized.insert(id)
                 }
             }
         }
-        return (axBacked, minimized, titles)
+        return (axBacked, minimized, titles, overlays)
     }
 
     // A destroyed window's element answers invalidUIElement; a suspended off-stage one doesn't.
     private static func isLiveElement(_ element: AXUIElement) -> Bool {
         var role: CFTypeRef?
         return AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) != .invalidUIElement
-    }
-
-    private static func isUnknownSubrole(_ element: AXUIElement) -> Bool {
-        var subrole: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
-        return subrole as? String == kAXUnknownSubrole
     }
 
     private static func backfillTitles(_ windows: [WindowInfo], from titles: [CGWindowID: String]) -> [WindowInfo] {
@@ -285,8 +274,7 @@ enum WindowEnumerator {
 
     // Drop orphaned on-screen entries: no live AX window and no Space. Real windows always have a Space.
     private static func pruneGhosts(_ windows: [WindowInfo], axBacked: Set<CGWindowID>, cid: CGSConnectionID) -> [WindowInfo] {
-        guard !windows.isEmpty else { return windows }
-        return windows.filter { w in
+        windows.filter { w in
             axBacked.contains(w.id) || !spaces(of: w.id, cid: cid).isEmpty
         }
     }
@@ -354,18 +342,15 @@ enum WindowEnumerator {
         }
     }
 
-    private static func spaceRepresentatives(
-        from annotated: [WindowInfo],
-        cid: CGSConnectionID,
-        metadata: SpaceMetadata
-    ) -> [WindowInfo] {
-        let active = Int(CGSGetActiveSpace(cid))
+    // isCrossSpace and spaceLabel are set by SwitchModel against the live active Space.
+    private static func spaceRepresentatives(from annotated: [WindowInfo], metadata: SpaceMetadata) -> [WindowInfo] {
         let grouped = Dictionary(grouping: annotated) { $0.spaceID ?? -1 }
         return metadata.order.compactMap { sid in
             guard sid != -1, let windows = grouped[sid], !windows.isEmpty else { return nil }
             let sorted = WindowMRU.sorted(windows, frontmost: nil)
             guard let target = sorted.first else { return nil }
-            let apps = Array(NSOrderedSet(array: sorted.map(\.appName)).compactMap { $0 as? String }).prefix(3)
+            var seen = Set<String>()
+            let apps = sorted.map(\.appName).filter { seen.insert($0).inserted }.prefix(3)
             let suffix = sorted.count == 1 ? "1 window" : "\(sorted.count) windows"
             let detail = apps.isEmpty ? suffix : "\(suffix) · \(apps.joined(separator: ", "))"
             let info = metadata.labels[sid]
@@ -376,19 +361,14 @@ enum WindowEnumerator {
                 bounds: target.bounds,
                 title: detail,
                 spaceID: sid,
-                isCrossSpace: sid != active,
-                isMinimized: false,
-                isHidden: false,
-                spaceLabel: sid == active ? "Current" : nil,
                 isFullscreenSpace: info?.isFullscreen ?? false,
-                isWindowless: false,
                 bundleID: target.bundleID
             )
         }
     }
 
     /// Builds a `spaceID → "Desktop N" / "Fullscreen"` map by walking CGS's managed-display spaces in order.
-    private static func spaceMetadata(cid: CGSConnectionID) -> SpaceMetadata {
+    static func spaceMetadata(cid: CGSConnectionID) -> SpaceMetadata {
         guard let displays = CGSCopyManagedDisplaySpaces(cid)?.takeRetainedValue() as? [[String: Any]] else { return ([:], [], []) }
         var labels: [Int: (label: String, isFullscreen: Bool)] = [:]
         var order: [Int] = []
@@ -414,23 +394,12 @@ enum WindowEnumerator {
         return (labels, order, currentSpaces)
     }
 
-    private static func enumerate(option: CGWindowListOption) -> [WindowInfo] {
+    private static func enumerate(option: CGWindowListOption, _ sweep: Sweep) -> [WindowInfo] {
         guard let raw = CGWindowListCopyWindowInfo(option, kCGNullWindowID) as? [[String: Any]] else {
             return []
         }
-        let blacklist = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.blacklistKey) ?? [])
-        var blockedPIDs: Set<pid_t> = []
-        if !blacklist.isEmpty {
-            for app in NSWorkspace.shared.runningApplications {
-                if let bid = app.bundleIdentifier, blacklist.contains(bid) {
-                    blockedPIDs.insert(app.processIdentifier)
-                }
-            }
-        }
         var out: [WindowInfo] = []
         var seenIDs: Set<CGWindowID> = []
-        let titlesReliable = CGPreflightScreenCaptureAccess()
-        let stageManager = stageManagerEnabled
         for d in raw {
             let appName = d[kCGWindowOwnerName as String] as? String ?? ""
             guard let layer = d[kCGWindowLayer as String] as? Int, layer == 0 else { continue }
@@ -441,28 +410,20 @@ enum WindowEnumerator {
             let app = NSRunningApplication(processIdentifier: pid)
             let host = app?.bundleIdentifier.flatMap { hostedHelpers[$0] }
                 .flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }
-            if host == nil && (isHelperProcess(appName) || app?.activationPolicy != .regular) { continue }
+            // Menu-bar and helper processes stay out unless the user lists them (#63, #196).
+            if host == nil && (isHelperProcess(appName) || app?.activationPolicy != .regular)
+                && !SwitchPreferences.isIncluded(appName, in: sweep.includedAppNames) { continue }
             let owner = host ?? app
-            if blockedPIDs.contains(owner?.processIdentifier ?? pid) { continue }
+            if sweep.blockedPIDs.contains(owner?.processIdentifier ?? pid) { continue }
             let title = d[kCGWindowName as String] as? String ?? ""
-            let boundsDict = d[kCGWindowBounds as String] as? [String: CGFloat] ?? [:]
-            let bounds = CGRect(
-                x: boundsDict["X"] ?? 0,
-                y: boundsDict["Y"] ?? 0,
-                width: boundsDict["Width"] ?? 0,
-                height: boundsDict["Height"] ?? 0
-            )
+            let bounds = (d[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) } ?? .zero
             // Stage Manager reports tiny bounds for real off-stage windows, so titled or AX-seen ones skip the size check (#99).
             if (bounds.width < 100 || bounds.height < 80)
-                && !(stageManager && (!title.isEmpty || AXWindowCache.element(for: id) != nil)) { continue }
-            if title.isEmpty && titlesReliable
+                && !(sweep.stageManager && (!title.isEmpty || AXWindowCache.element(for: id) != nil)) { continue }
+            if title.isEmpty && sweep.titlesReliable
                 && (bounds.width < 400 || bounds.height < 300) { continue }
             if alpha <= 0 && app?.isHidden != true { continue }
-            // Dedupe by CGWindowID only; it's already unique per window.
-            // The earlier (pid, title, bounds) dedupe was collapsing multiple
-            // Chrome windows that shared the same active-tab title.
-            if seenIDs.contains(id) { continue }
-            seenIDs.insert(id)
+            guard seenIDs.insert(id).inserted else { continue }
             out.append(WindowInfo(
                 id: id,
                 pid: pid,
