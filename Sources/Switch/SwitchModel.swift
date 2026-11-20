@@ -31,6 +31,7 @@ final class SwitchModel: ObservableObject {
     private var prewarmTimer: Timer?
     private var armGeneration = 0
     private var armFrontmostPID: pid_t?
+    private var armFrontmostBundleID: String?
     private var armSelfHadKeyWindow = false
     private var quitPIDs: Set<pid_t> = []
     private var thumbnailTask: Task<Void, Never>?
@@ -104,7 +105,9 @@ final class SwitchModel: ObservableObject {
         quitPIDs.removeAll()
         filterText = ""
         pointerWindowID = nil
-        armFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        armFrontmostPID = frontApp?.processIdentifier
+        armFrontmostBundleID = frontApp?.bundleIdentifier
         armSelfHadKeyWindow = NSApp.keyWindow != nil
         if let snap = WindowStore.shared.current {
             apply(snapshot: snap, initial: true)
@@ -137,7 +140,6 @@ final class SwitchModel: ObservableObject {
             final = snapshot.windows.spaceRepresentatives.map { rep in
                 var out = rep
                 out.isCrossSpace = out.spaceID != active
-                out.spaceLabel = out.spaceID == active ? "Current" : nil
                 return out
             }
         } else {
@@ -178,12 +180,8 @@ final class SwitchModel: ObservableObject {
         thumbnailTask?.cancel()
         let thumbTargets = final.filter { !$0.isWindowless }
         let gen = armGeneration
-        let liveIDs = Set(thumbTargets.map { $0.id })
+        // No purge here: a current-app or Spaces list would drop every other window's thumbnail; prewarm purges.
         thumbnailTask = Task {
-            if !initial, SwitchPreferences.shared.showThumbnails {
-                // Don't full-purge; pre-warmed thumbs are valid as long as the window still exists.
-                await WindowSnapshotter.shared.purge(keeping: liveIDs)
-            }
             await fetchThumbnails(for: thumbTargets, force: false)
             guard !initial, armGeneration == gen, visible else { return }
             await fetchThumbnails(for: thumbTargets, force: true, batch: true)
@@ -215,7 +213,8 @@ final class SwitchModel: ObservableObject {
             }
         }
         if mode == .currentApp, let f = armFrontmostPID {
-            drop { $0.pid != f }
+            // By bundle too: Steam's windows belong to its helper's pid (#206).
+            drop { $0.pid != f && ($0.bundleID == nil || $0.bundleID != armFrontmostBundleID) }
         }
         if !SwitchPreferences.shared.showCrossSpace || currentSpaceOnly {
             cross = cross.filter { !$0.isCrossSpace }
@@ -241,7 +240,7 @@ final class SwitchModel: ObservableObject {
             // Right after a cross-Space switch the cached snapshot still lists the
             // focused window as cross-Space; pin the frontmost app's MRU window from
             // either list so rows don't reshuffle under the selection when the fresh
-            // sweep lands (#stale-arm reorder).
+            // sweep lands.
             let all = active + cross
             let front = armFrontmostPID.flatMap { p in WindowMRU.mostRecent(in: all.filter { $0.pid == p }) } ?? activeFront
             ws = WindowMRU.sorted(all, frontmost: front)
@@ -326,11 +325,6 @@ final class SwitchModel: ObservableObject {
         }
     }
 
-    private func stopRefreshTimer() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-    }
-
     func startPrewarm() {
         prewarmTimer?.invalidate()
         prewarmTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
@@ -404,26 +398,23 @@ final class SwitchModel: ObservableObject {
         let n = list.count
         let cols = (SwitchPreferences.shared.verticalList || mode == .spaces) ? 1
             : PickerLayout.gridColumns(configured: SwitchPreferences.shared.gridColumns, count: windows.count)
-        let delta: Int
         switch direction {
-        case .left:  delta = -1
-        case .right: delta = 1
-        case .up:    delta = -cols
-        case .down:  delta = cols
+        case .left:  selected = (selected - 1 + n) % n
+        case .right: selected = (selected + 1) % n
+        // A list wraps; a grid stays in the column and stops at the edge, like Finder's icon view.
+        case .up:    if cols == 1 { selected = (selected - 1 + n) % n } else if selected >= cols { selected -= cols }
+        case .down:  if cols == 1 { selected = (selected + 1) % n } else if selected + cols < n { selected += cols }
         }
-        selected = ((selected + delta) % n + n) % n
     }
 
     func pickIndex(_ index: Int) {
-        let list = filteredWindows
-        guard list.indices.contains(index) else { return }
+        guard filteredWindows.indices.contains(index) else { return }
         selected = index
         commitAndDismiss?()
     }
 
     func selectIndex(_ index: Int) {
-        let list = filteredWindows
-        guard list.indices.contains(index) else { return }
+        guard filteredWindows.indices.contains(index) else { return }
         selected = index
     }
 
@@ -488,19 +479,16 @@ final class SwitchModel: ObservableObject {
                 WindowStore.shared.refresh()
             }
         }
-        teardown()
+        cancel()
     }
 
     func cancel() {
-        teardown()
-    }
-
-    private func teardown() {
         visible = false
         windows = []
         thumbnails = [:]
         filterText = ""
-        stopRefreshTimer()
+        refreshTimer?.invalidate()
+        refreshTimer = nil
         thumbnailTask?.cancel()
         thumbnailTask = nil
     }

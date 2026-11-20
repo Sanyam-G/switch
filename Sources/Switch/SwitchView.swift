@@ -483,7 +483,7 @@ struct SwitchView: View {
                     .opacity(hovered ? 1 : 0.8)
             }
             if isSpaceMode {
-                if window.spaceLabel == "Current" {
+                if !window.isCrossSpace {
                     capsuleBadge("CURRENT")
                 }
             } else {
