@@ -35,13 +35,14 @@ final class SwitchModel: ObservableObject {
     var filteredWindows: [WindowInfo] {
         let q = filterText.lowercased()
         if q.isEmpty { return windows }
-        let scored: [(WindowInfo, Int)] = windows.compactMap { w in
+        let scored: [(WindowInfo, Bool, Int)] = windows.compactMap { w in
             let a = Self.fuzzyScore(pattern: q, target: w.appName.lowercased())
             let t = Self.fuzzyScore(pattern: q, target: w.title.lowercased())
             guard let s = [a, t].compactMap({ $0 }).max() else { return nil }
-            return (w, s)
+            return (w, a != nil, s)
         }
-        return scored.sorted { $0.1 > $1.1 }.map { $0.0 }
+        // App-name matches before title-only ones; titles change, app names are muscle memory (#205).
+        return scored.sorted { $0.1 != $1.1 ? $0.1 : $0.2 > $1.2 }.map { $0.0 }
     }
 
     private var selectedWindow: WindowInfo? {
