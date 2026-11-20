@@ -339,7 +339,8 @@ struct SettingsView: View {
                                 item: name,
                                 current: $draggedApp,
                                 apps: apps,
-                                commit: { prefs.appOrder = $0 }
+                                // Keep the rank of apps with no window open right now.
+                                commit: { order in prefs.appOrder = order + prefs.appOrder.filter { !order.contains($0) } }
                             ))
                     }
                 }
