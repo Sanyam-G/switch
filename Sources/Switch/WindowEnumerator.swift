@@ -169,6 +169,30 @@ enum WindowEnumerator {
         return FullSnapshot(activeSpace: titledActive.filter { !fullscreenDupes.contains($0.id) }, crossSpace: cross, spaceRepresentatives: reps)
     }
 
+    // Apps set their badge on NSDockTile, and only the Dock's own AX tree exposes it (#92).
+    static func dockBadges() -> [String: String] {
+        guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return [:] }
+        let list = children(of: appElement(for: dock.processIdentifier)).first { attribute(kAXRoleAttribute, of: $0) as? String == kAXListRole }
+        var badges: [String: String] = [:]
+        for item in list.map(children) ?? [] {
+            guard let badge = attribute("AXStatusLabel", of: item) as? String, !badge.isEmpty,
+                  let url = attribute(kAXURLAttribute, of: item) as? URL,
+                  let bundleID = Bundle(url: url)?.bundleIdentifier else { continue }
+            badges[bundleID] = badge
+        }
+        return badges
+    }
+
+    private static func attribute(_ name: String, of element: AXUIElement) -> CFTypeRef? {
+        var ref: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, name as CFString, &ref)
+        return ref
+    }
+
+    private static func children(of element: AXUIElement) -> [AXUIElement] {
+        attribute(kAXChildrenAttribute, of: element) as? [AXUIElement] ?? []
+    }
+
     private static var stageManagerEnabled: Bool {
         UserDefaults(suiteName: "com.apple.WindowManager")?.bool(forKey: "GloballyEnabled") ?? false
     }
