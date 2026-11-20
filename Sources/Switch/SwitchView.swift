@@ -183,12 +183,13 @@ struct SwitchView: View {
     private var grid: some View {
         ZStack {
             let list = model.filteredWindows
+            let isList = isSpaceMode || prefs.verticalList
             if list.isEmpty {
                 emptyState
             } else {
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: false) {
-                        if isSpaceMode || prefs.verticalList {
+                        if isList {
                             LazyVStack(spacing: PickerLayout.listRowSpacing) {
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, w in
                                     listRow(window: w, index: idx)
@@ -196,8 +197,7 @@ struct SwitchView: View {
                                 }
                             }
                             .padding(.horizontal, 14)
-                            .padding(.top, PickerLayout.listTopPadding(showHeader: showHeader))
-                            .padding(.bottom, PickerLayout.listBottomPadding)
+                            .padding(.vertical, 1) // room for the selection ring's stroke
                         } else {
                             LazyVGrid(columns: gridColumns, spacing: PickerLayout.gridSpacing) {
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, w in
@@ -225,6 +225,9 @@ struct SwitchView: View {
                             proxy.scrollTo(cur[new].id, anchor: nil)
                         }
                     }
+                    // The list's padding sits outside the viewport so a scroll always ends on whole rows (#132).
+                    .padding(.top, isList ? PickerLayout.listTopPadding(showHeader: showHeader) - 1 : 0)
+                    .padding(.bottom, isList ? PickerLayout.listBottomPadding - 1 : 0)
                 }
             }
         }
