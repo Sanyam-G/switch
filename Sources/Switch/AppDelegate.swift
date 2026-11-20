@@ -302,8 +302,7 @@ extension AppDelegate: NSWindowDelegate {
         guard let win = notification.object as? NSWindow, win == onboardingWindow else { return }
         onboardingModel?.stopPolling()
         onboardingWindow = nil
-        let settingsOpen = MainActor.assumeIsolated { SettingsWindow.shared.isVisible }
-        if !settingsOpen { NSApp.setActivationPolicy(.accessory) }
+        demoteIfNoWindows()
     }
 }
 
@@ -316,8 +315,7 @@ extension AppDelegate: SPUStandardUserDriverDelegate {
     }
 
     func standardUserDriverWillFinishUpdateSession() {
-        let settingsOpen = MainActor.assumeIsolated { SettingsWindow.shared.isVisible }
-        if !settingsOpen { NSApp.setActivationPolicy(.accessory) }
+        demoteIfNoWindows()
     }
 }
 #endif
