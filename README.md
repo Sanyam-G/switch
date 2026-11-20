@@ -65,6 +65,8 @@ Settings → Appearance → Vertical list. Single-column layout with app icon, n
 
 Settings → Picker → Excluded apps. Hide windows from specific apps. Excluded titles does the same for windows by title.
 
+Menu bar apps are left out. Settings → Picker → Always include apps lists their windows anyway, matched by app name.
+
 ## Sticky mode
 
 Settings → Picker → Sticky picker. Release ⌘ to keep the picker open. ↵ to switch, Esc to cancel. Settings → General → Hotkeys → Sticky toggle binds a separate hotkey that flips sticky on or off at runtime.

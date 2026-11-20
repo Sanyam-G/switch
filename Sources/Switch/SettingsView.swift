@@ -214,6 +214,8 @@ struct SettingsView: View {
                 passthroughSection
 
                 titleExclusionSection
+
+                includedAppsSection
             }
             .padding(24)
         }
@@ -384,26 +386,44 @@ struct SettingsView: View {
     }
 
     @State private var newTitleExclusion = ""
+    @State private var newIncludedApp = ""
 
     private var titleExclusionSection: some View {
-        section("Excluded titles") {
+        stringListSection("Excluded titles",
+                          caption: "Windows whose title or app name contains any of these won't appear in the picker.",
+                          emptyText: "Nothing excluded.",
+                          placeholder: "Add title or app name, press Return",
+                          items: $prefs.titleExclusions, draft: $newTitleExclusion)
+    }
+
+    private var includedAppsSection: some View {
+        stringListSection("Always include apps",
+                          caption: "Menu bar apps are left out. Windows of apps whose name contains any of these are listed anyway.",
+                          emptyText: "None.",
+                          placeholder: "Add app name, press Return",
+                          items: $prefs.includedAppNames, draft: $newIncludedApp)
+    }
+
+    private func stringListSection(_ title: String, caption: String, emptyText: String, placeholder: String,
+                                   items: Binding<[String]>, draft: Binding<String>) -> some View {
+        section(title) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Windows whose title or app name contains any of these won't appear in the picker.")
+                Text(caption)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                if prefs.titleExclusions.isEmpty {
-                    Text("Nothing excluded.")
+                if items.wrappedValue.isEmpty {
+                    Text(emptyText)
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                         .padding(.vertical, 4)
                 } else {
                     VStack(spacing: 4) {
-                        ForEach(prefs.titleExclusions, id: \.self) { text in
+                        ForEach(items.wrappedValue, id: \.self) { text in
                             HStack(spacing: 8) {
                                 Text(text).font(.system(size: 12))
                                 Spacer()
                                 Button {
-                                    prefs.titleExclusions.removeAll { $0 == text }
+                                    items.wrappedValue.removeAll { $0 == text }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundStyle(.secondary)
@@ -415,15 +435,15 @@ struct SettingsView: View {
                         }
                     }
                 }
-                TextField("Add title or app name, press Return", text: $newTitleExclusion)
+                TextField(placeholder, text: draft)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11))
                     .frame(width: 260)
                     .onSubmit {
-                        let t = newTitleExclusion.trimmingCharacters(in: .whitespaces)
-                        guard !t.isEmpty, !prefs.titleExclusions.contains(t) else { return }
-                        prefs.titleExclusions.append(t)
-                        newTitleExclusion = ""
+                        let t = draft.wrappedValue.trimmingCharacters(in: .whitespaces)
+                        guard !t.isEmpty, !items.wrappedValue.contains(t) else { return }
+                        items.wrappedValue.append(t)
+                        draft.wrappedValue = ""
                     }
             }
             .padding(14)

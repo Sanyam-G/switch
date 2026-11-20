@@ -61,6 +61,7 @@ enum WindowEnumerator {
         // Without Screen Recording every CG title is empty, so emptiness is no ghost signal (#106).
         let titlesReliable = CGPreflightScreenCaptureAccess()
         let stageManager = UserDefaults(suiteName: "com.apple.WindowManager")?.bool(forKey: "GloballyEnabled") ?? false
+        let includedAppNames = UserDefaults.standard.stringArray(forKey: SwitchPreferences.includedAppNamesKey) ?? []
         let blockedPIDs: Set<pid_t> = {
             let blacklist = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.blacklistKey) ?? [])
             guard !blacklist.isEmpty else { return [] }
@@ -409,7 +410,9 @@ enum WindowEnumerator {
             let app = NSRunningApplication(processIdentifier: pid)
             let host = app?.bundleIdentifier.flatMap { hostedHelpers[$0] }
                 .flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }
-            if host == nil && (isHelperProcess(appName) || app?.activationPolicy != .regular) { continue }
+            // Menu-bar and helper processes stay out unless the user lists them (#63, #196).
+            if host == nil && (isHelperProcess(appName) || app?.activationPolicy != .regular)
+                && !SwitchPreferences.isIncluded(appName, in: sweep.includedAppNames) { continue }
             let owner = host ?? app
             if sweep.blockedPIDs.contains(owner?.processIdentifier ?? pid) { continue }
             let title = d[kCGWindowName as String] as? String ?? ""

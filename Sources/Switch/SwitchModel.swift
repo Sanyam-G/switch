@@ -242,9 +242,10 @@ final class SwitchModel: ObservableObject {
                 .compactMap(\.bundleID))
             let ownBundle = Bundle.main.bundleIdentifier
             let blacklist = SwitchPreferences.shared.blacklist
+            let included = SwitchPreferences.shared.includedAppNames
             let extras = NSWorkspace.shared.runningApplications
                 .filter {
-                    $0.activationPolicy == .regular
+                    ($0.activationPolicy == .regular || SwitchPreferences.isIncluded($0.localizedName ?? "", in: included))
                         && !switchablePIDs.contains($0.processIdentifier)
                         && $0.bundleIdentifier.map(switchableBundles.contains) != true
                         && $0.bundleIdentifier != ownBundle
