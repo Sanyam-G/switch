@@ -59,7 +59,7 @@ Windows on other Spaces show up in the picker, badged OTHER SPACE. Pick one and 
 
 ## Vertical list
 
-Settings → Picker → Vertical list. Single-column layout with app icon, name, window title, and thumbnail.
+Settings → Appearance → Vertical list. Single-column layout with app icon, name, window title, and thumbnail.
 
 ## Excluded apps
 
