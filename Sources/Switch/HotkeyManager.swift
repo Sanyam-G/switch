@@ -156,6 +156,9 @@ final class HotkeyManager {
             CFMachPortInvalidate(oldTap)
         }
         NSLog("Switch: event tap thread stopped responding, restarting it")
+        // The old thread may still hold a press the new tap never saw released.
+        clearArmed()
+        onCancel?()
         tapThread = nil
         startTapThread()
     }

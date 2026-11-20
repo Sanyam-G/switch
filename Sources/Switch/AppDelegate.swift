@@ -210,6 +210,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hotkey?.setSuspended(false)
         }
 
+        // Nothing releases ⌘ across sleep, lock or a user switch: on return the watchdog would commit the
+        // stale selection, and a sticky picker would keep eating keys (#211).
+        let ws = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
+                     NSWorkspace.sessionDidResignActiveNotification] {
+            ws.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { cancelAndDismiss() }
+            }
+        }
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screenIsLocked"), object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { cancelAndDismiss() }
+        }
+
         // A click in another app while the picker floats (sticky mode) should
         // dismiss it; otherwise the panel lingers and the tap keeps eating keys.
         // Global monitors never see events routed to our own panel.
