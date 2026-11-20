@@ -342,7 +342,7 @@ enum WindowEnumerator {
         }
     }
 
-    // isCrossSpace and spaceLabel are set by SwitchModel against the live active Space.
+    // isCrossSpace is set by SwitchModel against the live active Space.
     private static func spaceRepresentatives(from annotated: [WindowInfo], metadata: SpaceMetadata) -> [WindowInfo] {
         let grouped = Dictionary(grouping: annotated) { $0.spaceID ?? -1 }
         return metadata.order.compactMap { sid in
