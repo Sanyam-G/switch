@@ -263,25 +263,16 @@ final class SwitchModel: ObservableObject {
         return final
     }
 
-    func closeSelected() {
-        guard let target = selectedWindow else { return }
-        close(target)
-    }
+    func closeSelected() { selectedWindow.map(close) }
 
+    /// Only this window, like middle-clicking a browser tab. If its AX element doesn't resolve
+    /// (e.g. a cross-Space Chromium window), nothing closes and the row stays.
     func close(_ target: WindowInfo) {
-        guard mode != .spaces else { return }
-        WindowCloser.close(target)
+        guard mode != .spaces, WindowCloser.close(target) else { return }
         removeFromPicker { $0.id == target.id }
     }
 
-    func closeWindow(withWindowID id: CGWindowID) {
-        guard mode != .spaces else { return }
-        guard let target = windows.first(where: { $0.id == id }) else { return }
-        // Only the clicked window, like middle-clicking a browser tab. If no AX element
-        // resolves (e.g. cross-Space Chromium window), do nothing rather than quit the app.
-        guard WindowCloser.closeExact(target) else { return }
-        removeFromPicker { $0.id == target.id }
-    }
+    func closeWindow(withWindowID id: CGWindowID) { windows.first { $0.id == id }.map(close) }
 
     private func removeFromPicker(_ shouldRemove: (WindowInfo) -> Bool) {
         let selectedID = selectedWindow?.id

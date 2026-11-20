@@ -163,15 +163,7 @@ enum AppCloser {
 }
 
 enum WindowCloser {
-    static func close(_ window: WindowInfo) { pressButton(window, attribute: kAXCloseButtonAttribute) }
-
-    /// Close only the specific window, resolving its AX element the way focus does
-    /// (live wid match, then AXWindowCache), never an arbitrary sibling. Returns
-    /// false without acting when nothing resolves, so callers can decline to fall back.
-    @discardableResult
-    static func closeExact(_ window: WindowInfo) -> Bool {
-        pressButton(window, attribute: kAXCloseButtonAttribute, exactOnly: true)
-    }
+    static func close(_ window: WindowInfo) -> Bool { pressButton(window, attribute: kAXCloseButtonAttribute) }
 }
 
 enum WindowMinimizer {
@@ -182,17 +174,11 @@ enum WindowZoomer {
     static func zoom(_ window: WindowInfo) { pressButton(window, attribute: kAXZoomButtonAttribute) }
 }
 
-/// Press a stoplight button; `exactOnly` never falls back to a sibling window.
+/// Press a stoplight button on exactly this window, never a sibling: false when its element doesn't resolve.
 @discardableResult
-private func pressButton(_ window: WindowInfo, attribute: String, exactOnly: Bool = false) -> Bool {
+private func pressButton(_ window: WindowInfo, attribute: String) -> Bool {
     let axWindows = AXHelpers.windowList(of: AXUIElementCreateApplication(window.pid))
-    let exact = AXHelpers.element(for: window, in: axWindows)
-    let target = exactOnly
-        ? exact
-        : exact
-            ?? axWindows.first(where: { AXHelpers.title(of: $0) == window.title })
-            ?? axWindows.first
-    guard let target else { return false }
+    guard let target = AXHelpers.element(for: window, in: axWindows) else { return false }
     var btnRef: CFTypeRef?
     guard AXUIElementCopyAttributeValue(target, attribute as CFString, &btnRef) == .success,
           let btnObj = btnRef else { return false }
