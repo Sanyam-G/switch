@@ -380,6 +380,7 @@ struct SwitchView: View {
                     Image(nsImage: icon)
                         .resizable()
                         .frame(width: prefs.appIconSize, height: prefs.appIconSize)
+                        .overlay(alignment: .topTrailing) { dockBadge(for: window) }
                         .scaleEffect(selected ? 1.06 : 1.0)
                         .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 1)
                         .padding(7)
@@ -435,6 +436,7 @@ struct SwitchView: View {
                     Image(nsImage: icon)
                         .resizable()
                         .frame(width: prefs.appIconSize, height: prefs.appIconSize)
+                        .overlay(alignment: .topTrailing) { dockBadge(for: window) }
                         .scaleEffect(selected ? 1.08 : 1.0)
                         .animation(switcherAnimation(.spring(response: 0.20, dampingFraction: 0.82)), value: selected)
                 } else {
@@ -492,6 +494,21 @@ struct SwitchView: View {
         .contentShape(Rectangle())
         .onHover { handleHover($0, windowID: window.id, index: index) }
         .onTapGesture { handleTap(index: index) }
+    }
+
+    @ViewBuilder
+    private func dockBadge(for window: WindowInfo) -> some View {
+        if !isSpaceMode, prefs.showDockBadges, let id = window.bundleID, let badge = model.dockBadges[id] {
+            Text(badge)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 4)
+                .frame(minWidth: 16, minHeight: 16)
+                .background(Capsule().fill(Color(nsColor: .systemRed)))
+                .offset(x: 5, y: -5)
+        }
     }
 
     private func appIcon(for window: WindowInfo) -> NSImage? {

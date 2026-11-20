@@ -227,6 +227,10 @@ struct SettingsView: View {
                                   "The number of windows in the top right of the picker.",
                                   $prefs.showWindowCount)
                         Divider().opacity(0.4)
+                        toggleRow("Show notification badges",
+                                  "The count from each app's Dock icon, on its icon in the picker.",
+                                  $prefs.showDockBadges)
+                        Divider().opacity(0.4)
                         toggleRow("Show window title first",
                                   "Put the window title ahead of the app name in each tile and row.",
                                   $prefs.showTitleFirst)

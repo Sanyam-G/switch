@@ -245,6 +245,10 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(showWindowCount, forKey: SwitchPreferences.showWindowCountKey) }
     }
 
+    @Published var showDockBadges: Bool {
+        didSet { UserDefaults.standard.set(showDockBadges, forKey: SwitchPreferences.showDockBadgesKey) }
+    }
+
     @Published var currentDisplayOnly: Bool {
         didSet { UserDefaults.standard.set(currentDisplayOnly, forKey: SwitchPreferences.currentDisplayOnlyKey) }
     }
@@ -351,6 +355,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let verticalShowHeaderKey = "switch.verticalShowHeader"
     nonisolated static let showHintStripKey = "switch.showHintStrip"
     nonisolated static let showWindowCountKey = "switch.showWindowCount"
+    nonisolated static let showDockBadgesKey = "switch.showDockBadges"
     nonisolated static let currentDisplayOnlyKey = "switch.currentDisplayOnly"
     nonisolated static let typeToFilterKey = "switch.typeToFilter"
     nonisolated static let vimNavigationKey = "switch.vimNavigation"
@@ -398,6 +403,7 @@ final class SwitchPreferences: ObservableObject {
         verticalShowHeader = (UserDefaults.standard.object(forKey: SwitchPreferences.verticalShowHeaderKey) as? Bool) ?? true
         showHintStrip = Self.storedShowHintStrip
         showWindowCount = (UserDefaults.standard.object(forKey: SwitchPreferences.showWindowCountKey) as? Bool) ?? true
+        showDockBadges = UserDefaults.standard.read(SwitchPreferences.showDockBadgesKey, default: true)
         currentDisplayOnly = UserDefaults.standard.bool(forKey: SwitchPreferences.currentDisplayOnlyKey)
         let inputModes = Self.storedInputModes()
         homeRowSelection = inputModes.homeRow

@@ -8,6 +8,8 @@ final class SwitchModel: ObservableObject {
     @Published var mode: HotkeyManager.Mode = .allWindows
     @Published var visible: Bool = false
     @Published var thumbnails: [CGWindowID: NSImage] = [:]
+    /// Bundle ID to the badge on that app's Dock icon, read once per arm (#92).
+    @Published var dockBadges: [String: String] = [:]
     @Published var filterText: String = ""
     @Published var panelSize = CGSize(width: 880, height: 560)
     /// Effective sticky for this invocation: global pref or a dedicated sticky binding (#131).
@@ -94,6 +96,14 @@ final class SwitchModel: ObservableObject {
             self.apply(snapshot: snap, initial: self.windows.isEmpty)
         }
         startRefreshTimer()
+        guard SwitchPreferences.shared.showDockBadges else { dockBadges = [:]; return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let badges = WindowEnumerator.dockBadges()
+            Task { @MainActor [weak self] in
+                guard let self, self.armGeneration == gen, self.dockBadges != badges else { return }
+                self.dockBadges = badges
+            }
+        }
     }
 
     private func apply(snapshot: WindowStore.Snapshot, initial: Bool) {
