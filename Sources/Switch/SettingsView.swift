@@ -632,6 +632,11 @@ struct SettingsView: View {
                                   $prefs.showStoplights)
                             .inert(prefs.disableMouse)
                         Divider().opacity(0.4)
+                        toggleRow("Show quit button",
+                                  "A purple button next to the stoplights that quits the window's app.",
+                                  $prefs.showQuitButton)
+                            .inert(!prefs.showStoplights || prefs.disableMouse)
+                        Divider().opacity(0.4)
                         toggleRow("Show hint strip",
                                   "Keyboard shortcut hints at the bottom of the picker.",
                                   $prefs.showHintStrip)

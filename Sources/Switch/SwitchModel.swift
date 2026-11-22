@@ -457,7 +457,11 @@ final class SwitchModel: ObservableObject {
     }
 
     func closeSelectedApp() {
-        guard mode != .spaces, let target = selectedWindow else { return }
+        if let target = selectedWindow { quit(target) }
+    }
+
+    func quit(_ target: WindowInfo) {
+        guard mode != .spaces else { return }
         AppCloser.close(target)
         quitPIDs.insert(target.pid)
         removeFromPicker { $0.pid == target.pid }

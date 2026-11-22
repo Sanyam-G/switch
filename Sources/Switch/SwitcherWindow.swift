@@ -148,13 +148,14 @@ private enum SwitcherPanelSize {
         let baseWidth: CGFloat = CGFloat(SwitchPreferences.defaultGridPanelWidth) * widthScale
         let horizontalPadding = PickerLayout.gridHorizontalPadding * 2
         let usable = baseWidth - horizontalPadding - CGFloat(configuredColumns - 1) * PickerLayout.gridSpacing
-        let columnWidth = usable / CGFloat(configuredColumns)
+        let scale = PickerLayout.tileScale(configured: configuredColumns, count: count)
+        let columnWidth = usable / CGFloat(configuredColumns) * scale
         let width = horizontalPadding + CGFloat(columns) * columnWidth + CGFloat(columns - 1) * PickerLayout.gridSpacing
 
         let height = wholeRowsHeight(
             rows: Int(ceil(Double(count) / Double(columns))),
             maxRows: prefs.maxGridRows,
-            rowHeight: CGFloat(tileThumb) + PickerLayout.tileExtraHeight,
+            rowHeight: CGFloat(tileThumb) * scale + PickerLayout.tileExtraHeight,
             gap: PickerLayout.gridSpacing,
             chrome: header + PickerLayout.gridTopPadding + PickerLayout.gridBottomPadding + hintHeight,
             minHeight: 320,

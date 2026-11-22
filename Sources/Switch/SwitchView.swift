@@ -14,8 +14,12 @@ enum PickerLayout {
     static let gridHorizontalPadding: CGFloat = 22
     static let gridTopPadding: CGFloat = 4
     static let gridBottomPadding: CGFloat = 12
-    /// Never more columns than windows (at least 3), so a short list keeps full-size tiles.
-    static func gridColumns(configured: Int, count: Int) -> Int { min(max(configured, 1), max(count, 3)) }
+    /// Never more columns than windows, so a short list leaves no empty slots.
+    static func gridColumns(configured: Int, count: Int) -> Int { max(1, min(configured, count)) }
+    /// Fewer columns than configured get bigger tiles, capped at 1.5x.
+    static func tileScale(configured: Int, count: Int) -> CGFloat {
+        min(1.5, (CGFloat(max(configured, 1)) / CGFloat(gridColumns(configured: configured, count: count))).squareRoot())
+    }
     static let tilePadding: CGFloat = 9
     static let tileTitleSpacing: CGFloat = 7
     static let tileTitleHeight: CGFloat = 16
@@ -284,6 +288,11 @@ struct SwitchView: View {
             stoplight(color: Color(red: 0.30, green: 0.78, blue: 0.34), symbol: "plus", label: "Zoom") {
                 AXHelpers.press(kAXZoomButtonAttribute, of: window)
             }
+            if prefs.showQuitButton {
+                stoplight(color: Color(red: 0.66, green: 0.43, blue: 0.94), symbol: "power", label: "Quit \(window.appName)") {
+                    model.quit(window)
+                }
+            }
         }
         .opacity(prefs.disableMouse ? 0 : 1)
         .allowsHitTesting(!prefs.disableMouse)
@@ -376,7 +385,8 @@ struct SwitchView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: prefs.showThumbnails ? prefs.thumbnailHeight : SwitchPreferences.compactThumbnailHeight)
+            .frame(height: (prefs.showThumbnails ? prefs.thumbnailHeight : SwitchPreferences.compactThumbnailHeight)
+                * PickerLayout.tileScale(configured: prefs.gridColumns, count: model.windows.count))
             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay(alignment: .topLeading) {
                 if prefs.showStoplights && !window.isWindowless {
