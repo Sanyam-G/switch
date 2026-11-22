@@ -3,12 +3,16 @@ import SwiftUI
 
 @MainActor
 final class SwitchModel: ObservableObject {
-    @Published var windows: [WindowInfo] = []
-    @Published var selected: Int = 0
+    @Published var windows: [WindowInfo] = [] { didSet { refilter() } }
+    @Published var selected: Int = 0 { didSet { announceSelection() } }
     @Published var mode: HotkeyManager.Mode = .allWindows
-    @Published var visible: Bool = false
+    @Published var visible: Bool = false { didSet { if visible && !oldValue { announcedID = nil; announceSelection() } } }
     @Published var thumbnails: [CGWindowID: NSImage] = [:]
-    @Published var filterText: String = ""
+    /// Bundle ID to the badge on that app's Dock icon, read once per arm (#92).
+    @Published var dockBadges: [String: String] = [:]
+    @Published var filterText: String = "" { didSet { refilter() } }
+    /// `windows` narrowed and ranked by `filterText`. Stored: the view reads it several times per pass.
+    private(set) var filteredWindows: [WindowInfo] = []
     @Published var panelSize = CGSize(width: 880, height: 560)
     /// Effective sticky for this invocation: global pref or a dedicated sticky binding (#131).
     @Published var stickySession = false
@@ -17,6 +21,8 @@ final class SwitchModel: ObservableObject {
     private var armDisplayFrame: CGRect?
     private var armFrontWindowID: CGWindowID?
     private var armReverse = false
+    /// Each listed window's position in the snapshot's z-order, for ranking unstamped windows by recency.
+    private var zOrder: [CGWindowID: Int] = [:]
 
     /// Set by AppDelegate so the view can request a commit + window dismiss from a click or a direct pick.
     var commitAndDismiss: (() -> Void)?
@@ -27,21 +33,53 @@ final class SwitchModel: ObservableObject {
     private var prewarmTimer: Timer?
     private var armGeneration = 0
     private var armFrontmostPID: pid_t?
+    private var armFrontmostBundleID: String?
     private var armSelfHadKeyWindow = false
     private var quitPIDs: Set<pid_t> = []
     private var thumbnailTask: Task<Void, Never>?
     var pointerWindowID: CGWindowID?
 
-    var filteredWindows: [WindowInfo] {
-        let q = filterText.lowercased()
-        if q.isEmpty { return windows }
-        let scored: [(WindowInfo, Int)] = windows.compactMap { w in
-            let a = Self.fuzzyScore(pattern: q, target: w.appName.lowercased())
-            let t = Self.fuzzyScore(pattern: q, target: w.title.lowercased())
-            guard let s = [a, t].compactMap({ $0 }).max() else { return nil }
-            return (w, s)
+    #if DEBUG
+    init() {
+        for (q, t) in [("memo", "メモ"), ("weixin", "微信"), ("cafe", "Café"), ("sa", "Safari")] {
+            assert(Self.fuzzyScore(pattern: Self.norm(q), target: Self.norm(t)) != nil, "\(q) should match \(t)")
         }
-        return scored.sorted { $0.1 > $1.1 }.map { $0.0 }
+    }
+    #endif
+
+    private func refilter() {
+        let q = Self.norm(filterText)
+        guard !q.isEmpty else { filteredWindows = windows; return }
+        let scored: [(WindowInfo, Bool, Int)] = windows.compactMap { w in
+            if let a = Self.fuzzyScore(pattern: q, target: Self.norm(w.appName)) { return (w, true, a) }
+            return Self.fuzzyScore(pattern: q, target: Self.norm(w.title)).map { (w, false, $0) }
+        }
+        // App-name matches before title-only ones, each by its own score; titles change, app names are muscle memory (#205).
+        filteredWindows = scored.sorted { $0.1 != $1.1 ? $0.1 : $0.2 > $1.2 }.map { $0.0 }
+    }
+
+    /// The filter arrives as layout characters, so no IME composes it (#89). Romanize both sides instead:
+    /// "memo" finds メモ, "weixin" finds 微信, "cafe" finds Café. Kanji romanize with Mandarin readings.
+    private static func norm(_ s: String) -> String {
+        (s.applyingTransform(.toLatin, reverse: false) ?? s)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+
+    /// Shared with the panel sizer so it reserves the header only when the view draws one.
+    var showsHeader: Bool {
+        let prefs = SwitchPreferences.shared
+        return mode == .spaces || !prefs.verticalList || prefs.verticalShowHeader || !filterText.isEmpty
+    }
+
+    // The panel never takes focus, so VoiceOver's cursor never reaches it: speak the selection instead.
+    // Once per window: the refresh timer reassigns the same selection.
+    private var announcedID: CGWindowID?
+    private func announceSelection() {
+        guard visible, NSWorkspace.shared.isVoiceOverEnabled, let w = selectedWindow, w.id != announcedID else { return }
+        announcedID = w.id
+        let text = [w.appName, w.title, w.badgeText?.lowercased()].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     private var selectedWindow: WindowInfo? {
@@ -80,7 +118,9 @@ final class SwitchModel: ObservableObject {
         quitPIDs.removeAll()
         filterText = ""
         pointerWindowID = nil
-        armFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        armFrontmostPID = frontApp?.processIdentifier
+        armFrontmostBundleID = frontApp?.bundleIdentifier
         armSelfHadKeyWindow = NSApp.keyWindow != nil
         if let snap = WindowStore.shared.current {
             apply(snapshot: snap, initial: true)
@@ -94,10 +134,19 @@ final class SwitchModel: ObservableObject {
             self.apply(snapshot: snap, initial: self.windows.isEmpty)
         }
         startRefreshTimer()
+        guard SwitchPreferences.shared.showDockBadges else { dockBadges = [:]; return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let badges = WindowEnumerator.dockBadges()
+            Task { @MainActor [weak self] in
+                guard let self, self.armGeneration == gen, self.dockBadges != badges else { return }
+                self.dockBadges = badges
+            }
+        }
     }
 
     private func apply(snapshot: WindowStore.Snapshot, initial: Bool) {
         let previousSelectedID = initial ? nil : selectedWindow?.id
+        zOrder = Dictionary(snapshot.windows.allWindows.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
 
         let final: [WindowInfo]
         if mode == .spaces {
@@ -105,7 +154,6 @@ final class SwitchModel: ObservableObject {
             final = snapshot.windows.spaceRepresentatives.map { rep in
                 var out = rep
                 out.isCrossSpace = out.spaceID != active
-                out.spaceLabel = out.spaceID == active ? "Current" : nil
                 return out
             }
         } else {
@@ -115,7 +163,17 @@ final class SwitchModel: ObservableObject {
         if changed { windows = final }
 
         if initial {
-            armFrontWindowID = WindowMRU.mostRecent(in: snapshot.windows.allWindows)?.id
+            // The front app's newest window, listed or not: one opened since the last sweep is the real front.
+            // Other apps' stamps don't count: an accessory panel (Raycast) or a background window isn't where the user is.
+            let front = armFrontmostPID
+            // An unlisted alert, panel or overlay of the front app isn't one: its listed parent is the front.
+            let listed = Set(snapshot.windows.allWindows.map(\.id))
+            armFrontWindowID = WindowMRU.mostRecentID.flatMap { id in
+                Self.cgInfo(of: id).flatMap { $0.pid == front && ($0.listable || listed.contains(id)) ? id : nil }
+            }
+                ?? front.flatMap { p in WindowMRU.mostRecent(in: snapshot.windows.allWindows.filter { $0.pid == p }) }?.id
+                // Unstamped front-app windows, hosted ones too for Steam's helper (#206); a windowless front app leaves it nil.
+                ?? snapshot.windows.activeSpace.first { front == nil || $0.pid == front || ($0.isHosted && $0.bundleID == armFrontmostBundleID) }?.id
             if mode == .spaces {
                 let reps = filteredWindows
                 if let current = reps.firstIndex(where: { !$0.isCrossSpace }), reps.count > 1 {
@@ -124,14 +182,14 @@ final class SwitchModel: ObservableObject {
                     selected = 0
                 }
             } else {
-                // Own windows aren't listed, so with Switch frontmost index 0 is already the previous window.
+                // Own windows aren't listed, so with Switch frontmost the most recent listed window is already the previous one.
                 // Only treat Switch as frontmost when it genuinely owns a visible key window (Settings/About/
                 // onboarding); the picker panel can't become key, so keyWindow != nil rules out the stale
                 // "still frontmost after closing a window" state behind #90.
-                let n = filteredWindows.count
-                selected = (stickySession || selfFront) ? 0
-                    : armReverse ? max(n - 1, 0)
-                    : (frontListed && n > 1 ? 1 : 0)
+                let list = filteredWindows
+                selected = (stickySession || selfFront) ? mruIndex(in: list, skipping: nil) ?? 0
+                    : armReverse ? max(list.count - 1, 0)
+                    : mruIndex(in: list, skipping: armFrontWindowID) ?? 0
             }
         } else if changed {
             let list = filteredWindows
@@ -145,12 +203,8 @@ final class SwitchModel: ObservableObject {
         thumbnailTask?.cancel()
         let thumbTargets = final.filter { !$0.isWindowless }
         let gen = armGeneration
-        let liveIDs = Set(thumbTargets.map { $0.id })
+        // No purge here: a current-app or Spaces list would drop every other window's thumbnail; prewarm purges.
         thumbnailTask = Task {
-            if !initial, SwitchPreferences.shared.showThumbnails {
-                // Don't full-purge; pre-warmed thumbs are valid as long as the window still exists.
-                await WindowSnapshotter.shared.purge(keeping: liveIDs)
-            }
             await fetchThumbnails(for: thumbTargets, force: false)
             guard !initial, armGeneration == gen, visible else { return }
             await fetchThumbnails(for: thumbTargets, force: true, batch: true)
@@ -175,13 +229,16 @@ final class SwitchModel: ObservableObject {
         }
         let exclusions = SwitchPreferences.shared.titleExclusions.map { $0.lowercased() }
         if !exclusions.isEmpty {
+            // Untitled windows match the app name the row shows: off-Space windows AX doesn't list (#210).
+            // Titled windows match the title only, so existing entries never hide a whole app.
             drop { w in
-                let t = w.title.lowercased()
-                return exclusions.contains { t.contains($0) }
+                let t = w.title.lowercased(), a = w.appName.lowercased()
+                return exclusions.contains { t.isEmpty ? a.contains($0) : t.contains($0) }
             }
         }
         if mode == .currentApp, let f = armFrontmostPID {
-            drop { $0.pid != f }
+            // Hosted windows by bundle: Steam's belong to its helper's pid (#206). Other copies of the app stay out.
+            drop { $0.pid != f && !($0.isHosted && $0.bundleID == armFrontmostBundleID) }
         }
         if !SwitchPreferences.shared.showCrossSpace || currentSpaceOnly {
             cross = cross.filter { !$0.isCrossSpace }
@@ -190,6 +247,11 @@ final class SwitchModel: ObservableObject {
             drop { !$0.bounds.intersects(display) }
         }
         let activeFront = WindowMRU.mostRecent(in: active) ?? active.first
+        // Right after a cross-Space switch the cached snapshot still lists the
+        // focused window as cross-Space; pin the frontmost app's MRU window from
+        // either list so rows don't reshuffle under the selection when the fresh
+        // sweep lands.
+        let appFront = armFrontmostPID.flatMap { p in WindowMRU.mostRecent(in: (active + cross).filter { $0.pid == p }) }
         let ws: [WindowInfo]
         if SwitchPreferences.shared.staticOrder {
             let order = SwitchPreferences.shared.appOrder
@@ -204,25 +266,33 @@ final class SwitchModel: ObservableObject {
             }
             ws = active.sorted(by: stable) + cross.sorted(by: stable)
         } else if SwitchPreferences.shared.mruMixSpaces {
-            // Right after a cross-Space switch the cached snapshot still lists the
-            // focused window as cross-Space; pin the frontmost app's MRU window from
-            // either list so rows don't reshuffle under the selection when the fresh
-            // sweep lands (#stale-arm reorder).
-            let all = active + cross
-            let front = armFrontmostPID.flatMap { p in WindowMRU.mostRecent(in: all.filter { $0.pid == p }) } ?? activeFront
-            ws = WindowMRU.sorted(all, frontmost: front)
+            ws = WindowMRU.sorted(active + cross, frontmost: appFront ?? activeFront)
+        } else if var front = appFront, front.isCrossSpace, let i = cross.firstIndex(of: front),
+                  WindowEnumerator.isOnCurrentSpace(front.id) {
+            // Same stale snapshot, unmixed: the focused window leads the current Space's rows.
+            // Live check: a frontmost app whose only window really is elsewhere stays cross-Space.
+            cross.remove(at: i)
+            front.isCrossSpace = false
+            ws = WindowMRU.sorted(active, frontmost: front) + WindowMRU.sorted(cross, frontmost: nil)
         } else {
             ws = WindowMRU.sorted(active, frontmost: activeFront) + WindowMRU.sorted(cross, frontmost: nil)
         }
         var final = ws
         if SwitchPreferences.shared.includeWindowlessApps && mode == .allWindows {
             let switchablePIDs = full.allPIDs
+            // Steam's windows are listed under its helper's pid (#206). Only such hosted
+            // bundles count, so a second, windowless instance of an app still shows.
+            let switchableBundles = Set(full.allWindows.filter(\.isHosted).compactMap(\.bundleID))
             let ownBundle = Bundle.main.bundleIdentifier
             let blacklist = SwitchPreferences.shared.blacklist
+            let included = SwitchPreferences.shared.includedAppNames
             let extras = NSWorkspace.shared.runningApplications
                 .filter {
-                    $0.activationPolicy == .regular
+                    // Included names admit menu-bar apps, never faceless agents (.prohibited).
+                    ($0.activationPolicy == .regular
+                        || ($0.activationPolicy == .accessory && SwitchPreferences.isIncluded($0.localizedName ?? "", in: included)))
                         && !switchablePIDs.contains($0.processIdentifier)
+                        && $0.bundleIdentifier.map(switchableBundles.contains) != true
                         && $0.bundleIdentifier != ownBundle
                         && $0.bundleIdentifier.map(blacklist.contains) != true
                 }
@@ -247,24 +317,17 @@ final class SwitchModel: ObservableObject {
         return final
     }
 
-    func closeSelected() {
-        guard let target = selectedWindow else { return }
-        close(target)
-    }
+    func closeSelected() { selectedWindow.map(close) }
 
+    // Only this window, never a sibling. If no AX element resolves (cross-Space
+    // Chromium, a windowless row), do nothing and keep the row.
     func close(_ target: WindowInfo) {
-        guard mode != .spaces else { return }
-        WindowCloser.close(target)
+        guard mode != .spaces, AXHelpers.press(kAXCloseButtonAttribute, of: target) else { return }
         removeFromPicker { $0.id == target.id }
     }
 
     func closeWindow(withWindowID id: CGWindowID) {
-        guard mode != .spaces else { return }
-        guard let target = windows.first(where: { $0.id == id }) else { return }
-        // Only the clicked window, like middle-clicking a browser tab. If no AX element
-        // resolves (e.g. cross-Space Chromium window), do nothing rather than quit the app.
-        guard WindowCloser.closeExact(target) else { return }
-        removeFromPicker { $0.id == target.id }
+        windows.first { $0.id == id }.map(close)
     }
 
     private func removeFromPicker(_ shouldRemove: (WindowInfo) -> Bool) {
@@ -298,11 +361,6 @@ final class SwitchModel: ObservableObject {
         }
     }
 
-    private func stopRefreshTimer() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-    }
-
     func startPrewarm() {
         prewarmTimer?.invalidate()
         prewarmTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
@@ -315,12 +373,13 @@ final class SwitchModel: ObservableObject {
     }
 
     private func prewarmCache() {
+        let started = Date()
         WindowStore.shared.refresh { snap in
             let ws = snap.windows.allWindows
             let liveIDs = Set(ws.map { $0.id })
-            WindowMRU.purge(keeping: liveIDs)
+            // By the live CG list, not the snapshot: a window one sweep skips keeps its MRU place.
             Task.detached(priority: .utility) {
-                AXWindowCache.purgeDead()
+                WindowMRU.purge(keeping: AXWindowCache.purgeDead(), since: started)
             }
             guard SwitchPreferences.shared.showThumbnails else { return }
             Task {
@@ -373,32 +432,34 @@ final class SwitchModel: ObservableObject {
         let list = filteredWindows
         guard !list.isEmpty else { return }
         let n = list.count
-        let cols = (SwitchPreferences.shared.verticalList || mode == .spaces) ? 1 : SwitchPreferences.shared.gridColumns
-        let delta: Int
+        let cols = (SwitchPreferences.shared.verticalList || mode == .spaces) ? 1
+            : PickerLayout.gridColumns(configured: SwitchPreferences.shared.gridColumns, count: windows.count)
         switch direction {
-        case .left:  delta = -1
-        case .right: delta = 1
-        case .up:    delta = -cols
-        case .down:  delta = cols
+        case .left:  selected = (selected - 1 + n) % n
+        case .right: selected = (selected + 1) % n
+        // A list wraps; a grid stays in the column and stops at the edge, like Finder's icon view.
+        case .up:    if cols == 1 { selected = (selected - 1 + n) % n } else if selected >= cols { selected -= cols }
+        case .down:  if cols == 1 { selected = (selected + 1) % n } else if selected + cols < n { selected += cols }
         }
-        selected = ((selected + delta) % n + n) % n
     }
 
     func pickIndex(_ index: Int) {
-        let list = filteredWindows
-        guard list.indices.contains(index) else { return }
+        guard filteredWindows.indices.contains(index) else { return }
         selected = index
         commitAndDismiss?()
     }
 
     func selectIndex(_ index: Int) {
-        let list = filteredWindows
-        guard list.indices.contains(index) else { return }
+        guard filteredWindows.indices.contains(index) else { return }
         selected = index
     }
 
     func closeSelectedApp() {
-        guard mode != .spaces, let target = selectedWindow else { return }
+        if let target = selectedWindow { quit(target) }
+    }
+
+    func quit(_ target: WindowInfo) {
+        guard mode != .spaces else { return }
         AppCloser.close(target)
         quitPIDs.insert(target.pid)
         removeFromPicker { $0.pid == target.pid }
@@ -428,10 +489,25 @@ final class SwitchModel: ObservableObject {
         armFrontmostPID == ProcessInfo.processInfo.processIdentifier && armSelfHadKeyWindow
     }
 
-    // False when a filter (display, title, app, hidden) dropped the focused window: index 0 is then already the previous one.
-    private var frontListed: Bool {
-        guard let id = armFrontWindowID else { return true }
-        return filteredWindows.contains { $0.id == id }
+    /// The most recently used listed window other than `skip`, by id: pinned apps and static order
+    /// mean list position says nothing about recency. Unless Spaces are mixed, the current Space wins, like the list.
+    private func mruIndex(in list: [WindowInfo], skipping skip: CGWindowID?) -> Int? {
+        // Unstamped windows (all of them right after launch) fall back to z-order, not pinned or static position.
+        let byZ = list.enumerated().sorted { (zOrder[$0.element.id] ?? Int.max, $0.offset) < (zOrder[$1.element.id] ?? Int.max, $1.offset) }.map(\.element)
+        let order = WindowMRU.sorted(byZ, frontmost: nil).filter { $0.id != skip }
+        // Only visible windows lead; hidden, minimized and cross-Space ones share the next block, windowless apps come last.
+        let target = SwitchPreferences.shared.mruMixSpaces ? order.first
+            : order.first { !$0.isCrossSpace && !$0.isHidden && !$0.isMinimized && !$0.isWindowless } ?? order.first
+        return target.flatMap { t in list.firstIndex { $0.id == t.id } }
+    }
+
+    // listable: a layer-0 window the enumerator would list once it sweeps (100×80 if titled, else 400×300).
+    private static func cgInfo(of id: CGWindowID) -> (pid: pid_t, listable: Bool)? {
+        guard let d = (CGWindowListCopyWindowInfo(.optionIncludingWindow, id) as? [[String: Any]])?.first,
+              let pid = d[kCGWindowOwnerPID as String] as? pid_t else { return nil }
+        let bounds = (d[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) } ?? .zero
+        let min: CGSize = (d[kCGWindowName as String] as? String ?? "").isEmpty ? CGSize(width: 400, height: 300) : CGSize(width: 100, height: 80)
+        return (pid, d[kCGWindowLayer as String] as? Int == 0 && bounds.width >= min.width && bounds.height >= min.height)
     }
 
     // kCGWindowBounds has its origin at the top-left of the primary display; NSScreen at the bottom-left.
@@ -444,30 +520,28 @@ final class SwitchModel: ObservableObject {
     func commit(stickyQuickTap: Bool = false) {
         let list = filteredWindows
         // Sticky preselects the current window, so a quick tap flips to the previous one instead (#96).
-        if stickyQuickTap && mode != .spaces && selected == 0 && !selfFront && frontListed && list.count > 1 {
-            selected = 1
+        if stickyQuickTap, mode != .spaces, !selfFront, let front = armFrontWindowID,
+           selectedWindow?.id == front, let previous = mruIndex(in: list, skipping: front) {
+            selected = previous
         }
         if list.indices.contains(selected) {
-            WindowFocuser.focus(list[selected])
+            WindowFocuser.focus(list[selected], bringHere: mode != .spaces)
             // Warm the cache once the Space transition settles so an immediate
             // re-invoke doesn't arm from a pre-switch snapshot (3s prewarm gap).
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                 WindowStore.shared.refresh()
             }
         }
-        teardown()
+        cancel()
     }
 
     func cancel() {
-        teardown()
-    }
-
-    private func teardown() {
         visible = false
         windows = []
         thumbnails = [:]
         filterText = ""
-        stopRefreshTimer()
+        refreshTimer?.invalidate()
+        refreshTimer = nil
         thumbnailTask?.cancel()
         thumbnailTask = nil
     }

@@ -1,12 +1,14 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 struct KeyRecorderField: NSViewRepresentable {
     let initialBinding: HotkeyBinding
     /// Returns false when the binding is rejected, so the field keeps showing the saved one (#192).
     let onCapture: (HotkeyBinding) -> Bool
-    var accent: Color = .accentColor
-    var placeholder: String = "—"
+    var accent: Color
+    var placeholder: String
+    var accessibilityName: String
 
     func makeNSView(context: Context) -> KeyRecorderNSView {
         let v = KeyRecorderNSView()
@@ -14,6 +16,7 @@ struct KeyRecorderField: NSViewRepresentable {
         v.onCapture = onCapture
         v.accentNSColor = NSColor(accent)
         v.placeholder = placeholder
+        v.setAccessibilityLabel(accessibilityName)
         return v
     }
 
@@ -57,6 +60,7 @@ final class KeyRecorderNSView: NSView {
         label.alignment = .center
         label.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.setAccessibilityElement(false)
         addSubview(label)
         NSLayoutConstraint.activate([
             label.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -73,6 +77,30 @@ final class KeyRecorderNSView: NSView {
         if recording { stopRecording() } else { startRecording() }
     }
 
+    // Space or Return starts recording, like pressing a button, for Full Keyboard Access.
+    override func keyDown(with event: NSEvent) {
+        let plain = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function, .capsLock]).isEmpty
+        if !recording, plain, [kVK_Space, kVK_Return, kVK_ANSI_KeypadEnter].contains(Int(event.keyCode)) {
+            startRecording()
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
+    }
+
+    override var focusRingMaskBounds: NSRect { bounds }
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityValue() -> Any? { label.stringValue }
+    override func accessibilityPerformPress() -> Bool {
+        if recording { stopRecording() } else { startRecording() }
+        return true
+    }
+
     override func resignFirstResponder() -> Bool {
         stopRecording()
         return super.resignFirstResponder()
@@ -83,14 +111,15 @@ final class KeyRecorderNSView: NSView {
         if window == nil { stopRecording() }
     }
 
-    deinit { teardownTap() }
+    // Through stopRecording so Ended is posted; otherwise the hotkeys stay suspended.
+    deinit { stopRecording() }
 
     // NSEvent local monitors never see Cmd+Tab (system app switcher grabs it upstream).
-    // Session tap at head fires first, swallows.
+    // Session tap at head fires first, swallows. keyDown only: modifier edges must reach everyone else (#211).
     private func startRecording() {
         recording = true
         window?.makeFirstResponder(self)
-        let mask = CGEventMask((1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue))
+        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
         let info = Unmanaged.passUnretained(self).toOpaque()
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
                                           options: .defaultTap, eventsOfInterest: mask,
@@ -135,14 +164,13 @@ final class KeyRecorderNSView: NSView {
     }
 
     fileprivate func capture(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
-        if type == .flagsChanged { return nil }
         guard type == .keyDown else { return Unmanaged.passUnretained(event) }
         let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
-        let held = event.flags.intersection(.recordableModifiers)
+        let held = event.flags.intersection(.primaryModifiers)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             // Bare Esc cancels; Esc with a modifier is a recordable combo (#116).
-            if kc != 53 || !held.isEmpty {
+            if kc != CGKeyCode(kVK_Escape) || !held.isEmpty {
                 let b = HotkeyBinding(keyCode: UInt16(kc), modifiersRaw: held.rawValue)
                 if self.onCapture?(b) == true { self.binding = b }
             }

@@ -2,7 +2,12 @@ import AppKit
 import ApplicationServices
 
 enum WindowFocuser {
-    static func focus(_ window: WindowInfo) {
+    private static var focusGen = 0  // main thread only
+
+    /// `bringHere` pulls a desktop window from another Space into this one;
+    /// Spaces mode passes false so picking a Space goes there instead.
+    static func focus(_ window: WindowInfo, bringHere: Bool = true) {
+        focusGen &+= 1
         if window.isWindowless {
             let app = NSRunningApplication(processIdentifier: window.pid)
             if app?.isHidden == true { app?.unhide() }
@@ -19,10 +24,10 @@ enum WindowFocuser {
         // windows own their Space and can't be moved into another one, and
         // moving a desktop window while standing on a fullscreen Space sucks
         // it INTO that Space. Any fullscreen involvement → go to the window.
-        if window.isCrossSpace && !window.isFullscreenSpace {
+        if bringHere && window.isCrossSpace && !window.isFullscreenSpace {
             let cid = CGSMainConnectionID()
             let currentSpace = CGSGetActiveSpace(cid)
-            if !isFullscreenSpace(currentSpace, cid: cid) {
+            if WindowEnumerator.spaceMetadata(cid: cid).labels[Int(currentSpace)]?.isFullscreen != true {
                 let ids = [NSNumber(value: window.id)] as CFArray
                 CGSMoveWindowsToManagedSpace(cid, ids, currentSpace)
                 // Exempt from the current-space-claim prune: if the raise below
@@ -44,11 +49,8 @@ enum WindowFocuser {
         let axWindows = AXHelpers.windowList(of: appAX)
         var raised = false
         if let target = bestMatch(for: window, in: axWindows) {
-            AXUIElementSetAttributeValue(target, kAXMainAttribute as CFString, kCFBooleanTrue)
-            // Focused-window steers which Space activate() lands on when the
-            // app has windows across several Spaces (fullscreen Chrome).
-            AXUIElementSetAttributeValue(appAX, kAXFocusedWindowAttribute as CFString, target)
-            raised = AXUIElementPerformAction(target, kAXRaiseAction as CFString) == .success
+            raised = raise(target, in: appAX)
+            if AXHelpers.windowID(of: target) == window.id { recheck(target, in: appAX, for: window) }
         }
         // No usable element (Chromium hiding off-Space windows + cold cache, or
         // a stale cached handle): let the app focus it via its own Window menu.
@@ -60,6 +62,28 @@ enum WindowFocuser {
 
         if UserDefaults.standard.bool(forKey: SwitchPreferences.moveCursorToWindowKey) { moveCursor(to: window.bounds) }
         WindowMRU.touch(window.id)
+    }
+
+    @discardableResult
+    private static func raise(_ target: AXUIElement, in appAX: AXUIElement) -> Bool {
+        AXUIElementSetAttributeValue(target, kAXMainAttribute as CFString, kCFBooleanTrue)
+        // Focused-window steers which Space activate() lands on when the
+        // app has windows across several Spaces (fullscreen Chrome).
+        AXUIElementSetAttributeValue(appAX, kAXFocusedWindowAttribute as CFString, target)
+        return AXUIElementPerformAction(target, kAXRaiseAction as CFString) == .success
+    }
+
+    // activate() lands asynchronously, after the raise, and AppKit can then
+    // restore the app's previous key window over the target (#57). Once the
+    // app is frontmost, raise the same element again if it lost. Never a sibling.
+    private static func recheck(_ target: AXUIElement, in appAX: AXUIElement, for window: WindowInfo) {
+        let gen = focusGen
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            guard gen == focusGen,
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == window.pid else { return }
+            let focused = AXHelpers.attribute(kAXFocusedWindowAttribute, of: appAX).flatMap { AXHelpers.windowID(of: $0 as! AXUIElement) }
+            if focused != window.id { raise(target, in: appAX) }
+        }
     }
 
     // Only when the target sits on a different display than the pointer (#151).
@@ -82,124 +106,79 @@ enum WindowFocuser {
     /// title matches the target window. The menu bar stays AX-accessible even
     /// when the app hides off-Space windows from enumeration (Chromium), and
     /// the app's own handler does makeKeyAndOrderFront, so macOS performs the
-    /// Space switch natively. Returns false when no item matched.
-    @discardableResult
-    static func focusViaWindowMenu(_ window: WindowInfo) -> Bool {
-        guard !window.title.isEmpty else { return false }
-        let appAX = AXUIElementCreateApplication(window.pid)
-        var barRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appAX, kAXMenuBarAttribute as CFString, &barRef) == .success,
-              let bar = barRef else { return false }
-        var menusRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(bar as! AXUIElement, kAXChildrenAttribute as CFString, &menusRef) == .success,
-              let menus = menusRef as? [AXUIElement] else { return false }
+    /// Space switch natively. Only a unique match is pressed: two "New Tab" items
+    /// can't be told apart, and the wrong one switches to the wrong window.
+    private static func focusViaWindowMenu(_ window: WindowInfo) {
+        guard !window.title.isEmpty,
+              let bar = AXHelpers.attribute(kAXMenuBarAttribute, of: AXUIElementCreateApplication(window.pid)) else { return }
         // Window/Help only; Chrome's History menu matches closed windows by title and pressing one reopens it (#115).
-        for menuBarItem in menus.suffix(2).reversed() {
-            var subRef: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(menuBarItem, kAXChildrenAttribute as CFString, &subRef) == .success,
-                  let submenus = subRef as? [AXUIElement] else { continue }
-            for submenu in submenus {
-                var itemsRef: CFTypeRef?
-                guard AXUIElementCopyAttributeValue(submenu, kAXChildrenAttribute as CFString, &itemsRef) == .success,
-                      let items = itemsRef as? [AXUIElement] else { continue }
-                for item in items where AXHelpers.title(of: item) == window.title {
-                    if AXUIElementPerformAction(item, kAXPressAction as CFString) == .success {
-                        NSRunningApplication(processIdentifier: window.pid)?.activate(options: [])
-                        WindowMRU.touch(window.id)
-                        return true
-                    }
-                }
-            }
-        }
-        return false
+        let hits = AXHelpers.children(of: bar as! AXUIElement).suffix(2)
+            .flatMap(AXHelpers.children(of:))  // submenus
+            .flatMap(AXHelpers.children(of:))  // items
+            .filter { AXHelpers.title(of: $0) == window.title }
+        if hits.count == 1 { AXUIElementPerformAction(hits[0], kAXPressAction as CFString) }
     }
 
-    private static func isFullscreenSpace(_ space: CGSSpaceID, cid: CGSConnectionID) -> Bool {
-        guard let displays = CGSCopyManagedDisplaySpaces(cid)?.takeRetainedValue() as? [[String: Any]] else { return false }
-        for display in displays {
-            for s in display["Spaces"] as? [[String: Any]] ?? [] {
-                if let id = s["id64"] as? Int, CGSSpaceID(id) == space {
-                    return (s["type"] as? Int ?? 0) != 0
-                }
-            }
-        }
-        return false
-    }
-
-    /// Direct CGWindowID match via private SPI; falls back to the AXWindowCache
-    /// element captured while the window was on-screen (Chromium apps hide
-    /// off-Space windows from kAXWindowsAttribute entirely, so the live list
-    /// misses exactly the windows that need cross-Space focusing). Bounds and
-    /// title matching remain as last resorts; never `first`; raising an
-    /// arbitrary sibling sends focus to the wrong window.
+    /// Direct CGWindowID match via private SPI, then AXWindowCache (Chromium
+    /// apps hide off-Space windows from kAXWindowsAttribute entirely). Bounds
+    /// and title only as last resorts, and only when exactly one window fits:
+    /// raising an arbitrary sibling sends focus to the wrong window. A window
+    /// whose id resolves isn't the target (the exact match already failed),
+    /// so only id-less elements (Java/Qt, a failed lookup) are candidates.
     private static func bestMatch(for window: WindowInfo, in axWindows: [AXUIElement]) -> AXUIElement? {
-        if let exact = AXHelpers.element(for: window, in: axWindows) {
-            return exact
+        if let exact = AXHelpers.element(for: window, in: axWindows) { return exact }
+        let unknown = axWindows.filter { AXHelpers.windowID(of: $0) == nil }
+        let b = window.bounds
+        let near = unknown.filter { ax in
+            guard let f = AXHelpers.frame(of: ax) else { return false }
+            return abs(f.minX - b.minX) + abs(f.minY - b.minY) + abs(f.width - b.width) + abs(f.height - b.height) < 40
         }
-        var bestByBounds: (element: AXUIElement, distance: CGFloat)?
-        for ax in axWindows {
-            guard let frame = AXHelpers.frame(of: ax) else { continue }
-            let d = abs(frame.origin.x - window.bounds.origin.x)
-                  + abs(frame.origin.y - window.bounds.origin.y)
-                  + abs(frame.size.width  - window.bounds.size.width)
-                  + abs(frame.size.height - window.bounds.size.height)
-            if bestByBounds == nil || d < bestByBounds!.distance {
-                bestByBounds = (ax, d)
-            }
-        }
-        if let bestByBounds, bestByBounds.distance < 40 { return bestByBounds.element }
-        return axWindows.first(where: { AXHelpers.title(of: $0) == window.title })
+        if near.count == 1 { return near[0] }
+        guard !window.title.isEmpty else { return nil }
+        let titled = (near.isEmpty ? unknown : near).filter { AXHelpers.title(of: $0) == window.title }
+        return titled.count == 1 ? titled[0] : nil
     }
 }
 
 enum AppCloser {
     static func close(_ window: WindowInfo) {
-        NSRunningApplication(processIdentifier: window.pid)?.terminate()
+        let app = NSRunningApplication(processIdentifier: window.pid)
+        // A Steam row quits Steam, not the helper that owns its windows (#206).
+        let host = app?.bundleIdentifier == window.bundleID ? nil
+            : window.bundleID.flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0).first }
+        (host ?? app)?.terminate()
     }
-}
-
-enum WindowCloser {
-    static func close(_ window: WindowInfo) { pressButton(window, attribute: kAXCloseButtonAttribute) }
-
-    /// Close only the specific window, resolving its AX element the way focus does
-    /// (live wid match, then AXWindowCache), never an arbitrary sibling. Returns
-    /// false without acting when nothing resolves, so callers can decline to fall back.
-    @discardableResult
-    static func closeExact(_ window: WindowInfo) -> Bool {
-        pressButton(window, attribute: kAXCloseButtonAttribute, exactOnly: true)
-    }
-}
-
-enum WindowMinimizer {
-    static func minimize(_ window: WindowInfo) { pressButton(window, attribute: kAXMinimizeButtonAttribute) }
-}
-
-enum WindowZoomer {
-    static func zoom(_ window: WindowInfo) { pressButton(window, attribute: kAXZoomButtonAttribute) }
-}
-
-/// Press a stoplight button; `exactOnly` never falls back to a sibling window.
-@discardableResult
-private func pressButton(_ window: WindowInfo, attribute: String, exactOnly: Bool = false) -> Bool {
-    let axWindows = AXHelpers.windowList(of: AXUIElementCreateApplication(window.pid))
-    let exact = AXHelpers.element(for: window, in: axWindows)
-    let target = exactOnly
-        ? exact
-        : exact
-            ?? axWindows.first(where: { AXHelpers.title(of: $0) == window.title })
-            ?? axWindows.first
-    guard let target else { return false }
-    var btnRef: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(target, attribute as CFString, &btnRef) == .success,
-          let btnObj = btnRef else { return false }
-    return AXUIElementPerformAction(btnObj as! AXUIElement, kAXPressAction as CFString) == .success
 }
 
 enum AXHelpers {
-    static func title(of element: AXUIElement) -> String {
+    static func attribute(_ name: String, of element: AXUIElement) -> CFTypeRef? {
         var ref: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &ref)
-        return ref as? String ?? ""
+        AXUIElementCopyAttributeValue(element, name as CFString, &ref)
+        return ref
+    }
+
+    static func children(of element: AXUIElement) -> [AXUIElement] {
+        attribute(kAXChildrenAttribute, of: element) as? [AXUIElement] ?? []
+    }
+
+    /// App element with a short timeout, so one hung app can't stall a sweep or the main thread.
+    static func appElement(for pid: pid_t) -> AXUIElement {
+        let el = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(el, 0.25)
+        return el
+    }
+
+    static func title(of element: AXUIElement) -> String {
+        attribute(kAXTitleAttribute, of: element) as? String ?? ""
+    }
+
+    /// Press a stoplight button (kAXCloseButtonAttribute etc.) on this exact window,
+    /// never a sibling. False without acting when its element doesn't resolve.
+    @discardableResult
+    static func press(_ button: String, of window: WindowInfo) -> Bool {
+        guard let target = element(for: window, in: windowList(of: AXUIElementCreateApplication(window.pid))),
+              let btn = attribute(button, of: target) else { return false }
+        return AXUIElementPerformAction(btn as! AXUIElement, kAXPressAction as CFString) == .success
     }
 
     static func windowID(of element: AXUIElement) -> CGWindowID? {
@@ -235,30 +214,20 @@ enum AXHelpers {
             id += 1
             guard let el = _AXUIElementCreateWithRemoteToken(token as CFData)?.takeRetainedValue() else { continue }
             AXUIElementSetMessagingTimeout(el, 0.1)
-            guard windowID(of: el) == wid else { continue }
-            var role: CFTypeRef?
-            AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &role)
-            if role as? String == kAXWindowRole { return el }
+            if windowID(of: el) == wid, attribute(kAXRoleAttribute, of: el) as? String == kAXWindowRole { return el }
         }
         return nil
     }
 
     static func windowList(of appAX: AXUIElement) -> [AXUIElement] {
-        var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appAX, kAXWindowsAttribute as CFString, &ref) == .success else { return [] }
-        return ref as? [AXUIElement] ?? []
+        attribute(kAXWindowsAttribute, of: appAX) as? [AXUIElement] ?? []
     }
 
     /// AX position + size as a CGRect, or nil if either attribute is missing.
     /// Used to disambiguate windows when titles collide (e.g. Chrome).
     static func frame(of element: AXUIElement) -> CGRect? {
-        var posRef: CFTypeRef?
-        var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) == .success,
-              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success else {
-            return nil
-        }
-        guard let posObj = posRef, let sizeObj = sizeRef else { return nil }
+        guard let posObj = attribute(kAXPositionAttribute, of: element),
+              let sizeObj = attribute(kAXSizeAttribute, of: element) else { return nil }
         var origin = CGPoint.zero
         var size = CGSize.zero
         AXValueGetValue(posObj as! AXValue, .cgPoint, &origin)

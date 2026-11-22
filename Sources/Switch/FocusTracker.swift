@@ -38,20 +38,25 @@ final class FocusTracker {
             object: nil, queue: .main
         ) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            // Retries an app whose AX wasn't ready at launch (Electron); a no-op once attached.
+            self?.attach(app)
             self?.touchFocused(of: app.processIdentifier)
         }
     }
 
     private func attach(_ app: NSRunningApplication) {
         let pid = app.processIdentifier
-        guard pid > 0, observersByPID[pid] == nil else { return }
-        if pid == ProcessInfo.processInfo.processIdentifier { return }
+        guard pid > 0, observersByPID[pid] == nil, app.activationPolicy != .prohibited,
+              pid != ProcessInfo.processInfo.processIdentifier else { return }
         var observer: AXObserver?
         let result = AXObserverCreate(pid, focusObserverCallback, &observer)
         guard result == .success, let observer else { return }
-        let appAX = AXUIElementCreateApplication(pid)
-        AXObserverAddNotification(observer, appAX, kAXFocusedWindowChangedNotification as CFString, nil)
-        AXObserverAddNotification(observer, appAX, kAXMainWindowChangedNotification as CFString, nil)
+        let appAX = AXHelpers.appElement(for: pid)
+        let added = [kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification].map {
+            AXObserverAddNotification(observer, appAX, $0 as CFString, nil)
+        }
+        // Not stored on failure, so the next activation tries again.
+        guard added.contains(where: { $0 == .success || $0 == .notificationAlreadyRegistered }) else { return }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
         observersByPID[pid] = observer
     }
@@ -64,13 +69,11 @@ final class FocusTracker {
     /// Touch MRU on app activation as a backstop; AX observers don't always
     /// fire reliably immediately after an app launches, but didActivate does.
     private func touchFocused(of pid: pid_t) {
-        let appAX = AXUIElementCreateApplication(pid)
-        var ref: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appAX, kAXFocusedWindowAttribute as CFString, &ref) == .success,
-              let element = ref else { return }
-        if let id = AXHelpers.windowID(of: element as! AXUIElement) {
-            WindowMRU.touch(id)
-        }
+        // AX against our own process from its main thread would wait out the timeout; our windows aren't listed anyway.
+        guard pid != ProcessInfo.processInfo.processIdentifier,
+              let element = AXHelpers.attribute(kAXFocusedWindowAttribute, of: AXHelpers.appElement(for: pid)),
+              let id = AXHelpers.windowID(of: element as! AXUIElement) else { return }
+        WindowMRU.touch(id)
     }
 }
 

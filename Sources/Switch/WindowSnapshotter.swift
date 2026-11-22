@@ -31,11 +31,13 @@ actor WindowSnapshotter {
 
     func snapshot(for id: CGWindowID, force: Bool = false) async -> NSImage? {
         if !force, let img = cache[id] { return img }
+        // Services start without Screen Recording now (#198); skip captures that would come back blank.
+        guard CGPreflightScreenCaptureAccess() else { return nil }
         if inFlight.contains(id) { return nil }
         inFlight.insert(id)
         defer { inFlight.remove(id) }
 
-        // Non-shareable = DRM; the capture attempts are what players detect and block on.
+        // Sharing state none = DRM or a window that opted out; the capture attempts are what players detect and block on.
         if !isShareable(id) { return nil }
 
         if let img = captureViaCG(id: id) {
@@ -59,8 +61,9 @@ actor WindowSnapshotter {
             _ = switch_try({ filter = SCContentFilter(desktopIndependentWindow: scWindow) }, &reason)
             guard let filter else { return nil }
             let cfg = SCStreamConfiguration()
-            cfg.width = max(1, Int(scWindow.frame.width))
-            cfg.height = max(1, Int(scWindow.frame.height))
+            let scale = Self.thumbScale(scWindow.frame.size)
+            cfg.width = max(1, Int(scWindow.frame.width * scale))
+            cfg.height = max(1, Int(scWindow.frame.height * scale))
             cfg.showsCursor = false
             let cg = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: cfg)
             return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
@@ -71,7 +74,7 @@ actor WindowSnapshotter {
 
     private nonisolated func isShareable(_ id: CGWindowID) -> Bool {
         guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], id) as? [[String: Any]],
-              let sharing = list.first?["kCGWindowSharingType"] as? Int else {
+              let sharing = list.first?[kCGWindowSharingState as String] as? Int else {
             return true
         }
         return sharing != 0
@@ -84,7 +87,25 @@ actor WindowSnapshotter {
             return nil
         }
         guard cg.width > 0, cg.height > 0 else { return nil }
-        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        let scale = Self.thumbScale(CGSize(width: cg.width, height: cg.height))
+        let w = max(1, Int(CGFloat(cg.width) * scale)), h = max(1, Int(CGFloat(cg.height) * scale))
+        guard scale < 1, let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                             space: CGColorSpaceCreateDeviceRGB(),
+                                             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else {
+            return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        }
+        ctx.interpolationQuality = .high
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let small = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: small, size: NSSize(width: w, height: h))
+    }
+
+    // Tiles top out at 300pt tall, 600px on Retina; a full-size bitmap per window
+    // was ~6MB each, all held and recaptured every 1.5s while the picker shows.
+    private nonisolated static let thumbMaxSide: CGFloat = 1000
+
+    private nonisolated static func thumbScale(_ size: CGSize) -> CGFloat {
+        min(1, thumbMaxSide / max(size.width, size.height, 1))
     }
 
     /// Drop cached entries for windows no longer in `keep`. Used by the pre-warm path

@@ -21,6 +21,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let maxPanelWidthScale = 2.4  // covers the 300pt thumbnail maximum when migrating
     nonisolated static let defaultGridPanelWidth = 880.0
     nonisolated static let defaultListPanelWidth = 520.0
+    nonisolated static let minListPanelWidth = 460.0  // the default hint strip keeps its padding
     nonisolated static let defaultPickerActivationDelay = 130.0
     nonisolated static let compactThumbnailHeight = 72.0
 
@@ -44,25 +45,7 @@ final class SwitchPreferences: ObservableObject {
         var id: String { rawValue }
         static let soft: [AccentChoice] = [.system, .rose, .blue, .mint, .peach, .lavender, .monochrome]
         static let vivid: [AccentChoice] = [.crimson, .orange, .amber, .green, .cyan, .cobalt, .violet, .magenta]
-        var label: String {
-            switch self {
-            case .system: return "System"
-            case .rose: return "Rose"
-            case .blue: return "Blue"
-            case .mint: return "Mint"
-            case .peach: return "Peach"
-            case .lavender: return "Lavender"
-            case .monochrome: return "Mono"
-            case .crimson: return "Crimson"
-            case .orange: return "Orange"
-            case .amber: return "Amber"
-            case .green: return "Green"
-            case .cyan: return "Cyan"
-            case .cobalt: return "Cobalt"
-            case .violet: return "Violet"
-            case .magenta: return "Magenta"
-            }
-        }
+        var label: String { self == .monochrome ? "Mono" : rawValue.capitalized }
         var color: Color {
             switch self {
             case .system: return Color.accentColor
@@ -71,7 +54,11 @@ final class SwitchPreferences: ObservableObject {
             case .mint: return Color(red: 0.42, green: 0.80, blue: 0.69)
             case .peach: return Color(red: 0.98, green: 0.69, blue: 0.49)
             case .lavender: return Color(red: 0.66, green: 0.58, blue: 0.86)
-            case .monochrome: return Color(white: 0.86)
+            case .monochrome:
+                // Light grey vanishes on light material; dark grey there.
+                return Color(nsColor: NSColor(name: nil) {
+                    NSColor(white: $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.86 : 0.25, alpha: 1)
+                })
             case .crimson: return Color(red: 0.91, green: 0.13, blue: 0.22)
             case .orange: return Color(red: 1.00, green: 0.44, blue: 0.00)
             case .amber: return Color(red: 1.00, green: 0.72, blue: 0.00)
@@ -87,13 +74,7 @@ final class SwitchPreferences: ObservableObject {
     enum Appearance: String, CaseIterable, Identifiable {
         case system, light, dark
         var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .system: return "System"
-            case .light: return "Light"
-            case .dark: return "Dark"
-            }
-        }
+        var label: String { rawValue.capitalized }
         var nsAppearance: NSAppearance? {
             switch self {
             case .system: return nil
@@ -106,25 +87,13 @@ final class SwitchPreferences: ObservableObject {
     enum PickerDisplay: String, CaseIterable, Identifiable {
         case mouse, active, primary
         var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .mouse: return "Mouse"
-            case .active: return "Active"
-            case .primary: return "Primary"
-            }
-        }
+        var label: String { rawValue.capitalized }
     }
 
     enum BackgroundBlur: String, CaseIterable, Identifiable {
         case light, medium, heavy
         var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .light: return "Light"
-            case .medium: return "Medium"
-            case .heavy: return "Heavy"
-            }
-        }
+        var label: String { rawValue.capitalized }
         var material: Material {
             switch self {
             case .light: return .ultraThinMaterial
@@ -197,6 +166,16 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(titleExclusions, forKey: SwitchPreferences.titleExclusionsKey) }
     }
 
+    /// App-name substrings whose windows are listed even though the app isn't a regular Dock app (#196).
+    @Published var includedAppNames: [String] {
+        didSet { UserDefaults.standard.set(includedAppNames, forKey: SwitchPreferences.includedAppNamesKey) }
+    }
+
+    nonisolated static func isIncluded(_ appName: String, in names: [String]) -> Bool {
+        let name = appName.lowercased()
+        return names.contains { name.contains($0.lowercased()) }
+    }
+
     @Published var mruMixSpaces: Bool {
         didSet { UserDefaults.standard.set(mruMixSpaces, forKey: mruMixSpacesKey) }
     }
@@ -225,6 +204,10 @@ final class SwitchPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(showStoplights, forKey: SwitchPreferences.showStoplightsKey) }
     }
 
+    @Published var showQuitButton: Bool {
+        didSet { UserDefaults.standard.set(showQuitButton, forKey: SwitchPreferences.showQuitButtonKey) }
+    }
+
     @Published var verticalShowStoplights: Bool {
         didSet { UserDefaults.standard.set(verticalShowStoplights, forKey: SwitchPreferences.verticalShowStoplightsKey) }
     }
@@ -243,6 +226,10 @@ final class SwitchPreferences: ObservableObject {
 
     @Published var showWindowCount: Bool {
         didSet { UserDefaults.standard.set(showWindowCount, forKey: SwitchPreferences.showWindowCountKey) }
+    }
+
+    @Published var showDockBadges: Bool {
+        didSet { UserDefaults.standard.set(showDockBadges, forKey: SwitchPreferences.showDockBadgesKey) }
     }
 
     @Published var currentDisplayOnly: Bool {
@@ -339,6 +326,7 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let blacklistKey = "switch.blacklist"
     nonisolated static let passthroughAppsKey = "switch.passthroughApps"
     nonisolated static let titleExclusionsKey = "switch.titleExclusions"
+    nonisolated static let includedAppNamesKey = "switch.includedAppNames"
     private let mruMixSpacesKey = "switch.mruMixSpaces"
     nonisolated static let staticOrderKey = "switch.staticOrder"
     nonisolated static let appOrderKey = "switch.appOrder"
@@ -346,11 +334,13 @@ final class SwitchPreferences: ObservableObject {
     nonisolated static let hideMenuBarIconKey = "switch.hideMenuBarIcon"
     nonisolated static let showThumbnailsKey = "switch.showThumbnails"
     nonisolated static let showStoplightsKey = "switch.showStoplights"
+    nonisolated static let showQuitButtonKey = "switch.showQuitAppButton"
     nonisolated static let verticalShowStoplightsKey = "switch.verticalShowStoplights"
     nonisolated static let verticalShowPreviewKey = "switch.verticalShowPreview"
     nonisolated static let verticalShowHeaderKey = "switch.verticalShowHeader"
     nonisolated static let showHintStripKey = "switch.showHintStrip"
     nonisolated static let showWindowCountKey = "switch.showWindowCount"
+    nonisolated static let showDockBadgesKey = "switch.showDockBadges"
     nonisolated static let currentDisplayOnlyKey = "switch.currentDisplayOnly"
     nonisolated static let typeToFilterKey = "switch.typeToFilter"
     nonisolated static let vimNavigationKey = "switch.vimNavigation"
@@ -386,6 +376,7 @@ final class SwitchPreferences: ObservableObject {
         blacklist = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.blacklistKey) ?? [])
         passthroughApps = Set(UserDefaults.standard.stringArray(forKey: SwitchPreferences.passthroughAppsKey) ?? [])
         titleExclusions = UserDefaults.standard.stringArray(forKey: SwitchPreferences.titleExclusionsKey) ?? []
+        includedAppNames = UserDefaults.standard.stringArray(forKey: SwitchPreferences.includedAppNamesKey) ?? []
         mruMixSpaces = (UserDefaults.standard.object(forKey: mruMixSpacesKey) as? Bool) ?? true
         staticOrder = UserDefaults.standard.bool(forKey: SwitchPreferences.staticOrderKey)
         appOrder = UserDefaults.standard.stringArray(forKey: SwitchPreferences.appOrderKey) ?? []
@@ -393,11 +384,13 @@ final class SwitchPreferences: ObservableObject {
         hideMenuBarIcon = UserDefaults.standard.bool(forKey: SwitchPreferences.hideMenuBarIconKey)
         showThumbnails = Self.storedShowThumbnails
         showStoplights = (UserDefaults.standard.object(forKey: SwitchPreferences.showStoplightsKey) as? Bool) ?? true
+        showQuitButton = UserDefaults.standard.bool(forKey: SwitchPreferences.showQuitButtonKey)
         verticalShowStoplights = (UserDefaults.standard.object(forKey: SwitchPreferences.verticalShowStoplightsKey) as? Bool) ?? true
         verticalShowPreview = Self.storedVerticalShowPreview
         verticalShowHeader = (UserDefaults.standard.object(forKey: SwitchPreferences.verticalShowHeaderKey) as? Bool) ?? true
         showHintStrip = Self.storedShowHintStrip
         showWindowCount = (UserDefaults.standard.object(forKey: SwitchPreferences.showWindowCountKey) as? Bool) ?? true
+        showDockBadges = UserDefaults.standard.read(SwitchPreferences.showDockBadgesKey, default: true)
         currentDisplayOnly = UserDefaults.standard.bool(forKey: SwitchPreferences.currentDisplayOnlyKey)
         let inputModes = Self.storedInputModes()
         homeRowSelection = inputModes.homeRow

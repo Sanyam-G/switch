@@ -56,6 +56,9 @@ final class HotkeyManager {
     private var armedBinding: HotkeyBinding?
     private var armedSticky = false
     private var armedAt: Date?
+    /// Bumped per arm. shownArmGen is the last one main received, so main never clears an arm it hasn't seen.
+    private var armGen = 0
+    private var shownArmGen = 0
     private var advanced = false
     private var lastShift = false
     /// Shift's press stepped back and nothing else followed yet, so a key now makes it a chord to undo (#199).
@@ -79,22 +82,23 @@ final class HotkeyManager {
     private var healthTimer: Timer?
     private var tapPingPending = false
 
-    private static let kcEscape: CGKeyCode = 53
-    private static let kcReturn: CGKeyCode = 36
-    private static let kcKeypadEnter: CGKeyCode = 76
-    private static let kcDelete: CGKeyCode = 51
-    private static let kcLeftArrow: CGKeyCode = 123
-    private static let kcRightArrow: CGKeyCode = 124
-    private static let kcDownArrow: CGKeyCode = 125
-    private static let kcUpArrow: CGKeyCode = 126
-    private static let kcBacktick: CGKeyCode = 50
+    private static let kcEscape = CGKeyCode(kVK_Escape)
+    private static let kcReturn = CGKeyCode(kVK_Return)
+    private static let kcKeypadEnter = CGKeyCode(kVK_ANSI_KeypadEnter)
+    private static let kcDelete = CGKeyCode(kVK_Delete)
+    private static let kcLeftArrow = CGKeyCode(kVK_LeftArrow)
+    private static let kcRightArrow = CGKeyCode(kVK_RightArrow)
+    private static let kcDownArrow = CGKeyCode(kVK_DownArrow)
+    private static let kcUpArrow = CGKeyCode(kVK_UpArrow)
+    private static let kcBacktick = CGKeyCode(kVK_ANSI_Grave)
     private static let kcDigits: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
     private static let kcKeypadDigits: [CGKeyCode] = [83, 84, 85, 86, 87, 88, 89, 91, 92]
 
     /// False when Accessibility isn't granted yet, so the caller retries instead of treating hotkeys as running.
     @discardableResult
     func start() -> Bool {
-        if !ensureAccessibility() { return false }
+        // No prompt: start() is polled, and onboarding's Open Settings already prompts.
+        guard AXIsProcessTrusted() else { return false }
         startTapThread()
         installWakeObserver()
         installFrontmostObserver()
@@ -151,11 +155,11 @@ final class HotkeyManager {
         tapRunLoop = nil
         tapPingPending = false
         stateLock.unlock()
-        if let oldTap {
-            CGEvent.tapEnable(tap: oldTap, enable: false)
-            CFMachPortInvalidate(oldTap)
-        }
+        if let oldTap { killTap(oldTap) }
         NSLog("Switch: event tap thread stopped responding, restarting it")
+        // The old thread may still hold a press the new tap never saw released.
+        clearArmed()
+        onCancel?()
         tapThread = nil
         startTapThread()
     }
@@ -167,30 +171,24 @@ final class HotkeyManager {
         self.tap = nil
         self.source = nil
         stateLock.unlock()
-        if let tap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-            // Without this a replaced tap can stay registered with the window server.
-            CFMachPortInvalidate(tap)
-        }
+        if let tap { killTap(tap) }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes) }
+    }
+
+    private func killTap(_ tap: CFMachPort) {
+        CGEvent.tapEnable(tap: tap, enable: false)
+        // Without this a replaced tap can stay registered with the window server.
+        CFMachPortInvalidate(tap)
     }
 
     /// Sleep/wake + screensaver-end can leave the tap in a disabled state that
     /// `tapDisabledByTimeout` doesn't always cover. Listen explicitly and
     /// reinstall.
     private func installWakeObserver() {
-        let nc = NSWorkspace.shared.notificationCenter
-        nc.addObserver(
-            forName: NSWorkspace.didWakeNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.reinstallIfNeeded()
-        }
-        nc.addObserver(
-            forName: NSWorkspace.screensDidWakeNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.reinstallIfNeeded()
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.reinstallIfNeeded()
+            }
         }
     }
 
@@ -221,11 +219,7 @@ final class HotkeyManager {
     }
 
     private func refreshLayoutData() {
-        var data: Data?
-        if let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
-           let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) {
-            data = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
-        }
+        let data = KeyName.layoutData()
         let type = UInt32(LMGetKbdType())
         stateLock.lock()
         layoutData = data
@@ -281,13 +275,6 @@ final class HotkeyManager {
         reload()
     }
 
-    @discardableResult
-    private func ensureAccessibility() -> Bool {
-        let key = "AXTrustedCheckOptionPrompt" as CFString
-        let opts = [key: true] as CFDictionary
-        return AXIsProcessTrustedWithOptions(opts)
-    }
-
     private func installTap() {
         let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
         let info = Unmanaged.passUnretained(self).toOpaque()
@@ -330,6 +317,8 @@ final class HotkeyManager {
             let tap = self.tap
             stateLock.unlock()
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            // A release while the tap was off never reached us (#211).
+            recoverIfReleaseWasMissed()
             return Unmanaged.passUnretained(event)
         }
 
@@ -353,17 +342,32 @@ final class HotkeyManager {
             shiftGen &+= 1
             stateLock.unlock()
             if undoShiftStep {
-                DispatchQueue.main.async { [weak self] in
-                    self?.onShiftStep?(true)
+                onMain { $0.onShiftStep?(true) }
+            }
+
+            // Ahead of the hotkey match: a key can carry a modifier that isn't down, so plain Tab
+            // advances and every key is swallowed (#211). The session state is read now, not when
+            // the key was made, so a lagging tap sees a release still queued; recheck shortly instead.
+            stateLock.lock()
+            let heldBinding = armedSticky ? nil : armedBinding
+            stateLock.unlock()
+            if let heldBinding, kc != Self.kcEscape, kc != Self.kcReturn, kc != Self.kcKeypadEnter {
+                if !heldBinding.modifiersHeld(flags) {
+                    clearArmed()
+                    onMain { $0.onCommit?(false) }
+                    return Unmanaged.passUnretained(event)
+                }
+                if !heldBinding.modifiersHeld(CGEventSource.flagsState(.combinedSessionState)) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                        self?.recoverIfReleaseWasMissed()
+                    }
                 }
             }
 
             if let stickyBinding = HotkeyConfig.shared[.stickyToggle],
                stickyBinding.matchesTrigger(keyCode: kc, flags: flags) {
                 if shouldPassThrough() { return Unmanaged.passUnretained(event) }
-                DispatchQueue.main.async { [weak self] in
-                    self?.onStickyToggle?()
-                }
+                onMain { $0.onStickyToggle?() }
                 return nil
             }
 
@@ -373,9 +377,7 @@ final class HotkeyManager {
                 stateLock.lock()
                 advanced = true
                 stateLock.unlock()
-                DispatchQueue.main.async { [weak self] in
-                    self?.onAdvance?(true, isRepeat)
-                }
+                onMain { $0.onAdvance?(true, isRepeat) }
                 return nil
             }
 
@@ -396,79 +398,54 @@ final class HotkeyManager {
             if armedMode != nil {
                 let key = layoutChar(from: event)
                 let (homeRow, vimNavigation, typeToFilter) = SwitchPreferences.storedInputModes()
-                let actionModifierMatches = cmd && (sticky || !typeToFilter || shift)
+                // ⌃⌘Q (Lock Screen) isn't ⌘Q: no primary modifiers beyond ⌘ and the binding's own.
+                let extraModifiers = flags.intersection(.primaryModifiers)
+                    .subtracting((activeBinding?.cgFlags ?? []).union(.maskCommand))
+                let actionModifierMatches = cmd && extraModifiers.isEmpty && (sticky || !typeToFilter || shift)
                 if kc == Self.kcEscape {
                     clearArmed()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onCancel?()
-                    }
+                    onMain { $0.onCancel?() }
                     return nil
                 }
                 if kc == Self.kcReturn || kc == Self.kcKeypadEnter {
                     clearArmed()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onCommit?(false)
-                    }
+                    onMain { $0.onCommit?(false) }
                     return nil
                 }
-                if !sticky && !(activeBinding?.modifiersHeld(flags) ?? false) {
-                    clearArmed()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onCommit?(false)
-                    }
-                    return Unmanaged.passUnretained(event)
-                }
                 if typeToFilter && kc == Self.kcDelete {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onFilterBackspace?()
-                    }
+                    onMain { $0.onFilterBackspace?() }
                     return nil
                 }
                 if actionModifierMatches && key == "w" {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onCloseSelected?()
-                    }
+                    onMain { $0.onCloseSelected?() }
                     return nil
                 }
                 if actionModifierMatches && key == "q" {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onCloseSelectedApp?()
-                    }
+                    onMain { $0.onCloseSelectedApp?() }
                     return nil
                 }
-                if actionModifierMatches && key == "h" {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onHideSelected?()
-                    }
+                // Vim's H moves left, so ⌘H needs Shift there (#171 left H out of home row keys for the same reason).
+                if actionModifierMatches && key == "h" && (!vimNavigation || shift) {
+                    onMain { $0.onHideSelected?() }
                     return nil
                 }
                 if key == "," && (cmd || activeBinding?.modifiersHeld(flags) == true) {
                     clearArmed()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onCancel?()
-                        self?.onOpenSettings?()
-                    }
+                    onMain { $0.onCancel?(); $0.onOpenSettings?() }
                     return nil
                 }
                 if let direction = arrowDirection(for: kc) ?? (vimNavigation ? vimDirection(for: key) : nil) {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onNavigate?(direction)
-                    }
+                    onMain { $0.onNavigate?(direction) }
                     return nil
                 }
                 if let index = digitIndex(for: kc)
                     ?? (homeRow ? key.flatMap { SwitchPreferences.homeRowKeys.firstIndex(of: $0) } : nil) {
                     let chain = cmd
-                    DispatchQueue.main.async { [weak self] in
-                        if chain { self?.onPickSelectOnly?(index) }
-                        else { self?.onPickIndex?(index) }
-                    }
+                    onMain { chain ? $0.onPickSelectOnly?(index) : $0.onPickIndex?(index) }
                     return nil
                 }
                 if typeToFilter, let c = filterChar(from: event) {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onFilterAppend?(c)
-                    }
+                    onMain { $0.onFilterAppend?(c) }
                     return nil
                 }
                 // Unbound keys stay with the picker; otherwise ⌘S or ⌘X lands in the app underneath.
@@ -499,10 +476,7 @@ final class HotkeyManager {
                 shiftGen &+= 1
                 let gen = shiftGen
                 stateLock.unlock()
-                DispatchQueue.main.async { [weak self] in
-                    self?.onShiftStep?(false)
-                    self?.scheduleShiftRepeat(gen, first: true)
-                }
+                onMain { $0.onShiftStep?(false); $0.scheduleShiftRepeat(gen, first: true) }
                 return Unmanaged.passUnretained(event)
             }
 
@@ -515,9 +489,7 @@ final class HotkeyManager {
                     let stickyQuickTap = armedSticky
                     clearArmedLocked()
                     stateLock.unlock()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onCommit?(stickyQuickTap)
-                    }
+                    onMain { $0.onCommit?(stickyQuickTap) }
                     return Unmanaged.passUnretained(event)
                 }
             }
@@ -544,6 +516,11 @@ final class HotkeyManager {
         }
     }
 
+    /// The tap thread never waits on main; it hands work over and returns the event.
+    private func onMain(_ f: @escaping (HotkeyManager) -> Void) {
+        DispatchQueue.main.async { [weak self] in self.map(f) }
+    }
+
     private func armOrAdvance(_ style: ArmStyle, binding: HotkeyBinding, shift: Bool, isRepeat: Bool) {
         var effective = style
         effective.sticky = style.sticky || UserDefaults.standard.bool(forKey: SwitchPreferences.stickyModeKey)
@@ -551,6 +528,7 @@ final class HotkeyManager {
         stateLock.lock()
         let isFirst = armed == nil
         if isFirst {
+            armGen &+= 1
             armed = style.mode
             armedBinding = binding
             armedSticky = effective.sticky
@@ -559,9 +537,17 @@ final class HotkeyManager {
         } else {
             advanced = true
         }
+        let gen = armGen
         stateLock.unlock()
-        DispatchQueue.main.async { [weak self] in
-            if isFirst { self?.onArm?(effective) } else { self?.onAdvance?(shift, isRepeat) }
+        onMain {
+            if isFirst {
+                $0.stateLock.lock()
+                $0.shownArmGen = gen
+                $0.stateLock.unlock()
+                $0.onArm?(effective)
+            } else {
+                $0.onAdvance?(shift, isRepeat)
+            }
         }
     }
 
@@ -581,9 +567,16 @@ final class HotkeyManager {
         shiftRepeating = false
     }
 
-    func clearArmed() {
+    private func clearArmed() {
         stateLock.lock()
         clearArmedLocked()
+        stateLock.unlock()
+    }
+
+    /// Main thread. Clears the arm main has shown, never a newer one whose onArm is still queued.
+    func clearShownArm() {
+        stateLock.lock()
+        if armGen == shownArmGen { clearArmedLocked() }
         stateLock.unlock()
     }
 
@@ -611,9 +604,7 @@ final class HotkeyManager {
         }
         clearArmedLocked()
         stateLock.unlock()
-        DispatchQueue.main.async { [weak self] in
-            self?.onCommit?(false)
-        }
+        onMain { $0.onCommit?(false) }
     }
 
     func reload() {
@@ -634,8 +625,8 @@ final class HotkeyManager {
 
     // The character the key produces on the current layout, so ⌘W is the W key on AZERTY too (#149).
     private func layoutChar(from event: CGEvent, keeping: CGEventFlags = []) -> Character? {
-        // A key event's string is fixed when it's created, so clearing ⌥ on a copy still gives ç for C.
-        if event.flags.contains(.maskAlternate), let c = translatedChar(from: event, keeping: keeping) {
+        // A key event's string is fixed when it's created, so clearing ⌥ on a copy still gives ç for C, and ⌃H gives 0x08.
+        if !event.flags.intersection([.maskAlternate, .maskControl]).isEmpty, let c = translatedChar(from: event, keeping: keeping) {
             return c
         }
         guard let copy = event.copy() else { return nil }
@@ -655,19 +646,8 @@ final class HotkeyManager {
         guard let layout else { return nil }
         let code = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let shifted = keeping.contains(.maskShift) && event.flags.contains(.maskShift)
-        var deadKeyState: UInt32 = 0
-        var length = 0
-        var buffer = [UniChar](repeating: 0, count: 4)
-        let status = layout.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> OSStatus in
-            guard let base = raw.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return -1 }
-            return UCKeyTranslate(
-                base, code, UInt16(kUCKeyActionDown), shifted ? UInt32(shiftKey >> 8) : 0,
-                type, OptionBits(kUCKeyTranslateNoDeadKeysBit),
-                &deadKeyState, 4, &length, &buffer
-            )
-        }
-        guard status == noErr, length > 0 else { return nil }
-        return String(utf16CodeUnits: buffer, count: length).lowercased().first
+        return KeyName.translate(layout, code: code, action: kUCKeyActionDown,
+                                 modifiers: shifted ? UInt32(shiftKey >> 8) : 0, kbdType: type)?.lowercased().first
     }
 
     private func arrowDirection(for kc: CGKeyCode) -> Direction? {

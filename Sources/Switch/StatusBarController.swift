@@ -3,6 +3,8 @@ import AppKit
 @MainActor
 final class StatusBarController {
     private var item: NSStatusItem
+    /// Why hotkeys aren't working, if they aren't (#198). Kept here so a recreated item shows it too.
+    private var warning: String?
 
     init() {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -12,9 +14,11 @@ final class StatusBarController {
 
     private func configure(_ item: NSStatusItem) {
         if let button = item.button {
-            let img = NSImage(systemSymbolName: "square.on.square", accessibilityDescription: "Switch")
+            let img = NSImage(systemSymbolName: warning == nil ? "square.on.square" : "exclamationmark.triangle",
+                              accessibilityDescription: "Switch")
             img?.isTemplate = true
             button.image = img
+            button.toolTip = warning
         }
 
         let menu = NSMenu()
@@ -22,6 +26,11 @@ final class StatusBarController {
         let header = NSMenuItem(title: "Switch", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
+        if let warning {
+            let note = NSMenuItem(title: warning, action: nil, keyEquivalent: "")
+            note.isEnabled = false
+            menu.addItem(note)
+        }
 
         menu.addItem(.separator())
 
@@ -54,11 +63,13 @@ final class StatusBarController {
         }
     }
 
-    @objc private func openSettings() {
-        MainActor.assumeIsolated { SettingsWindow.shared.show() }
+    func setWarning(_ text: String?) {
+        guard text != warning else { return }
+        warning = text
+        configure(item)
     }
 
-    @objc private func openAbout() {
-        MainActor.assumeIsolated { AboutWindow.shared.show() }
-    }
+    @objc private func openSettings() { SettingsWindow.shared.show() }
+
+    @objc private func openAbout() { AboutWindow.shared.show() }
 }

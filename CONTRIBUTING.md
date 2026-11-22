@@ -1,22 +1,22 @@
-# **Contributing to Switch**
+# Contributing to Switch
 
-Thank you for your interest in contributing to Switch.
+Open an issue before you start, so we agree on the change first. Reference it in the PR (`Closes #104`).
 
-## **Core Rules & Contribution Policy**
+PRs must be written by hand. I'll take feature ideas from AI-generated PRs, but I won't merge them.
 
-* **Open an Issue First:** It is recommended that an issue be opened to describe the feature, enhancement, or bug before starting on any code changes.  
-* **Hand-Written Changes:** All submitted pull requests must consist of descriptions written directly by the contributor.
+## Build
 
-I'll take feature ideas from AI-generated PRs, but I won't merge them. Hand-written PRs are welcome.
+```
+brew install xcodegen
+xcodegen generate
+xcodebuild -project Switch.xcodeproj -scheme Switch -configuration Debug CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= build
+```
 
-## **Recommended Workflow**
+`project.yml` is the source of truth; `Switch.xcodeproj` is generated and not tracked. The overrides above sign ad hoc, since the project is set up for my Developer ID.
 
-1. Open an issue to describe the feature, enhancement, or bug.  
-2. Reference the issue number in the pull request description (e.g., Closes \#104).  
-3. Feel free to work on any issue you want to fix!
+Debug builds use the bundle ID `com.sanyamgarg.switch.debug`, so they keep their own settings and need their own Accessibility (and Screen Recording) grant. An ad-hoc rebuild changes the signature, so toggle Switch off and on again in System Settings → Privacy & Security → Accessibility after rebuilding.
 
-## **Pull Request Guidelines**
+## Pull requests
 
-* **Branching:** Use descriptive feature branches (e.g., feature/issue-104-fix) instead of committing directly to main.  
-* **Code Style:** Match the existing Swift formatting conventions present in the codebase.  
-* And please test out your changes! A screenshot of any visual changes would be great too!
+- Match the existing code style.
+- Test your change, and attach a screenshot for anything visual.

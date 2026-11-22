@@ -5,7 +5,6 @@ import Foundation
 
 extension CGEventFlags {
     static let primaryModifiers: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
-    static let recordableModifiers: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
 }
 
 /// User-rebindable hotkey for arming the switcher.
@@ -28,9 +27,8 @@ struct HotkeyBinding: Codable, Equatable {
 
     /// Whether `flags` include all the required modifiers (ignoring shift, which is used for reverse).
     func modifiersHeld(_ flags: CGEventFlags) -> Bool {
-        let needNeeded = cgFlags.intersection(.primaryModifiers)
-        let havNeeded = flags.intersection(.primaryModifiers)
-        return havNeeded.contains(needNeeded) && needNeeded.rawValue != 0
+        let need = cgFlags.intersection(.primaryModifiers)
+        return !need.isEmpty && flags.contains(need)
     }
 
     /// Match a keyDown trigger: required modifiers held, no extra primary modifiers, key matches.
@@ -41,15 +39,13 @@ struct HotkeyBinding: Codable, Equatable {
     }
 
     func conflicts(with other: HotkeyBinding) -> Bool {
-        keyCode == other.keyCode
-            && cgFlags.intersection(.primaryModifiers) == other.cgFlags.intersection(.primaryModifiers)
+        other.matchesTrigger(keyCode: CGKeyCode(keyCode), flags: cgFlags)
     }
 
     var displayString: String {
         var s = ""
         if cgFlags.contains(.maskControl) { s += "⌃" }
         if cgFlags.contains(.maskAlternate) { s += "⌥" }
-        if cgFlags.contains(.maskShift) { s += "⇧" }
         if cgFlags.contains(.maskCommand) { s += "⌘" }
         s += KeyName.string(for: keyCode)
         return s
@@ -88,8 +84,6 @@ final class HotkeyConfig {
     private let lock = NSLock()
     private var cache: [Slot: HotkeyBinding] = [:]
 
-    static let didChangeNotification = Notification.Name("com.sanyamgarg.switch.hotkeyConfigDidChange")
-
     // Seed the default arming hotkeys once so a fresh install gets them; after that nil means disabled.
     private init() {
         if !defaults.bool(forKey: seededKey) {
@@ -112,7 +106,6 @@ final class HotkeyConfig {
             lock.lock()
             cache[slot] = newValue
             lock.unlock()
-            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
         }
     }
 
@@ -128,7 +121,6 @@ final class HotkeyConfig {
             }
         }
         lock.unlock()
-        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
     private func load(_ slot: Slot) -> HotkeyBinding? {
@@ -152,14 +144,14 @@ enum HotkeyValidator {
         (7,  .maskCommand),  // ⌘X
         (6,  .maskCommand),  // ⌘Z
         (15, .maskCommand),  // ⌘R
-        (3,  .maskCommand),  // ⌘F
-        (53, [])             // bare Esc
+        (3,  .maskCommand)   // ⌘F
     ]
 
     /// Returns nil if the combo is allowed; otherwise a short human reason.
     static func reject(keyCode: UInt16, flags: CGEventFlags) -> String? {
-        let cleaned = flags.intersection(.recordableModifiers)
-        if cleaned.intersection(.primaryModifiers).rawValue == 0 {
+        // Shift never takes part in matching, so ⌘⇧Z would fire on (and swallow) plain ⌘Z.
+        let cleaned = flags.intersection(.primaryModifiers)
+        if cleaned.isEmpty {
             return "Needs at least one modifier (⌘, ⌥, or ⌃)."
         }
         for (rk, rf) in reserved where rk == keyCode && rf == cleaned {
@@ -173,8 +165,10 @@ enum KeyName {
     /// Human-readable key name (single char where possible, "Tab" / "F1" etc otherwise).
     static func string(for code: UInt16) -> String {
         if let s = special[code] { return s }
-        // Fall back to NSEvent.charactersByApplyingModifiers for printable keys.
-        if let cs = chars(for: code) { return cs.uppercased() }
+        if let layout = layoutData(),
+           let cs = translate(layout, code: code, action: kUCKeyActionDisplay, modifiers: 0, kbdType: UInt32(LMGetKbdType())) {
+            return cs.uppercased()
+        }
         return "Key \(code)"
     }
 
@@ -193,33 +187,24 @@ enum KeyName {
         101: "F9", 109: "F10", 103: "F11", 111: "F12"
     ]
 
-    private static func chars(for code: UInt16) -> String? {
-        guard let layout = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
-              let layoutDataPtr = TISGetInputSourceProperty(layout, kTISPropertyUnicodeKeyLayoutData) else {
-            return nil
-        }
-        let data = Unmanaged<CFData>.fromOpaque(layoutDataPtr).takeUnretainedValue() as Data
+    /// Main thread only: TIS calls hit TSM.
+    static func layoutData() -> Data? {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let ptr = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+        return Unmanaged<CFData>.fromOpaque(ptr).takeUnretainedValue() as Data
+    }
+
+    /// Pure, so the tap thread can call it with layout data cached on main.
+    static func translate(_ layout: Data, code: UInt16, action: Int, modifiers: UInt32, kbdType: UInt32) -> String? {
         var deadKeyState: UInt32 = 0
-        var length: Int = 0
-        var chars = [UniChar](repeating: 0, count: 4)
-        let status = data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> OSStatus in
-            guard let base = raw.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else {
-                return -1
-            }
-            return UCKeyTranslate(
-                base,
-                code,
-                UInt16(kUCKeyActionDisplay),
-                0,
-                UInt32(LMGetKbdType()),
-                OptionBits(kUCKeyTranslateNoDeadKeysBit),
-                &deadKeyState,
-                4,
-                &length,
-                &chars
-            )
+        var length = 0
+        var buffer = [UniChar](repeating: 0, count: 4)
+        let status = layout.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> OSStatus in
+            guard let base = raw.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return -1 }
+            return UCKeyTranslate(base, code, UInt16(action), modifiers, kbdType,
+                                  OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeyState, 4, &length, &buffer)
         }
         guard status == noErr, length > 0 else { return nil }
-        return String(utf16CodeUnits: chars, count: length)
+        return String(utf16CodeUnits: buffer, count: length)
     }
 }

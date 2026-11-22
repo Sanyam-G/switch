@@ -1,8 +1,10 @@
 import AppKit
+import Combine
 import SwiftUI
 
 final class SwitcherWindow: NSPanel {
     private let model: SwitchModel
+    private var resizeSink: AnyCancellable?
 
     init(model: SwitchModel) {
         self.model = model
@@ -27,7 +29,16 @@ final class SwitcherWindow: NSPanel {
         host.layer?.cornerCurve = .continuous
         host.layer?.masksToBounds = true
         contentView = host
-        applyContentSize()
+        // The count changes under an open picker: the fresh sweep lands, ⌘W closes a row (#134).
+        // The header comes and goes with the filter in a header-less list. Settings can change under a sticky picker.
+        resizeSink = model.$windows.map(\.count).removeDuplicates().map { _ in }
+            .merge(with: model.$filterText.map(\.isEmpty).removeDuplicates().map { _ in },
+                   SwitchPreferences.shared.objectWillChange.map { _ in })
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                guard let self, self.isVisible else { return }
+                self.layout(on: self.screen)
+            }
     }
 
     override var canBecomeKey: Bool { false }
@@ -44,23 +55,16 @@ final class SwitcherWindow: NSPanel {
         super.sendEvent(event)
     }
 
-    func applyContentSize(for screen: NSScreen? = nil) {
+    /// Sized to the unfiltered count, so typing doesn't resize the panel on every key.
+    private func layout(on screen: NSScreen?) {
         let fitted = SwitcherPanelSize.current(
             mode: model.mode,
-            itemCount: model.filteredWindows.count,
+            itemCount: model.windows.count,
+            showHeader: model.showsHeader,
             screen: screen
         )
-        model.panelSize = CGSize(width: fitted.width, height: fitted.height)
+        model.panelSize = fitted
         setContentSize(fitted)
-    }
-
-    func present() {
-        // Re-asserted every present so the panel migrates across Spaces.
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        animationBehavior = SwitchPreferences.shared.disableAnimations ? .none : .default
-
-        let screen = Self.pickerScreen()
-        applyContentSize(for: screen)
         if let screen {
             let visible = screen.visibleFrame
             setFrameOrigin(NSPoint(
@@ -68,6 +72,13 @@ final class SwitcherWindow: NSPanel {
                 y: visible.midY - frame.height / 2
             ))
         }
+    }
+
+    func present() {
+        // Re-asserted every present so the panel migrates across Spaces.
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        animationBehavior = SwitchPreferences.shared.disableAnimations ? .none : .default
+        layout(on: Self.pickerScreen())
         orderFrontRegardless()
     }
 
@@ -90,23 +101,23 @@ final class SwitcherWindow: NSPanel {
     }
 }
 
+@MainActor
 private enum SwitcherPanelSize {
     private static let maxScreenFraction: CGFloat = 0.92
+    private static var prefs: SwitchPreferences { .shared }
 
-    static func current(mode: HotkeyManager.Mode, itemCount: Int, screen: NSScreen?) -> NSSize {
-        let isList = UserDefaults.standard.bool(forKey: SwitchPreferences.verticalListKey)
-        let widthScale = CGFloat(SwitchPreferences.clampedPanelWidthScale(
-            UserDefaults.standard.object(forKey: SwitchPreferences.panelWidthScaleKey) as? Double
-        ))
+    static func current(mode: HotkeyManager.Mode, itemCount: Int, showHeader: Bool, screen: NSScreen?) -> NSSize {
+        let widthScale = CGFloat(SwitchPreferences.clampedPanelWidthScale(prefs.panelWidthScale))
         let count = max(itemCount, 1)
         // Every mode sizes to the window count; a fixed panel leaves rows of empty backdrop (#134).
-        let size = (mode == .spaces || isList)
-            ? listSize(count: count, widthScale: widthScale, screen: screen)
-            : gridSize(count: count, widthScale: widthScale, screen: screen)
+        let header = showHeader ? PickerLayout.headerHeight : 0
+        let size = (mode == .spaces || prefs.verticalList)
+            ? listSize(count: count, header: header, showHeader: showHeader, widthScale: widthScale, screen: screen)
+            : gridSize(count: count, header: header, widthScale: widthScale, screen: screen)
         return fit(size, on: screen)
     }
 
-    private static var hintHeight: CGFloat { SwitchPreferences.storedShowHintStrip ? 38 : 0 }
+    private static var hintHeight: CGFloat { prefs.showHintStrip ? PickerLayout.hintStripHeight : 0 }
 
     // Whole rows only: a screen-capped height leaves a clipped row at the bottom (#132).
     // minHeight only pads when every row is visible; padding a capped panel shows part of the next row.
@@ -117,38 +128,37 @@ private enum SwitcherPanelSize {
         return visible < rows ? height : max(minHeight, height)
     }
 
-    private static func listSize(count: Int, widthScale: CGFloat, screen: NSScreen?) -> NSSize {
-        let showPreview = SwitchPreferences.storedVerticalShowPreview && SwitchPreferences.storedShowThumbnails
+    private static func listSize(count: Int, header: CGFloat, showHeader: Bool, widthScale: CGFloat, screen: NSScreen?) -> NSSize {
         let height = wholeRowsHeight(
             rows: count,
-            maxRows: UserDefaults.standard.read(SwitchPreferences.maxListRowsKey, default: SwitchPreferences.defaultMaxListRows),
-            rowHeight: showPreview ? 62 : 48,
+            maxRows: prefs.maxListRows,
+            rowHeight: PickerLayout.listRowHeight(preview: prefs.showThumbnails && prefs.verticalShowPreview, icon: prefs.appIconSize),
             gap: PickerLayout.listRowSpacing,
-            chrome: PickerLayout.headerHeight + hintHeight + 20,
+            chrome: header + PickerLayout.listTopPadding(showHeader: showHeader) + PickerLayout.listBottomPadding + hintHeight,
             minHeight: 260,
             screen: screen
         )
-        return NSSize(width: CGFloat(SwitchPreferences.defaultListPanelWidth) * widthScale, height: height)
+        // Floor: the default hint strip (411pt) keeps its padding and narrow rows keep room for text.
+        return NSSize(width: max(SwitchPreferences.minListPanelWidth, SwitchPreferences.defaultListPanelWidth * widthScale), height: height)
     }
 
-    private static func gridSize(count: Int, widthScale: CGFloat, screen: NSScreen?) -> NSSize {
-        let defaults = UserDefaults.standard
-        let thumb = CGFloat(defaults.read(SwitchPreferences.thumbnailHeightKey, default: SwitchPreferences.defaultThumbnailHeight))
-        let tileThumb = SwitchPreferences.storedShowThumbnails ? thumb : CGFloat(SwitchPreferences.compactThumbnailHeight)
-        let configuredColumns = defaults.read(SwitchPreferences.gridColumnsKey, default: SwitchPreferences.defaultGridColumns)
-        let columns = min(max(configuredColumns, 1), max(count, 3))
+    private static func gridSize(count: Int, header: CGFloat, widthScale: CGFloat, screen: NSScreen?) -> NSSize {
+        let tileThumb = prefs.showThumbnails ? prefs.thumbnailHeight : SwitchPreferences.compactThumbnailHeight
+        let configuredColumns = max(prefs.gridColumns, 1)
+        let columns = PickerLayout.gridColumns(configured: configuredColumns, count: count)
         let baseWidth: CGFloat = CGFloat(SwitchPreferences.defaultGridPanelWidth) * widthScale
-        let horizontalPadding: CGFloat = 44
-        let usable = baseWidth - horizontalPadding - CGFloat(max(configuredColumns - 1, 0)) * PickerLayout.gridSpacing
-        let columnWidth = usable / CGFloat(configuredColumns)
-        let width = horizontalPadding + CGFloat(columns) * columnWidth + CGFloat(max(columns - 1, 0)) * PickerLayout.gridSpacing
+        let horizontalPadding = PickerLayout.gridHorizontalPadding * 2
+        let usable = baseWidth - horizontalPadding - CGFloat(configuredColumns - 1) * PickerLayout.gridSpacing
+        let scale = PickerLayout.tileScale(configured: configuredColumns, count: count)
+        let columnWidth = usable / CGFloat(configuredColumns) * scale
+        let width = horizontalPadding + CGFloat(columns) * columnWidth + CGFloat(columns - 1) * PickerLayout.gridSpacing
 
         let height = wholeRowsHeight(
             rows: Int(ceil(Double(count) / Double(columns))),
-            maxRows: defaults.read(SwitchPreferences.maxGridRowsKey, default: SwitchPreferences.defaultMaxGridRows),
-            rowHeight: tileThumb + PickerLayout.tileExtraHeight,
+            maxRows: prefs.maxGridRows,
+            rowHeight: CGFloat(tileThumb) * scale + PickerLayout.tileExtraHeight,
             gap: PickerLayout.gridSpacing,
-            chrome: PickerLayout.headerHeight + 16 + hintHeight,
+            chrome: header + PickerLayout.gridTopPadding + PickerLayout.gridBottomPadding + hintHeight,
             minHeight: 320,
             screen: screen
         )

@@ -13,6 +13,11 @@ final class OnboardingModel: ObservableObject {
     var requiresScreenCapture: Bool { SwitchPreferences.shared.showThumbnails }
     var allGranted: Bool { accessibility && (!requiresScreenCapture || screenCapture) }
 
+    /// Live check of the same rule, for callers outside the onboarding UI.
+    nonisolated static var requiredGranted: Bool {
+        AXIsProcessTrusted() && (!SwitchPreferences.storedShowThumbnails || CGPreflightScreenCaptureAccess())
+    }
+
     func startPolling() {
         refresh()
         timer?.invalidate()
