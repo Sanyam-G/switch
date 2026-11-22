@@ -17,6 +17,11 @@ struct WindowInfo: Identifiable, Hashable {
     var isWindowless: Bool = false
     var bundleID: String?
 
+    /// Drawn by a helper for another app, like Steam's (#206).
+    var isHosted: Bool {
+        bundleID != nil && NSRunningApplication(processIdentifier: pid)?.bundleIdentifier != bundleID
+    }
+
     func isPinned(in pinned: Set<String>) -> Bool {
         bundleID.map { pinned.contains($0) } ?? false
     }

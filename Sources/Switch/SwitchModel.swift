@@ -172,8 +172,8 @@ final class SwitchModel: ObservableObject {
                 Self.cgInfo(of: id).flatMap { $0.pid == front && ($0.listable || listed.contains(id)) ? id : nil }
             }
                 ?? front.flatMap { p in WindowMRU.mostRecent(in: snapshot.windows.allWindows.filter { $0.pid == p }) }?.id
-                // Unstamped front-app windows, by bundle too for Steam's helper (#206); a windowless front app leaves it nil.
-                ?? snapshot.windows.activeSpace.first { front == nil || $0.pid == front || ($0.bundleID != nil && $0.bundleID == armFrontmostBundleID) }?.id
+                // Unstamped front-app windows, hosted ones too for Steam's helper (#206); a windowless front app leaves it nil.
+                ?? snapshot.windows.activeSpace.first { front == nil || $0.pid == front || ($0.isHosted && $0.bundleID == armFrontmostBundleID) }?.id
             if mode == .spaces {
                 let reps = filteredWindows
                 if let current = reps.firstIndex(where: { !$0.isCrossSpace }), reps.count > 1 {
@@ -237,8 +237,8 @@ final class SwitchModel: ObservableObject {
             }
         }
         if mode == .currentApp, let f = armFrontmostPID {
-            // By bundle too: Steam's windows belong to its helper's pid (#206).
-            drop { $0.pid != f && ($0.bundleID == nil || $0.bundleID != armFrontmostBundleID) }
+            // Hosted windows by bundle: Steam's belong to its helper's pid (#206). Other copies of the app stay out.
+            drop { $0.pid != f && !($0.isHosted && $0.bundleID == armFrontmostBundleID) }
         }
         if !SwitchPreferences.shared.showCrossSpace || currentSpaceOnly {
             cross = cross.filter { !$0.isCrossSpace }
@@ -282,9 +282,7 @@ final class SwitchModel: ObservableObject {
             let switchablePIDs = full.allPIDs
             // Steam's windows are listed under its helper's pid (#206). Only such hosted
             // bundles count, so a second, windowless instance of an app still shows.
-            let switchableBundles = Set(full.allWindows
-                .filter { NSRunningApplication(processIdentifier: $0.pid)?.bundleIdentifier != $0.bundleID }
-                .compactMap(\.bundleID))
+            let switchableBundles = Set(full.allWindows.filter(\.isHosted).compactMap(\.bundleID))
             let ownBundle = Bundle.main.bundleIdentifier
             let blacklist = SwitchPreferences.shared.blacklist
             let included = SwitchPreferences.shared.includedAppNames

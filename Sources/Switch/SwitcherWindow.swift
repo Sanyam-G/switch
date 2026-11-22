@@ -30,9 +30,10 @@ final class SwitcherWindow: NSPanel {
         host.layer?.masksToBounds = true
         contentView = host
         // The count changes under an open picker: the fresh sweep lands, ⌘W closes a row (#134).
-        // The header comes and goes with the filter in a header-less list.
+        // The header comes and goes with the filter in a header-less list. Settings can change under a sticky picker.
         resizeSink = model.$windows.map(\.count).removeDuplicates().map { _ in }
-            .merge(with: model.$filterText.map(\.isEmpty).removeDuplicates().map { _ in })
+            .merge(with: model.$filterText.map(\.isEmpty).removeDuplicates().map { _ in },
+                   SwitchPreferences.shared.objectWillChange.map { _ in })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
                 guard let self, self.isVisible else { return }
